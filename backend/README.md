@@ -1,5 +1,3 @@
-# GIMPA Thesis Repository
-
 ## Backend (FastAPI + Postgres)
 
 This backend uses FastAPI, SQLAlchemy, and JWT auth.
