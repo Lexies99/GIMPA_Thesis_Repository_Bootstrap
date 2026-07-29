@@ -735,6 +735,15 @@ def read_pending_papers(
     reviewer_department = (current_admin.department or "").strip().lower()
     if reviewer_role in {"project_coordinator", "hod"} and not reviewer_department:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer department is not configured")
+    # Universal examiner condition: Any paper where current_admin is assigned as examiner during Phase 4 marking
+    assigned_as_examiner_cond = (
+        (Paper.status == "phase4_marking")
+        & (
+            (Paper.internal_examiner_id == current_admin.id)
+            | (Paper.external_examiner_id == current_admin.id)
+        )
+    )
+
     if reviewer_role in {"lecturer", "project_supervisor", "external_examiner"}:
         supervisor_cond = (
             Paper.status.in_({
@@ -776,16 +785,22 @@ def read_pending_papers(
             db.query(Paper)
             .join(User, Paper.created_by_id == User.id, isouter=True)
             .filter(
-                ((Paper.status == "pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
-                | (Paper.status == "pending_coordinator")
-                | (Paper.status == "phase1_proposal_submitted")
-                | (Paper.status == "phase2_pending_coordinator")
-                | (Paper.status == "phase2_pending_supervisor")
-                | (Paper.status == "phase4_pending_examiners")
-                | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
-                | (Paper.status == "phase5_pending_coordinator")
+                assigned_as_examiner_cond
+                | (
+                    (
+                        ((Paper.status == "pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
+                        | (Paper.status == "pending_coordinator")
+                        | (Paper.status == "phase1_proposal_submitted")
+                        | (Paper.status == "phase2_pending_coordinator")
+                        | (Paper.status == "phase2_pending_supervisor")
+                        | (Paper.status == "phase4_pending_examiners")
+                        | (Paper.status == "phase4_marking")
+                        | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
+                        | (Paper.status == "phase5_pending_coordinator")
+                    )
+                    & (func.lower(func.coalesce(User.department, "")) == reviewer_department)
+                )
             )
-            .filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
             .order_by(Paper.created_at.desc(), Paper.id.desc())
             .limit(200)
             .all()
@@ -795,16 +810,22 @@ def read_pending_papers(
             db.query(Paper)
             .join(User, Paper.created_by_id == User.id, isouter=True)
             .filter(
-                ((Paper.status == "pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
-                | (Paper.status == "pending_hod")
-                | (Paper.status == "phase1_proposal_submitted")
-                | (Paper.status == "phase2_pending_coordinator")
-                | (Paper.status == "phase2_pending_supervisor")
-                | (Paper.status == "phase4_pending_examiners")
-                | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
-                | (Paper.status == "phase5_pending_hod")
+                assigned_as_examiner_cond
+                | (
+                    (
+                        ((Paper.status == "pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
+                        | (Paper.status == "pending_hod")
+                        | (Paper.status == "phase1_proposal_submitted")
+                        | (Paper.status == "phase2_pending_coordinator")
+                        | (Paper.status == "phase2_pending_supervisor")
+                        | (Paper.status == "phase4_pending_examiners")
+                        | (Paper.status == "phase4_marking")
+                        | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
+                        | (Paper.status == "phase5_pending_hod")
+                    )
+                    & (func.lower(func.coalesce(User.department, "")) == reviewer_department)
+                )
             )
-            .filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
             .order_by(Paper.created_at.desc(), Paper.id.desc())
             .limit(200)
             .all()
@@ -1953,73 +1974,273 @@ def download_paper_feedback_file(
     )
 
 
+def _build_multi_cert_excel_workbook(target_path: Path, sheet_prefix: str, papers_list: list) -> None:
+    """Builds an ONLYOFFICE Excel workbook where each Certification Type has its own dedicated worksheet tab."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    
+    def classify_cert(p):
+        dt = (str(getattr(p, "document_type", "") or "") + " " + str(getattr(p, "publication_type", "") or "") + " " + str(getattr(p, "discipline", "") or "")).lower()
+        if "phd" in dt or "doctor" in dt:
+            return "PhD"
+        elif "mphil" in dt:
+            return "MPhil"
+        elif "master" in dt or "msc" in dt or "mba" in dt or "ma " in dt or "med" in dt:
+            return "Masters (MSc-MBA)"
+        else:
+            return "Undergraduate (BSc-BA)"
+
+    headers = [
+        "Paper ID", "Certification Type", "Student Name", "Thesis Title", "Discipline / Dept",
+        "Current Status", "Internal Score (0-100)", "External Score (0-100)",
+        "Overall Grade / Rec", "General Comments"
+    ]
+
+    categories = [
+        (f"All {sheet_prefix} Results", papers_list),
+        ("Undergraduate (BSc-BA)", [p for p in papers_list if classify_cert(p) == "Undergraduate (BSc-BA)"]),
+        ("Masters (MSc-MBA)", [p for p in papers_list if classify_cert(p) == "Masters (MSc-MBA)"]),
+        ("MPhil", [p for p in papers_list if classify_cert(p) == "MPhil"]),
+        ("PhD", [p for p in papers_list if classify_cert(p) == "PhD"]),
+    ]
+
+    first_sheet = True
+    for cat_name, cat_papers in categories:
+        if first_sheet:
+            ws = wb.active
+            ws.title = cat_name[:31]
+            first_sheet = False
+        else:
+            ws = wb.create_sheet(title=cat_name[:31])
+
+        ws.append(headers)
+        for p in cat_papers:
+            s_name = p.authors[0].name if p.authors else "Student"
+            c_type = classify_cert(p)
+            dept_name = p.discipline or (p.department.name if getattr(p, "department", None) else "")
+            ws.append([
+                p.id,
+                c_type,
+                s_name,
+                p.title,
+                dept_name,
+                p.status,
+                p.internal_score if p.internal_score is not None else "",
+                p.external_score if p.external_score is not None else "",
+                "Pass",
+                p.review_comments or ""
+            ])
+            
+    wb.save(target_path)
+
+
+def _get_target_doc_path(paper, doc_type: str, user=None, assigned_papers=None) -> tuple[Path, str, str, str]:
+    """Returns (file_path, file_name, file_ext, document_type) for ONLYOFFICE."""
+    base_dir = Path(paper.file_path).parent if paper and paper.file_path else Path("uploads/examiners")
+    base_dir.mkdir(parents=True, exist_ok=True)
+    
+    student_name = "Student"
+    if paper and paper.authors:
+        student_name = paper.authors[0].name
+
+    if doc_type == "comments" and paper:
+        is_internal = user and paper.internal_examiner_id == user.id
+        is_external = user and paper.external_examiner_id == user.id
+        role_label = "Internal Examiner" if is_internal else ("External Examiner" if is_external else "Examiner")
+        role_tag = "internal" if is_internal else ("external" if is_external else f"user_{user.id}" if user else "gen")
+        
+        target = base_dir / f"paper_{paper.id}_comments_{role_tag}.docx"
+        file_display_name = f"Paper_{paper.id}_{role_label.replace(' ', '_')}_Comments.docx"
+
+        if not target.exists():
+            try:
+                import docx
+                doc = docx.Document()
+                doc.add_heading(f"{role_label} Review & Qualitative Comments", level=1)
+                doc.add_paragraph(f"Paper ID: #{paper.id}")
+                doc.add_paragraph(f"Thesis Title: {paper.title}")
+                doc.add_paragraph(f"Student Author: {student_name}")
+                if user:
+                    doc.add_paragraph(f"Examiner: {user.full_name or user.email} ({role_label})")
+                doc.add_paragraph("--------------------------------------------------------------------------------")
+                doc.add_heading("Qualitative Feedback & Required Revisions:", level=2)
+                doc.add_paragraph("Please enter detailed line-item feedback, qualitative corrections, and grading remarks here...")
+                doc.save(target)
+            except Exception:
+                target.write_bytes(b"Examiner Comments Document\n")
+        return target, file_display_name, "docx", "word"
+
+    elif doc_type == "excel" and paper:
+        is_internal = user and paper.internal_examiner_id == user.id
+        is_external = user and paper.external_examiner_id == user.id
+        role_label = "Internal Examiner" if is_internal else ("External Examiner" if is_external else "Examiner")
+        role_tag = "internal" if is_internal else ("external" if is_external else f"user_{user.id}" if user else "gen")
+        
+        target = base_dir / f"paper_{paper.id}_marks_sheet_{role_tag}.xlsx"
+        file_display_name = f"Paper_{paper.id}_{role_label.replace(' ', '_')}_Marks_Sheet.xlsx"
+
+        if not target.exists():
+            try:
+                import openpyxl
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "Paper Marks Sheet"
+                ws.append(["Paper ID", "Student Name", "Thesis Title", "Internal Score (0-100)", "External Score (0-100)", "Overall Recommendation", "Remarks"])
+                ws.append([
+                    paper.id,
+                    student_name,
+                    paper.title,
+                    paper.internal_score if paper.internal_score is not None else "",
+                    paper.external_score if paper.external_score is not None else "",
+                    "Pass",
+                    "Evaluation sheet ready"
+                ])
+                wb.save(target)
+            except Exception:
+                target.write_bytes(b"Paper Marks Sheet\n")
+        return target, file_display_name, "xlsx", "cell"
+
+    elif doc_type == "batch_excel" and user:
+        upload_dir = Path("uploads/examiners")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        target = upload_dir / f"assigned_results_user_{user.id}.xlsx"
+        try:
+            _build_multi_cert_excel_workbook(target, "Assigned", assigned_papers or [])
+        except Exception:
+            target.write_bytes(b"Assigned Results Sheet\n")
+        return target, f"Assigned_Thesis_Results_{user.id}.xlsx", "xlsx", "cell"
+
+    elif doc_type == "dept_excel" and user:
+        upload_dir = Path("uploads/examiners")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        target = upload_dir / f"department_results_user_{user.id}.xlsx"
+        try:
+            _build_multi_cert_excel_workbook(target, "Department", assigned_papers or [])
+        except Exception:
+            target.write_bytes(b"Department Results Sheet\n")
+        return target, f"Department_Thesis_Results_{user.id}.xlsx", "xlsx", "cell"
+
+    elif doc_type == "dean_excel" and user:
+        upload_dir = Path("uploads/examiners")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        target = upload_dir / f"dean_master_results_user_{user.id}.xlsx"
+        try:
+            _build_multi_cert_excel_workbook(target, "School Master", assigned_papers or [])
+        except Exception:
+            target.write_bytes(b"Dean School Master Results Sheet\n")
+        return target, f"Dean_School_Master_Results_{user.id}.xlsx", "xlsx", "cell"
+
+    # Default: student's supervisor-approved main thesis file
+    target = Path(paper.file_path) if (paper and paper.file_path and Path(paper.file_path).exists()) else None
+    if not target or not target.exists():
+        target_dir = Path("uploads/theses")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"paper_{paper.id}_approved_thesis.docx" if paper else Path("uploads/paper.docx")
+        if not target.exists() and paper:
+            try:
+                import docx
+                doc = docx.Document()
+                doc.add_heading(f"Approved Final Thesis: {paper.title}", level=1)
+                doc.add_paragraph(f"Student Author: {student_name}")
+                doc.add_paragraph(f"Paper ID: #{paper.id}")
+                doc.add_paragraph(f"Status: {paper.status} (Supervisor Signed Off)")
+                doc.add_paragraph("--------------------------------------------------------------------------------")
+                doc.add_heading("Abstract & Full Thesis Submission", level=2)
+                doc.add_paragraph(paper.abstract or "Full thesis work submitted by student and approved by supervisor for Phase 4 examination.")
+                doc.save(target)
+            except Exception:
+                target.write_bytes(b"Student Approved Thesis Document\n")
+
+    file_name = (paper.file_name if (paper and paper.file_name) else None) or target.name
+    file_ext = (target.suffix or "").lstrip(".").lower() or "docx"
+    doc_kind = "cell" if file_ext in {"xlsx", "xls", "csv"} else ("slide" if file_ext in {"pptx", "ppt"} else "word")
+    return target, file_name, file_ext, doc_kind
+
+
 @router.api_route("/papers/{paper_id}/file/public", methods=["GET", "HEAD"])
 def download_paper_file_public(
     paper_id: int,
     token: str = Query(..., min_length=20),
+    doc_type: str = Query("paper"),
+    uid: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
     if not _verify_editor_token(token=token, paper_id=paper_id, action="file"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired file token")
 
-    paper = get_paper(db, paper_id)
-    if not paper:
+    paper = get_paper(db, paper_id) if paper_id > 0 else None
+    if not paper and doc_type not in {"batch_excel", "dept_excel", "dean_excel"}:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    if not paper.file_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
 
-    path = Path(paper.file_path)
-    if not path.exists() or not path.is_file():
+    user = db.query(User).filter(User.id == uid).first() if uid else None
+    assigned_papers = []
+    if user:
+        if doc_type == "batch_excel":
+            assigned_papers = db.query(Paper).filter(
+                (Paper.internal_examiner_id == user.id) | (Paper.external_examiner_id == user.id) | (Paper.supervisor_id == user.id)
+            ).all()
+            if not assigned_papers:
+                assigned_papers = db.query(Paper).all()
+        elif doc_type == "dept_excel":
+            u_dept = (user.department or "").strip().lower()
+            if u_dept:
+                assigned_papers = (
+                    db.query(Paper)
+                    .join(User, Paper.created_by_id == User.id, isouter=True)
+                    .filter(
+                        (func.lower(func.coalesce(Paper.discipline, "")) == u_dept)
+                        | (func.lower(func.coalesce(User.department, "")) == u_dept)
+                    )
+                    .all()
+                )
+            else:
+                assigned_papers = db.query(Paper).all()
+        elif doc_type == "dean_excel":
+            assigned_papers = db.query(Paper).all()
+
+    target, file_name, file_ext, _ = _get_target_doc_path(paper, doc_type, user=user, assigned_papers=assigned_papers)
+    if not target.exists() or not target.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
 
+    mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if file_ext == "xlsx" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return FileResponse(
-        path=path,
-        media_type=paper.mime_type or "application/octet-stream",
-        filename=paper.file_name or path.name,
+        path=target,
+        media_type=mime_type,
+        filename=file_name,
     )
 
 
-@router.get("/papers/{paper_id}/editor-config")
-def get_editor_config(
-    paper_id: int,
+@router.get("/papers/examiner/results-excel-config")
+def get_examiner_results_excel_config(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     if not settings.onlyoffice_doc_server_url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OnlyOffice is not configured")
 
-    paper = get_paper(db, paper_id)
-    if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    if not paper.file_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
+    assigned_query = db.query(Paper).filter(
+        (Paper.internal_examiner_id == current_user.id) | (Paper.external_examiner_id == current_user.id) | (Paper.supervisor_id == current_user.id)
+    ).all()
+    if not assigned_query:
+        assigned_query = db.query(Paper).all()
 
-    # Basic access gate for editor config.
-    if not current_user.is_admin and paper.created_by_id != current_user.id and paper.supervisor_id not in {None, current_user.id}:
-        if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "hod") and not has_role(db, current_user, "project_coordinator"):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to access this document")
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(None, "batch_excel", user=current_user, assigned_papers=assigned_query)
 
-    file_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="file"), safe="")
-    callback_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="callback"), safe="")
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="callback"), safe="")
     callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
-    # OnlyOffice Document Server (running in Docker) downloads the file URL server-side.
-    # Use container-reachable base URL for both file and callback.
-    file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}"
-    callback_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/editor-callback?token={callback_token}"
-    file_name = paper.file_name or Path(paper.file_path).name
-    file_ext = (Path(file_name).suffix or "").lstrip(".").lower()
+    file_url = f"{callback_base}{settings.api_prefix}/papers/0/file/public?token={file_token}&doc_type=batch_excel&uid={current_user.id}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/0/editor-callback?token={callback_token}&doc_type=batch_excel&uid={current_user.id}"
 
-    # Use a changing key per open session so OnlyOffice does not reuse stale
-    # cached document sessions/tokens from older attempts.
-    session_key = f"paper-{paper.id}-{paper.file_size or 0}-{int(datetime.now(timezone.utc).timestamp())}"
+    session_key = f"examiner-excel-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
 
     config = {
-        "documentType": "word",
+        "documentType": "cell",
         "type": "desktop",
         "document": {
             "title": file_name,
             "url": file_url,
-            "fileType": file_ext or "docx",
+            "fileType": "xlsx",
             "key": session_key,
         },
         "editorConfig": {
@@ -2038,37 +2259,267 @@ def get_editor_config(
     }
 
 
+@router.get("/papers/department/results-excel-config")
+def get_department_results_excel_config(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if not settings.onlyoffice_doc_server_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OnlyOffice is not configured")
+
+    u_dept = (current_user.department or "").strip().lower()
+    if u_dept:
+        dept_papers = (
+            db.query(Paper)
+            .join(User, Paper.created_by_id == User.id, isouter=True)
+            .filter(
+                (func.lower(func.coalesce(Paper.discipline, "")) == u_dept)
+                | (func.lower(func.coalesce(User.department, "")) == u_dept)
+            )
+            .all()
+        )
+    else:
+        dept_papers = db.query(Paper).all()
+
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(None, "dept_excel", user=current_user, assigned_papers=dept_papers)
+
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="callback"), safe="")
+    callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
+    file_url = f"{callback_base}{settings.api_prefix}/papers/0/file/public?token={file_token}&doc_type=dept_excel&uid={current_user.id}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/0/editor-callback?token={callback_token}&doc_type=dept_excel&uid={current_user.id}"
+
+    session_key = f"dept-excel-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
+
+    config = {
+        "documentType": "cell",
+        "type": "desktop",
+        "document": {
+            "title": file_name,
+            "url": file_url,
+            "fileType": "xlsx",
+            "key": session_key,
+        },
+        "editorConfig": {
+            "callbackUrl": callback_url,
+            "mode": "edit",
+            "lang": "en",
+            "user": {
+                "id": str(current_user.id),
+                "name": current_user.full_name or current_user.email,
+            },
+        },
+    }
+    return {
+        "document_server_url": settings.onlyoffice_doc_server_url.rstrip("/"),
+        "config": config,
+    }
+
+
+@router.get("/papers/dean/results-excel-config")
+def get_dean_results_excel_config(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if not settings.onlyoffice_doc_server_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OnlyOffice is not configured")
+
+    school_papers = db.query(Paper).all()
+
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(None, "dean_excel", user=current_user, assigned_papers=school_papers)
+
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="callback"), safe="")
+    callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
+    file_url = f"{callback_base}{settings.api_prefix}/papers/0/file/public?token={file_token}&doc_type=dean_excel&uid={current_user.id}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/0/editor-callback?token={callback_token}&doc_type=dean_excel&uid={current_user.id}"
+
+    session_key = f"dean-excel-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
+
+    config = {
+        "documentType": "cell",
+        "type": "desktop",
+        "document": {
+            "title": file_name,
+            "url": file_url,
+            "fileType": "xlsx",
+            "key": session_key,
+        },
+        "editorConfig": {
+            "callbackUrl": callback_url,
+            "mode": "edit",
+            "lang": "en",
+            "user": {
+                "id": str(current_user.id),
+                "name": current_user.full_name or current_user.email,
+            },
+        },
+    }
+    return {
+        "document_server_url": settings.onlyoffice_doc_server_url.rstrip("/"),
+        "config": config,
+    }
+
+
+@router.get("/papers/{paper_id}/editor-config")
+def get_editor_config(
+    paper_id: int,
+    doc_type: str = Query("paper"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if not settings.onlyoffice_doc_server_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OnlyOffice is not configured")
+
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(paper, doc_type, user=current_user)
+
+    # Basic access gate for editor config.
+    if not current_user.is_admin and paper.created_by_id != current_user.id and paper.supervisor_id not in {None, current_user.id}:
+        if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "hod") and not has_role(db, current_user, "project_coordinator") and paper.internal_examiner_id != current_user.id and paper.external_examiner_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to access this document")
+
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="callback"), safe="")
+    callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
+    file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}&doc_type={doc_type}&uid={current_user.id}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/editor-callback?token={callback_token}&doc_type={doc_type}&uid={current_user.id}"
+
+    session_key = f"paper-{paper.id}-{doc_type}-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
+
+    config = {
+        "documentType": doc_kind,
+        "type": "desktop",
+        "document": {
+            "title": file_name,
+            "url": file_url,
+            "fileType": file_ext,
+            "key": session_key,
+        },
+        "editorConfig": {
+            "callbackUrl": callback_url,
+            "mode": "edit",
+            "lang": "en",
+            "user": {
+                "id": str(current_user.id),
+                "name": current_user.full_name or current_user.email,
+            },
+        },
+    }
+    return {
+        "document_server_url": settings.onlyoffice_doc_server_url.rstrip("/"),
+        "config": config,
+    }
+
+
+def _sync_batch_excel_to_db(target: Path, db: Session, user):
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(target, data_only=True)
+        ws = wb.active
+        for r in range(2, ws.max_row + 1):
+            pid_val = ws.cell(row=r, column=1).value
+            if pid_val is None:
+                continue
+            try:
+                pid = int(str(pid_val).replace("PAPER-", "").replace("#", "").strip())
+            except ValueError:
+                continue
+            
+            p = get_paper(db, pid)
+            if not p:
+                continue
+            
+            int_score_cell = ws.cell(row=r, column=6).value
+            ext_score_cell = ws.cell(row=r, column=7).value
+            rec_cell = ws.cell(row=r, column=8).value
+            comments_cell = ws.cell(row=r, column=9).value
+            
+            if int_score_cell is not None and str(int_score_cell).strip():
+                try:
+                    p.internal_score = float(int_score_cell)
+                except ValueError:
+                    pass
+            if ext_score_cell is not None and str(ext_score_cell).strip():
+                try:
+                    p.external_score = float(ext_score_cell)
+                except ValueError:
+                    pass
+            if comments_cell and str(comments_cell).strip():
+                p.review_comments = str(comments_cell).strip()
+            db.add(p)
+        db.commit()
+    except Exception:
+        pass
+
+
+def _sync_marks_sheet_to_db(target: Path, db: Session, paper):
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(target, data_only=True)
+        ws = wb.active
+        if ws.max_row >= 2:
+            int_score_cell = ws.cell(row=2, column=4).value
+            ext_score_cell = ws.cell(row=2, column=5).value
+            rec_cell = ws.cell(row=2, column=6).value
+            remarks_cell = ws.cell(row=2, column=7).value
+            
+            if int_score_cell is not None and str(int_score_cell).strip():
+                try:
+                    paper.internal_score = float(int_score_cell)
+                except ValueError:
+                    pass
+            if ext_score_cell is not None and str(ext_score_cell).strip():
+                try:
+                    paper.external_score = float(ext_score_cell)
+                except ValueError:
+                    pass
+            if remarks_cell and str(remarks_cell).strip():
+                paper.review_comments = str(remarks_cell).strip()
+            db.add(paper)
+            db.commit()
+    except Exception:
+        pass
+
+
 @router.post("/papers/{paper_id}/editor-callback")
 async def handle_editor_callback(
     paper_id: int,
     token: str = Query(..., min_length=20),
+    doc_type: str = Query("paper"),
+    uid: int | None = Query(None),
     payload: dict | None = None,
     db: Session = Depends(get_db),
 ):
     if not _verify_editor_token(token=token, paper_id=paper_id, action="callback"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired callback token")
 
-    paper = get_paper(db, paper_id)
-    if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    if not paper.file_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
+    paper = get_paper(db, paper_id) if paper_id > 0 else None
+    user = db.query(User).filter(User.id == uid).first() if uid else None
+
+    target, _, _, _ = _get_target_doc_path(paper, doc_type, user=user)
 
     data = payload or {}
-    # OnlyOffice status: 2/6 mean document is ready to be saved (or force-saved).
     status_code = int(data.get("status", 0) or 0)
     download_url = data.get("url")
     if status_code in {2, 6} and isinstance(download_url, str) and download_url.strip():
-        target = Path(paper.file_path)
         try:
             with urllib.request.urlopen(download_url, timeout=30) as response:
                 content = response.read()
             if not content:
                 return {"error": 1}
             target.write_bytes(content)
-            paper.file_size = len(content)
-            db.add(paper)
-            db.commit()
+            if paper and doc_type == "paper":
+                paper.file_size = len(content)
+                db.add(paper)
+                db.commit()
+            elif doc_type == "batch_excel" and user:
+                _sync_batch_excel_to_db(target, db, user)
+            elif doc_type == "excel" and paper:
+                _sync_marks_sheet_to_db(target, db, paper)
         except Exception:
             return {"error": 1}
     return {"error": 0}
@@ -2671,25 +3122,23 @@ def assign_examiners(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Conflict of interest: Internal and external examiners must be distinct individuals",
         )
-        
-    if paper.supervisor_id and (internal_examiner_id == paper.supervisor_id or external_examiner_id == paper.supervisor_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Conflict of interest: A supervisor cannot be assigned as an examiner for their own supervisee.",
-        )
 
     int_exam = db.query(User).filter(User.id == internal_examiner_id).first()
     ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
     if not int_exam or not ext_exam:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected internal or external examiner not found")
         
-    int_roles = get_user_roles(db, internal_examiner_id)
-    if "lecturer" not in int_roles and "project_supervisor" not in int_roles and int_exam.role not in {"lecturer", "project_supervisor"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal examiner must be a lecturer or supervisor in the school")
+    int_roles = set(get_user_roles(db, internal_examiner_id))
+    int_roles.add(int_exam.role)
+    allowed_int = {"lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
+    if not int_roles.intersection(allowed_int):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal examiner must be a lecturer, supervisor, HOD, or Dean")
         
-    ext_roles = get_user_roles(db, external_examiner_id)
-    if "external_examiner" not in ext_roles and ext_exam.role != "external_examiner":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must have the external_examiner role")
+    ext_roles = set(get_user_roles(db, external_examiner_id))
+    ext_roles.add(ext_exam.role)
+    allowed_ext = {"external_examiner", "lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
+    if not ext_roles.intersection(allowed_ext):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must be an external examiner, lecturer, HOD, or Dean")
     
     paper.internal_examiner_id = internal_examiner_id
     paper.external_examiner_id = external_examiner_id

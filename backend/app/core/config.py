@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # OnlyOffice integration
     onlyoffice_doc_server_url: str | None = None
     # Publicly reachable backend base URL for OnlyOffice callbacks/file fetch
-    public_api_base_url: str = "http://127.0.0.1:8001"
+    public_api_base_url: str = "http://127.0.0.1:8011"
     # Optional dedicated callback base URL used by OnlyOffice server container.
     # Use this when browser and container need different backend hostnames.
     onlyoffice_callback_base_url: str | None = None

@@ -23,13 +23,16 @@ import {
   apiRemoveUserRole,
   apiRemoveDepartmentSupervisor,
   apiUpdateUserRole,
+  apiBulkAssignExaminers,
+  apiDownloadBulkExaminerTemplate,
   type ApiDepartment,
   type ApiDepartmentSupervisor,
   type ApiImportAccountsSummary,
+  type ApiBulkAssignSummary,
   type ApiUser,
   type ApiUserRole,
 } from '../../lib/api'
-import { Users, Trash2, CheckCircle, Lock, Upload, FileText } from 'lucide-react'
+import { Users, Trash2, CheckCircle, Lock, Upload, FileText, FileSpreadsheet, FileCheck, Download } from 'lucide-react'
 
 interface ManagedAccount {
   id: number
@@ -126,6 +129,7 @@ export function AccountManagement() {
   const { user } = useAuth()
   const hasRole = (role: ApiUserRole) => !!user && (user.role === role || (user.roles || []).includes(role))
   const canManageAccounts = hasRole('system_admin')
+  const canBatchAssignExaminers = hasRole('hod') || hasRole('project_coordinator') || hasRole('system_admin')
   const canCreateExternalExaminer = hasRole('hod') || hasRole('project_coordinator') || hasRole('system_admin')
   const isHodOrCoordOnly = (hasRole('hod') || hasRole('project_coordinator')) && !hasRole('system_admin')
   const canAssignDean = hasRole('system_admin')
@@ -134,7 +138,7 @@ export function AccountManagement() {
   const canAssignSupervisors = hasRole('project_coordinator')
   const canManageAssignments = canAssignDean || canAssignHod || canAssignCoordinators || canAssignSupervisors
   const canViewAssignments = hasRole('system_admin') || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator') || hasRole('lecturer')
-  const canManage = canManageAccounts || canManageAssignments || canViewAssignments
+  const canManage = canManageAccounts || canManageAssignments || canViewAssignments || canBatchAssignExaminers
   const [accounts, setAccounts] = useState<ManagedAccount[]>([])
   const [candidateUsers, setCandidateUsers] = useState<ApiUser[]>([])
   const [departments, setDepartments] = useState<ApiDepartment[]>([])
@@ -174,6 +178,12 @@ export function AccountManagement() {
   const [bulkUploadMessage, setBulkUploadMessage] = useState('')
   const [bulkSummary, setBulkSummary] = useState<ApiImportAccountsSummary | null>(null)
   const [isBulkUploading, setIsBulkUploading] = useState(false)
+
+  // Examiner batch upload state
+  const [examinerFile, setExaminerFile] = useState<File | null>(null)
+  const [isExaminerBulkUploading, setIsExaminerBulkUploading] = useState(false)
+  const [examinerBulkMessage, setExaminerBulkMessage] = useState('')
+  const [examinerBulkSummary, setExaminerBulkSummary] = useState<ApiBulkAssignSummary | null>(null)
 
   const handleBulkImport = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -803,6 +813,102 @@ export function AccountManagement() {
                         </ul>
                       )}
                     </div>
+                  )}
+                </div>
+              )}
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {canBatchAssignExaminers && (
+        <Card className="border-primary/30">
+          <CardHeader>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold flex items-center gap-2 text-primary">
+                  <FileSpreadsheet className="h-5 w-5" />
+                  Phase 3: Automated Batch Examiner Mapping (CSV / Excel)
+                </h3>
+                <CardDescription>
+                  Upload a batch file mapping Student_ID (or Thesis ID), Internal_Examiner_ID, and External_Examiner_ID to automatically assign examiners and route theses into examination.
+                </CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                className="gap-2 shrink-0"
+                onClick={async () => {
+                  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                  if (!token) return
+                  try {
+                    const blob = await apiDownloadBulkExaminerTemplate(token)
+                    const url = window.URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = 'Download_Examiner_Mapping_Template.csv'
+                    a.click()
+                    window.URL.revokeObjectURL(url)
+                  } catch (err) {
+                    setExaminerBulkMessage('Failed to download template')
+                  }
+                }}
+              >
+                <Download className="h-4 w-4" />
+                Download Template (.csv)
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                if (!examinerFile) return
+                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                if (!token) return
+                setIsExaminerBulkUploading(true)
+                setExaminerBulkMessage('')
+                setExaminerBulkSummary(null)
+                try {
+                  const res = await apiBulkAssignExaminers(examinerFile, token)
+                  setExaminerBulkSummary(res)
+                  setExaminerBulkMessage(`Successfully processed ${res.successful} out of ${res.total_processed} examiner assignments!`)
+                } catch (err) {
+                  setExaminerBulkMessage(extractErrorMessage(err))
+                } finally {
+                  setIsExaminerBulkUploading(false)
+                }
+              }}
+              className="space-y-4"
+            >
+              <div className="space-y-2">
+                <Label htmlFor="examiner-batch-file">Select Batch Examiner Mapping File (.csv or .xlsx)</Label>
+                <Input
+                  id="examiner-batch-file"
+                  type="file"
+                  accept=".csv,.xlsx,.xlsm"
+                  onChange={(e) => setExaminerFile(e.target.files?.[0] || null)}
+                />
+              </div>
+              <Button type="submit" disabled={!examinerFile || isExaminerBulkUploading} size="sm">
+                {isExaminerBulkUploading ? 'Mapping Examiners...' : 'Upload & Map Examiner Batch'}
+              </Button>
+              {examinerBulkMessage && (
+                <p className="text-sm font-medium text-primary mt-2">{examinerBulkMessage}</p>
+              )}
+              {examinerBulkSummary && (
+                <div className="text-sm space-y-2 border rounded-md p-3 bg-primary/10 border-primary/20 mt-3">
+                  <div className="flex items-center gap-2 font-bold text-primary">
+                    <FileCheck className="h-4 w-4" />
+                    Examiner Batch Mapping Summary: {examinerBulkSummary.successful} / {examinerBulkSummary.total_processed} successfully mapped!
+                  </div>
+                  {examinerBulkSummary.errors.length > 0 && (
+                    <ul className="mt-1 list-disc pl-5 text-xs text-destructive max-h-36 overflow-y-auto">
+                      {examinerBulkSummary.errors.map((err, idx) => (
+                        <li key={`exam-err-${idx}`}>{err}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}

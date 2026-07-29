@@ -27,6 +27,7 @@ from app.models.thesis_system import (
     StepFinalization,
     ExaminerAssignment,
     ExaminerUpload,
+    ExaminationResult,
     HodComment,
     Correction,
     Publication,
@@ -35,7 +36,16 @@ from app.models.thesis_system import (
 )
 from app.models.user import User
 from app.models.user_role import UserRole
+from app.schemas.examination import (
+    AdminMarkSheetResponse,
+    BulkAssignSummary,
+    ExaminerGradingRequest,
+    ExaminerMarkDetail,
+    ExaminerQualitativeFeedback,
+    StudentFeedbackResponse,
+)
 from app.services.email_service import send_notification_email
+from app.services.import_service import load_rows_from_upload
 from app.services.notification_service import create_notification
 from app.services.user_service import get_user_roles, has_role
 
@@ -2031,5 +2041,385 @@ async def handle_step_editor_callback(
         except Exception:
             return {"error": 1}
     return {"error": 0}
+
+
+# ==========================================
+# Phase 3 & 4 — Bulk Examiner Assignment & In-System Evaluation
+# ==========================================
+
+@router.post("/theses/examiners/bulk-assign", response_model=BulkAssignSummary)
+async def bulk_assign_examiners(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_role("hod", "project_coordinator", "system_admin")),
+):
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file provided")
+
+    raw_bytes = await file.read()
+    try:
+        rows = load_rows_from_upload(file.filename, raw_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file contains no rows")
+
+    summary = BulkAssignSummary(total_processed=len(rows))
+
+    def _resolve_user(identifier: str) -> User | None:
+        identifier_clean = identifier.strip()
+        if not identifier_clean:
+            return None
+        if identifier_clean.isdigit():
+            u = db.query(User).filter(User.id == int(identifier_clean)).first()
+            if u:
+                return u
+        u = db.query(User).filter(func.lower(User.school_id) == identifier_clean.lower()).first()
+        if u:
+            return u
+        u = db.query(User).filter(func.lower(User.email) == identifier_clean.lower()).first()
+        return u
+
+    def _map_col(row_dict: dict[str, str], candidates: list[str]) -> str:
+        norm = {"".join(c for c in k.strip().lower() if c.isalnum()): v for k, v in row_dict.items()}
+        for cand in candidates:
+            cand_norm = "".join(c for c in cand.strip().lower() if c.isalnum())
+            if cand_norm in norm and norm[cand_norm].strip():
+                return norm[cand_norm].strip()
+        return ""
+
+    for idx, row in enumerate(rows, start=1):
+        student_val = _map_col(row, ["student_id", "student id", "thesis_id", "thesis id", "student_email", "email"])
+        int_val = _map_col(row, ["internal_examiner_id", "internal examiner id", "internal_examiner", "internal_examiner_email"])
+        ext_val = _map_col(row, ["external_examiner_id", "external examiner id", "external_examiner", "external_examiner_email"])
+
+        if not student_val or not int_val or not ext_val:
+            summary.failed += 1
+            summary.errors.append(f"Row {idx}: Missing student_id, internal_examiner_id, or external_examiner_id")
+            continue
+
+        thesis = None
+        if student_val.isdigit():
+            thesis = db.query(Thesis).filter(Thesis.id == int(student_val)).first()
+
+        if not thesis:
+            stu_user = _resolve_user(student_val)
+            if stu_user:
+                thesis = db.query(Thesis).filter(Thesis.student_id == stu_user.id).order_by(Thesis.created_at.desc()).first()
+
+        if not thesis:
+            summary.failed += 1
+            summary.errors.append(f"Row {idx}: Thesis or Student '{student_val}' not found")
+            continue
+
+        int_user = _resolve_user(int_val)
+        if not int_user:
+            summary.failed += 1
+            summary.errors.append(f"Row {idx}: Internal Examiner '{int_val}' not found")
+            continue
+
+        ext_user = _resolve_user(ext_val)
+        if not ext_user:
+            summary.failed += 1
+            summary.errors.append(f"Row {idx}: External Examiner '{ext_val}' not found")
+            continue
+
+        if int_user.id == ext_user.id:
+            summary.failed += 1
+            summary.errors.append(f"Row {idx}: Internal and External examiners must be different users ({int_user.email})")
+            continue
+
+        db.query(ExaminerAssignment).filter(ExaminerAssignment.thesis_id == thesis.id).delete()
+        a1 = ExaminerAssignment(thesis_id=thesis.id, examiner_id=int_user.id, examiner_type="internal")
+        a2 = ExaminerAssignment(thesis_id=thesis.id, examiner_id=ext_user.id, examiner_type="external")
+        db.add(a1)
+        db.add(a2)
+
+        thesis.phase = 3
+        paper = db.query(Paper).filter(Paper.id == thesis.id).first()
+        if paper:
+            paper.internal_examiner_id = int_user.id
+            paper.external_examiner_id = ext_user.id
+            paper.status = "phase4_marking"
+
+        db.commit()
+        _record_audit_log(db, thesis_id=thesis.id, actor_id=current_user.id, action="bulk_assign_examiners", from_phase=thesis.phase, to_phase=3)
+
+        student_user = db.query(User).filter(User.id == thesis.student_id).first()
+
+        create_notification(db, user_id=int_user.id, paper_id=thesis.id, ntype="workflow_update", message=f"Assigned as Internal Examiner for thesis: '{thesis.topic_title}'.")
+        _send_thesis_email(
+            to_user=int_user,
+            subject=f"[GIMPA Thesis] Examiner Assignment — {thesis.topic_title}",
+            body=(
+                f"You have been assigned as an Internal Examiner for the following thesis.\n\n"
+                f"Student: {student_user.full_name if student_user else 'N/A'}\n"
+                f"Thesis Title: {thesis.topic_title}\n\n"
+                f"Please log in to the GIMPA Thesis Repository to view and evaluate the thesis draft."
+            ),
+        )
+
+        create_notification(db, user_id=ext_user.id, paper_id=thesis.id, ntype="workflow_update", message=f"Assigned as External Examiner for thesis: '{thesis.topic_title}'.")
+        _send_thesis_email(
+            to_user=ext_user,
+            subject=f"[GIMPA Thesis] Examiner Assignment — {thesis.topic_title}",
+            body=(
+                f"You have been assigned as an External Examiner for the following thesis.\n\n"
+                f"Student: {student_user.full_name if student_user else 'N/A'}\n"
+                f"Thesis Title: {thesis.topic_title}\n\n"
+                f"Please log in to the GIMPA Thesis Repository to view and evaluate the thesis draft."
+            ),
+        )
+
+        create_notification(db, user_id=thesis.student_id, paper_id=thesis.id, ntype="workflow_update", message="Examiners have been assigned to your thesis.")
+        _send_thesis_email(
+            to_user=student_user,
+            subject=f"[GIMPA Thesis] Examiners Assigned — {thesis.topic_title}",
+            body=(
+                f"Internal and External Examiners have been assigned to your thesis.\n\n"
+                f"Thesis Title: {thesis.topic_title}\n\n"
+                f"Your thesis is currently under examination. You will be notified when examiner feedback is available."
+            ),
+        )
+
+        summary.successful += 1
+
+    return summary
+
+
+@router.get("/theses/examiners/bulk-assign-template")
+def download_bulk_assign_template():
+    content = "Student_ID,Internal_Examiner_ID,External_Examiner_ID\n10928341,20491823,20491824\n"
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="Download_Examiner_Mapping_Template.csv"'},
+    )
+
+
+@router.get("/theses/{thesis_id}/feedback", response_model=StudentFeedbackResponse)
+def get_student_feedback(
+    thesis_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
+    paper = db.query(Paper).filter(Paper.id == thesis_id).first()
+    if not thesis and not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
+
+    student_id = thesis.student_id if thesis else paper.created_by_id if paper else None
+    supervisor_id = thesis.supervisor_id if thesis else paper.supervisor_id if paper else None
+
+    is_admin_like = current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator") or has_role(db, current_user, "dean")
+    if current_user.id not in {student_id, supervisor_id} and not is_admin_like:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    topic_title = thesis.topic_title if thesis else paper.title if paper else "Thesis"
+    current_status = thesis.topic_status if thesis else paper.status if paper else "pending"
+
+    latest_hod_comment = db.query(HodComment).filter(HodComment.thesis_id == thesis_id).order_by(HodComment.sent_to_student_at.desc()).first()
+    compiled = latest_hod_comment.compiled_comment if latest_hod_comment else (paper.examiner_corrections if paper else None)
+
+    exam_results = db.query(ExaminationResult).filter(ExaminationResult.thesis_id == thesis_id).all()
+    qual_list = []
+    overall_rec = None
+    for res in exam_results:
+        if res.is_submitted:
+            qual_list.append(
+                ExaminerQualitativeFeedback(
+                    examiner_type=res.examiner_type,
+                    general_comments=res.general_comments,
+                    recommendation=res.recommendation,
+                    submitted_at=res.submitted_at.isoformat() if res.submitted_at else None,
+                )
+            )
+            if res.recommendation and not overall_rec:
+                overall_rec = res.recommendation
+
+    revision_str = overall_rec or ("Pending Revision" if current_status == "phase5_corrections" else "Under Review")
+
+    file_path = paper.file_path if paper else None
+    file_name = paper.file_name if paper else None
+
+    return StudentFeedbackResponse(
+        thesis_id=thesis_id,
+        topic_title=topic_title,
+        status=current_status,
+        revision_status=revision_str,
+        compiled_comments=compiled,
+        qualitative_feedback=qual_list,
+        file_path=file_path,
+        file_name=file_name,
+    )
+
+
+@router.get("/theses/{thesis_id}/examination-marks", response_model=AdminMarkSheetResponse)
+def get_examination_marks(
+    thesis_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_role("hod", "project_coordinator", "dean", "system_admin")),
+):
+    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
+    paper = db.query(Paper).filter(Paper.id == thesis_id).first()
+    if not thesis and not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
+
+    topic_title = thesis.topic_title if thesis else paper.title if paper else "Thesis"
+    current_status = thesis.topic_status if thesis else paper.status if paper else "pending"
+
+    exam_results = db.query(ExaminationResult).filter(ExaminationResult.thesis_id == thesis_id).all()
+    results_list = []
+    scores = []
+    recommendations = []
+
+    internal_score = paper.internal_score if paper else None
+    external_score = paper.external_score if paper else None
+
+    for res in exam_results:
+        exam_user = db.query(User).filter(User.id == res.examiner_id).first()
+        if res.score is not None:
+            scores.append(res.score)
+            if res.examiner_type == "internal":
+                internal_score = res.score
+            elif res.examiner_type == "external":
+                external_score = res.score
+        if res.recommendation:
+            recommendations.append(res.recommendation)
+
+        results_list.append(
+            ExaminerMarkDetail(
+                id=res.id,
+                examiner_id=res.examiner_id,
+                examiner_name=exam_user.full_name or exam_user.email if exam_user else None,
+                examiner_type=res.examiner_type,
+                score=res.score,
+                recommendation=res.recommendation,
+                general_comments=res.general_comments,
+                annotated_file_path=res.annotated_file_path,
+                is_submitted=res.is_submitted,
+                submitted_at=res.submitted_at.isoformat() if res.submitted_at else None,
+            )
+        )
+
+    avg_score = None
+    if internal_score is not None and external_score is not None:
+        avg_score = round((internal_score + external_score) / 2.0, 2)
+    elif scores:
+        avg_score = round(sum(scores) / len(scores), 2)
+
+    final_rec = recommendations[0] if recommendations else None
+
+    return AdminMarkSheetResponse(
+        thesis_id=thesis_id,
+        topic_title=topic_title,
+        status=current_status,
+        internal_score=internal_score,
+        external_score=external_score,
+        average_score=avg_score,
+        final_recommendation=final_rec,
+        examiner_results=results_list,
+    )
+
+
+@router.post("/theses/{thesis_id}/examination-marks")
+def submit_examination_marks(
+    thesis_id: int,
+    score: float | None = Form(None),
+    recommendation: str | None = Form(None),
+    general_comments: str | None = Form(None),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
+    paper = db.query(Paper).filter(Paper.id == thesis_id).first()
+    if not thesis and not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
+
+    assignment = db.query(ExaminerAssignment).filter(
+        ExaminerAssignment.thesis_id == thesis_id,
+        ExaminerAssignment.examiner_id == current_user.id
+    ).first()
+
+    is_admin = current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+    if not assignment and not is_admin:
+        if paper and (paper.internal_examiner_id == current_user.id or paper.external_examiner_id == current_user.id):
+            examiner_type = "internal" if paper.internal_examiner_id == current_user.id else "external"
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only assigned examiners can submit marks")
+    else:
+        examiner_type = assignment.examiner_type if assignment else "internal"
+
+    annotated_path = None
+    if file:
+        safe_name = f"{uuid4().hex}_{Path(file.filename or 'annotated.docx').name}"
+        dest = UPLOADS_DIR / safe_name
+        content = file.file.read()
+        dest.write_bytes(content)
+        annotated_path = str(dest)
+
+    exam_res = db.query(ExaminationResult).filter(
+        ExaminationResult.thesis_id == thesis_id,
+        ExaminationResult.examiner_id == current_user.id
+    ).first()
+
+    if not exam_res:
+        exam_res = ExaminationResult(
+            thesis_id=thesis_id,
+            examiner_id=current_user.id,
+            examiner_type=examiner_type,
+        )
+        db.add(exam_res)
+
+    exam_res.score = score
+    exam_res.recommendation = recommendation
+    exam_res.general_comments = general_comments
+    if annotated_path:
+        exam_res.annotated_file_path = annotated_path
+    exam_res.is_submitted = True
+    exam_res.submitted_at = datetime.now(timezone.utc)
+
+    if paper:
+        if examiner_type == "external":
+            paper.external_score = score
+            if annotated_path: paper.external_result_file_path = annotated_path
+        else:
+            paper.internal_score = score
+            if annotated_path: paper.internal_result_file_path = annotated_path
+        if general_comments:
+            paper.examiner_corrections = (paper.examiner_corrections or "") + f"\n[{current_user.full_name or current_user.email}]: {general_comments}"
+
+    db.commit()
+
+    topic_title = thesis.topic_title if thesis else paper.title if paper else "Thesis"
+    target_dept_id = thesis.department_id if thesis else paper.department_id if paper else None
+    if target_dept_id:
+        dept = db.query(Department).filter(Department.id == target_dept_id).first()
+        if dept and dept.hod_user_id:
+            hod_user = db.query(User).filter(User.id == dept.hod_user_id).first()
+            notif_msg = f"Examiner {current_user.full_name or current_user.email} submitted in-system evaluation for '{topic_title}'."
+            create_notification(
+                db,
+                user_id=dept.hod_user_id,
+                paper_id=thesis_id,
+                ntype="workflow_update",
+                message=notif_msg,
+            )
+            _send_thesis_email(
+                to_user=hod_user,
+                subject=f"[GIMPA Thesis] Examination Submitted — {topic_title}",
+                body=(
+                    f"An examiner has submitted their evaluation for the following thesis.\n\n"
+                    f"Examiner: {current_user.full_name or current_user.email}\n"
+                    f"Thesis Title: {topic_title}\n"
+                    f"Recommendation: {recommendation or 'N/A'}\n\n"
+                    f"Please log in to review all examiner scores and qualitative feedback."
+                ),
+            )
+
+    return {"message": "Examination marks submitted successfully", "thesis_id": thesis_id}
+
 
 

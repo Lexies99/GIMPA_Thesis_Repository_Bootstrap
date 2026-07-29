@@ -42,6 +42,7 @@ class Thesis(Base):
     examiner_assignments = relationship("ExaminerAssignment", cascade="all, delete-orphan", back_populates="thesis")
     hod_comments = relationship("HodComment", cascade="all, delete-orphan", back_populates="thesis")
     corrections = relationship("Correction", cascade="all, delete-orphan", back_populates="thesis")
+    examination_results = relationship("ExaminationResult", cascade="all, delete-orphan", back_populates="thesis")
     publication = relationship("Publication", uselist=False, back_populates="thesis")
     document_comments = relationship("DocumentComment", cascade="all, delete-orphan", back_populates="thesis")
     audit_logs = relationship("AuditLog", cascade="all, delete-orphan", back_populates="thesis")
@@ -185,3 +186,22 @@ class AuditLog(Base):
 
     thesis = relationship("Thesis", back_populates="audit_logs")
     actor = relationship("User")
+
+
+class ExaminationResult(Base):
+    __tablename__ = "examination_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    thesis_id = Column(Integer, ForeignKey("theses.id", ondelete="CASCADE"), nullable=False, index=True)
+    examiner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    examiner_type = Column(String(32), nullable=False, default="internal")  # internal, external
+    score = Column(Float, nullable=True)
+    recommendation = Column(String(64), nullable=True)  # Pass, Minor Revisions, Major Revisions, Fail
+    general_comments = Column(Text, nullable=True)
+    annotated_file_path = Column(String(1024), nullable=True)
+    is_submitted = Column(Boolean, nullable=False, default=False)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+
+    thesis = relationship("Thesis", back_populates="examination_results")
+    examiner = relationship("User")
+
