@@ -38,8 +38,7 @@ import type {
 } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentCommentViewer } from './DocumentCommentViewer'
-import { DocxViewer } from './DocxViewer'
-import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Eye, Download } from 'lucide-react'
+import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download } from 'lucide-react'
 
 interface StudentPaperWorkflowProps {
   paper: ApiPaper
@@ -54,7 +53,7 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
   const [file, setFile] = useState<File | null>(null)
   const [combinedFile, setCombinedFile] = useState<File | null>(null)
   const [draftFile, setDraftFile] = useState<File | null>(null)
-  const [viewingStepId, setViewingStepId] = useState<number | null>(null)
+  
   
   const [ch1, setCh1] = useState(!!paper.ch1_student_done)
   const [ch2, setCh2] = useState(!!paper.ch2_student_done)
@@ -389,10 +388,12 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 text-[11px] text-primary border-primary/30 font-semibold"
-                      onClick={() => setViewingStepId(viewingStepId === st.id ? null : st.id)}
+                      onClick={() => {
+                        window.open(`/editor?stepId=${st.id}`, '_blank')
+                      }}
+                      className="h-7 text-[11px] text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold"
                     >
-                      <Eye className="size-3 mr-1" /> {viewingStepId === st.id ? 'Close Reader' : `👁 View Step ${st.step_number}`}
+                      📝 View & Edit Step {st.step_number} in Editor
                     </Button>
                     <Button
                       size="sm"
@@ -436,15 +437,7 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
                     )}
                   </div>
 
-                  {viewingStepId === st.id && (
-                    <div className="pt-2">
-                      <DocxViewer
-                        fileUrl={`${apiBase}/theses/steps/${st.id}/file?t=${Date.now()}`}
-                        token={token}
-                        filename={st.title || `Step_${st.step_number}.docx`}
-                      />
-                    </div>
-                  )}
+                  
                 </div>
               ))}
             </div>
