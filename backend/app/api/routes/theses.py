@@ -842,6 +842,62 @@ def step_decision(
         from app.api.routes.papers import _to_paper_read
         return _to_paper_read(paper, db, current_user)
     return {"ok": True}
+
+
+@router.post("/theses/steps/{step_id}/resubmit")
+def resubmit_step(
+    step_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    step = db.query(Step).filter(Step.id == step_id).first()
+    if not step:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
+
+    thesis = db.query(Thesis).filter(Thesis.id == step.thesis_id).first()
+    paper = db.query(Paper).filter(Paper.id == step.thesis_id).first()
+
+    student_id = thesis.student_id if thesis else paper.created_by_id if paper else None
+    if student_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the student can resubmit this step")
+
+    if step.status == "approved":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot resubmit an approved step")
+
+    step.status = "submitted"
+    db.commit()
+
+    supervisor_id = (thesis.supervisor_id if thesis else None) or (paper.supervisor_id if paper else None)
+    topic_title = (thesis.topic_title if thesis else None) or (paper.title if paper else f"Thesis #{step.thesis_id}")
+    if supervisor_id:
+        sup = db.query(User).filter(User.id == supervisor_id).first()
+        student_obj = db.query(User).filter(User.id == student_id).first() if student_id else None
+        notif_msg = f"Step {step.step_number} re-submitted for thesis '{topic_title}'."
+        create_notification(
+            db,
+            user_id=supervisor_id,
+            paper_id=step.thesis_id,
+            ntype="workflow_update",
+            message=notif_msg,
+        )
+        _send_thesis_email(
+            to_user=sup,
+            subject=f"[GIMPA Thesis] Step {step.step_number} Re-submitted — {topic_title}",
+            body=(
+                f"The student has re-submitted Step {step.step_number} for review.\n\n"
+                f"Student: {student_obj.full_name if student_obj else 'N/A'}\n"
+                f"Thesis Title: {topic_title}\n"
+                f"Step: {step.step_number} — {step.title}\n\n"
+                "Please log in to review this step again."
+            ),
+        )
+
+    if thesis:
+        return _to_thesis_dict(thesis, paper, db)
+    if paper:
+        from app.api.routes.papers import _to_paper_read
+        return _to_paper_read(paper, db, current_user)
+    return {"ok": True}
 @router.api_route("/theses/steps/{step_id}/file", methods=["GET", "HEAD"])
 def download_step_file(
     step_id: int,

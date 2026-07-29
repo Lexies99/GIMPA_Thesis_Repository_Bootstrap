@@ -24,6 +24,7 @@ import {
   apiDeleteThesis,
   apiDeleteStep,
   apiDownloadStepFile,
+  apiResubmitEditedStep,
   apiBase,
 } from '../../lib/api'
 import type {
@@ -418,34 +419,30 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
                       <Download className="size-3 mr-1" /> Download
                     </Button>
 
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-[11px] text-primary border-primary/30 font-semibold"
-                      onClick={async () => {
-                        // Submit the currently edited step file as the next step (works like Upload Step File)
-                        try {
-                          setError('')
-                          setSuccess('')
-                          // download current step file
-                          const { blob, filename } = await apiDownloadStepFile(st.id, token)
-                          // wrap blob in File and call apiSubmitStep
-                          const file = new File([blob], filename, { type: blob.type })
-                          const nextStepNum = (paper.steps?.length || 0) + 1
-                          const { apiSubmitStep } = await import('../../lib/api')
-                          setSubmitting(true)
-                          await apiSubmitStep(paper.id, nextStepNum, `Step ${nextStepNum}`, file, token)
-                          setSuccess(`Edited Step ${st.step_number} submitted as Step ${nextStepNum} successfully!`)
-                          onUpdate()
-                        } catch (err) {
-                          window.alert(err instanceof Error ? err.message : 'Submit Edited Step failed')
-                        } finally {
-                          setSubmitting(false)
-                        }
-                      }}
-                    >
-                      📝 Submit Edited Step File
-                    </Button>
+                    {st.status !== 'approved' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px] text-primary border-primary/30 font-semibold"
+                        onClick={async () => {
+                          try {
+                            setError('')
+                            setSuccess('')
+                            setSubmitting(true)
+                            await apiResubmitEditedStep(st.id, token)
+                            setSuccess(`Edited Step ${st.step_number} submitted successfully!`)
+                            onUpdate()
+                          } catch (err) {
+                            window.alert(err instanceof Error ? err.message : 'Submit Edited Step failed')
+                          } finally {
+                            setSubmitting(false)
+                          }
+                        }}
+                      >
+                        📝 Submit Edited Step File
+                      </Button>
+                    )}
+
                     {st.status !== 'approved' && (
                       <Button
                         size="sm"
