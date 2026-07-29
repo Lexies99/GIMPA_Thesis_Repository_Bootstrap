@@ -7,6 +7,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.db.migrations import (
     ensure_paper_audit_tables,
+    ensure_correction_columns,
     ensure_user_must_change_password_column,
     ensure_student_extended_columns,
     ensure_paper_workflow_columns,
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     ensure_student_extended_columns()
     ensure_paper_workflow_columns()
     ensure_paper_audit_tables()
+    ensure_correction_columns()
     app = FastAPI(title=settings.app_name)
     app.add_middleware(
         CORSMiddleware,

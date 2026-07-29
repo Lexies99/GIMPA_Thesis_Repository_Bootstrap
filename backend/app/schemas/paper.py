@@ -17,20 +17,28 @@ PaperStatus = Literal[
     "approved",
     "revision",
     "rejected",
-    # New Phase statuses
+    # New Phase 1 - 5 statuses
     "phase1_proposal_submitted",
+    "phase1_topic_accepted",
+    "phase1_topic_rejected",
     "phase1_proposal_rejected",
     "phase2_pending_coordinator",
     "phase2_pending_supervisor",
+    "phase2_proposal_submitted",
+    "phase2_proposal_accepted",
     "phase3_chapters",
+    "phase3_steps_in_progress",
+    "phase3_all_steps_approved",
     "phase4_pending_examiners",
     "phase4_marking",
+    "phase4_examination_completed",
     "phase5_corrections",
     "phase5_pending_supervisor",
     "phase5_pending_coordinator",
     "phase5_pending_hod",
     "phase5_pending_hod_and_coordinator",
     "phase5_approved_for_library",
+    "phase5_published",
 ]
 ReviewDecision = Literal["approve", "revision", "reject"]
 
@@ -126,6 +134,20 @@ class AnnotationRead(BaseModel):
         from_attributes = True
 
 
+class StepRead(BaseModel):
+    id: int
+    thesis_id: int
+    step_number: int
+    title: str | None = None
+    file_url: str | None = None
+    status: str = "submitted"
+    supervisor_comment: str | None = None
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class PaperRead(BaseModel):
     id: int
     title: str
@@ -180,6 +202,7 @@ class PaperRead(BaseModel):
     lecturer_approved_at: datetime | None = None
     project_coordinator_approved_at: datetime | None = None
     hod_approved_at: datetime | None = None
+    steps: list[StepRead] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

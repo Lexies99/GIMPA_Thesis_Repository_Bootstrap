@@ -252,9 +252,9 @@ def _upsert_student(db: Session, row: dict[str, str]) -> tuple[bool, str, bool, 
         sent = send_notification_email(
             to_email=updated_user.email,
             to_name=updated_user.full_name,
-            subject="Gimpa Research Repository Account Update Confirmation",
+            subject="GIMPA Thesis Management System Account Update Confirmation",
             message=(
-                "Your student account details have been updated successfully in Gimpa Research Repository.\n\n"
+                "Your student account details have been updated successfully in GIMPA Thesis Management System.\n\n"
                 "Updated details:\n"
                 f"- Email: {updated_user.email}\n"
                 f"- School ID: {updated_user.school_id or student_id}\n\n"
@@ -290,9 +290,9 @@ def _upsert_student(db: Session, row: dict[str, str]) -> tuple[bool, str, bool, 
     sent = send_notification_email(
         to_email=user.email,
         to_name=user.full_name,
-        subject="Welcome to Gimpa Research Repository - Student Account Created",
+        subject="Welcome to GIMPA Thesis Management System - Student Account Created",
         message=(
-            "Your student account has been created successfully in Gimpa Research Repository.\n\n"
+            "Your student account has been created successfully in GIMPA Thesis Management System.\n\n"
             "Account details:\n"
             f"- Email: {user.email}\n"
             f"- School ID: {user.school_id or student_id}\n"
@@ -365,9 +365,9 @@ def _upsert_staff_user(db: Session, row: dict[str, str], default_role: str) -> t
     sent = send_notification_email(
         to_email=user.email,
         to_name=user.full_name,
-        subject="Welcome to Gimpa Research Repository - Account Created",
+        subject="Welcome to GIMPA Thesis Management System - Account Created",
         message=(
-            "Your account has been created successfully in Gimpa Research Repository.\n\n"
+            "Your account has been created successfully in GIMPA Thesis Management System.\n\n"
             "Account details:\n"
             f"- Email: {user.email}\n"
             f"- Temporary Password: {generated_password}\n\n"

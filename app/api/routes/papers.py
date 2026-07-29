@@ -6,6 +6,7 @@ import hmac
 import re
 import shutil
 import subprocess
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1880,8 +1881,8 @@ def get_editor_config(
         if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "hod") and not has_role(db, current_user, "project_coordinator"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to access this document")
 
-    file_token = _build_editor_token(paper_id=paper.id, action="file")
-    callback_token = _build_editor_token(paper_id=paper.id, action="callback")
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="callback"), safe="")
     callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
     # OnlyOffice Document Server (running in Docker) downloads the file URL server-side.
     # Use container-reachable base URL for both file and callback.

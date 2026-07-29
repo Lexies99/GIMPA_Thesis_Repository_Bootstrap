@@ -213,3 +213,16 @@ def ensure_paper_audit_tables() -> None:
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_workflow_events_id ON paper_workflow_events (id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_workflow_events_paper_id ON paper_workflow_events (paper_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_workflow_events_actor_id ON paper_workflow_events (actor_id)"))
+
+
+def ensure_correction_columns() -> None:
+    inspector = inspect(engine)
+    if "corrections" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("corrections")}
+    if "coordinator_status" in columns:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE corrections ADD COLUMN coordinator_status VARCHAR(32) NOT NULL DEFAULT 'pending'"))
+

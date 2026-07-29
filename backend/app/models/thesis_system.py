@@ -135,6 +135,7 @@ class Correction(Base):
     file_url = Column(String(1024), nullable=False)
     version = Column(Integer, nullable=False, default=1)
     supervisor_status = Column(String(32), nullable=False, default="pending")  # pending, approved, revise
+    coordinator_status = Column(String(32), nullable=False, default="pending")  # pending, approved, revise
     hod_status = Column(String(32), nullable=False, default="pending")  # pending, approved, revise
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
 

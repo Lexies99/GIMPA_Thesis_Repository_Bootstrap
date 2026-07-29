@@ -232,7 +232,7 @@ def activate_user(
         db,
         user_id=updated.id,
         ntype="account_activated",
-        message="Your account has been activated by the librarian. You can now sign in to Gimpa Research Repository.",
+        message="Your account has been activated by the librarian. You can now sign in to GIMPA Thesis Management System.",
     )
     return _to_user_read(db, updated)
 
@@ -307,9 +307,9 @@ def admin_create_user(
     email_sent = send_notification_email(
         to_email=created.email,
         to_name=created.full_name,
-        subject="Welcome to Gimpa Research Repository - Account Created",
+        subject="Welcome to GIMPA Thesis Management System - Account Created",
         message=(
-            "Your account has been created successfully in Gimpa Research Repository by an administrator.\n\n"
+            "Your account has been created successfully in GIMPA Thesis Management System by an administrator.\n\n"
             "Account details:\n"
             f"- Email: {created.email}\n"
             f"- Temporary Password: {temporary_password}\n\n"
@@ -375,9 +375,9 @@ def create_external_examiner_account(
     email_sent = send_notification_email(
         to_email=created.email,
         to_name=created.full_name,
-        subject="Welcome to Gimpa Research Repository - External Examiner Account Created",
+        subject="Welcome to GIMPA Thesis Management System - External Examiner Account Created",
         message=(
-            "Your External Examiner account has been created successfully in Gimpa Research Repository.\n\n"
+            "Your External Examiner account has been created successfully in GIMPA Thesis Management System.\n\n"
             "Account details:\n"
             f"- Email: {created.email}\n"
             f"- Temporary Password: {temporary_password}\n\n"

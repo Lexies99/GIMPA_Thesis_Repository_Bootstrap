@@ -62,10 +62,10 @@ def get_notification(db: Session, notification_id: int) -> Notification | None:
 
 def _notification_subject(ntype: str) -> str:
     subjects = {
-        "paper_submission": "New paper submitted for your review",
-        "paper_review": "Update on your paper submission",
-        "workflow_update": "Gimpa Research Repository workflow update",
-        "account_activation_required": "New account pending activation",
-        "account_activated": "Your Gimpa Research Repository account is now active",
+        "paper_submission": "New Thesis Submission Awaiting Review — GIMPA Thesis System",
+        "paper_review": "Update on Your Thesis Submission — GIMPA Thesis System",
+        "workflow_update": "GIMPA Thesis Management System — Workflow Status Update",
+        "account_activation_required": "New Account Pending Activation — GIMPA Thesis System",
+        "account_activated": "Your GIMPA Thesis Management System Account is Active",
     }
-    return subjects.get(ntype, "New Gimpa Research Repository notification")
+    return subjects.get(ntype, "GIMPA Thesis Management System Notification")

@@ -6,6 +6,7 @@ import hmac
 import re
 import shutil
 import subprocess
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -103,6 +104,15 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user = None)
     internal_result_file_name = paper.internal_result_file_name if can_view_marks else None
     external_result_file_name = paper.external_result_file_name if can_view_marks else None
 
+    steps_list = []
+    from sqlalchemy.orm import object_session
+    session = db or object_session(paper)
+    if session:
+        from app.models.thesis_system import Step
+        raw_steps = session.query(Step).filter(Step.thesis_id == paper.id).order_by(Step.step_number.asc()).all()
+        from app.schemas.paper import StepRead
+        steps_list = [StepRead.model_validate(s) for s in raw_steps]
+
     return PaperRead(
         id=paper.id,
         title=paper.title,
@@ -155,6 +165,7 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user = None)
         lecturer_approved_at=paper.lecturer_approved_at,
         project_coordinator_approved_at=paper.project_coordinator_approved_at,
         hod_approved_at=paper.hod_approved_at,
+        steps=steps_list,
     )
 
 
@@ -726,7 +737,13 @@ def read_pending_papers(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer department is not configured")
     if reviewer_role in {"lecturer", "project_supervisor", "external_examiner"}:
         supervisor_cond = (
-            Paper.status.in_({"pending_lecturer", "phase3_chapters", "phase5_pending_supervisor"})
+            Paper.status.in_({
+                "pending_lecturer",
+                "phase2_proposal_submitted",
+                "phase3_chapters",
+                "phase3_steps_in_progress",  # thesis visible after first step submitted
+                "phase5_pending_supervisor",
+            })
         )
         if reviewer_department:
             supervisor_cond = supervisor_cond & (
@@ -796,7 +813,7 @@ def read_pending_papers(
         papers = list_papers(db, status="approved_for_library", sort="newest", limit=200)
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer role is not allowed")
-    return [_to_paper_read(p) for p in papers]
+    return [_to_paper_read(p, db) for p in papers]
 
 
 @router.get("/papers/reviewed", response_model=list[PaperRead])
@@ -848,7 +865,7 @@ def read_reviewed_papers(
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer role is not allowed")
 
-    return [_to_paper_read(p) for p in papers]
+    return [_to_paper_read(p, db) for p in papers]
 
 
 @router.get("/papers/department/supervisor-reviewed", response_model=list[PaperRead])
@@ -917,7 +934,7 @@ def read_department_supervisor_reviewed_papers(
         .limit(500)
         .all()
     )
-    return [_to_paper_read(p) for p in papers]
+    return [_to_paper_read(p, db) for p in papers]
 
 
 @router.get("/papers/department/supervisor-review-summary", response_model=list[SupervisorReviewSummary])
@@ -1678,9 +1695,111 @@ def track_paper_download(
     return _to_paper_read(increment_download(db, paper))
 
 
-@router.api_route("/papers/{paper_id}/file", methods=["GET", "HEAD"])
 @router.api_route("/papers/{paper_id}/binary", methods=["GET", "HEAD"])
 def download_paper_file(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    if not paper.file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
+
+    # ---------------------------------------------------------------
+    # Phase-aware file selection:
+    # Phase 2+ means the student has submitted a Proposal — serve the
+    # latest accepted proposal file (or latest submitted if not yet accepted).
+    # Phase 1 (topic submission) always serves the original file_path.
+    # ---------------------------------------------------------------
+    PROPOSAL_PHASES = {
+        "phase2_proposal_submitted", "phase2_proposal_accepted",
+        "phase3_chapters", "phase3_steps_in_progress", "phase3_all_steps_approved",
+        "phase4_pending_examiners", "phase4_marking", "phase4_examination_completed",
+        "phase5_corrections", "phase5_pending_supervisor", "phase5_pending_coordinator",
+        "phase5_pending_hod", "phase5_pending_hod_and_coordinator",
+        "phase5_approved_for_library", "phase5_published",
+    }
+
+    resolved_file_path = paper.file_path
+    resolved_file_name = paper.file_name
+
+    if paper.status in PROPOSAL_PHASES:
+        from app.models.thesis_system import Proposal
+        # Prefer accepted proposal, fallback to latest submitted
+        accepted_proposal = (
+            db.query(Proposal)
+            .filter(Proposal.thesis_id == paper.id, Proposal.status == "accepted")
+            .order_by(Proposal.version.desc())
+            .first()
+        )
+        latest_proposal = accepted_proposal or (
+            db.query(Proposal)
+            .filter(Proposal.thesis_id == paper.id)
+            .order_by(Proposal.version.desc())
+            .first()
+        )
+        if latest_proposal and latest_proposal.file_url:
+            proposal_path = Path(latest_proposal.file_url)
+            if proposal_path.exists() and proposal_path.is_file():
+                resolved_file_path = str(proposal_path)
+                resolved_file_name = f"Proposal_v{latest_proposal.version}_{paper.title}.docx"
+
+    path = Path(resolved_file_path)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
+
+    # Compile any database annotations/comments into the downloaded docx document
+    from app.services.annotation_service import get_paper_annotations, compile_comments_to_docx
+    annotations = get_paper_annotations(db, paper_id)
+    download_path = Path(compile_comments_to_docx(resolved_file_path, annotations))
+
+    download_name = resolved_file_name or download_path.name
+
+    increment_download(db, paper)
+    return FileResponse(
+        path=download_path,
+        media_type=paper.mime_type or "application/octet-stream",
+        filename=download_name,
+    )
+
+
+@router.api_route("/papers/{paper_id}/proposal-file", methods=["GET", "HEAD"])
+def download_proposal_file(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Download the latest proposal file for a thesis (Phase 2+)."""
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    from app.models.thesis_system import Proposal
+    latest_proposal = (
+        db.query(Proposal)
+        .filter(Proposal.thesis_id == paper.id)
+        .order_by(Proposal.version.desc())
+        .first()
+    )
+    if not latest_proposal or not latest_proposal.file_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No proposal file found for this thesis")
+
+    path = Path(latest_proposal.file_url)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proposal file not found on disk")
+
+    download_name = f"Proposal_v{latest_proposal.version}_{paper.title}.docx"
+    return FileResponse(
+        path=path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=download_name,
+    )
+
+
+@router.api_route("/papers/{paper_id}/file", methods=["GET", "HEAD"])
+def download_paper_file_legacy(
     paper_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -1880,8 +1999,8 @@ def get_editor_config(
         if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "hod") and not has_role(db, current_user, "project_coordinator"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to access this document")
 
-    file_token = _build_editor_token(paper_id=paper.id, action="file")
-    callback_token = _build_editor_token(paper_id=paper.id, action="callback")
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="callback"), safe="")
     callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
     # OnlyOffice Document Server (running in Docker) downloads the file URL server-side.
     # Use container-reachable base URL for both file and callback.
@@ -2351,7 +2470,7 @@ def assign_supervisor(
         db.add(PaperSupervisor(paper_id=paper.id, user_id=supervisor_id, assigned_by_id=current_user.id))
     
     from_status = paper.status
-    paper.status = "phase3_chapters"
+    paper.status = "phase1_topic_accepted"
     db.add(paper)
     
     _record_workflow_event(
@@ -2372,7 +2491,7 @@ def assign_supervisor(
         paper,
         f"Topic Approved & Supervisor Assigned: Supervisor {supervisor_user.full_name or supervisor_user.email} assigned to '{paper.title}'."
     )
-    _notify_student(db, paper, f"Your thesis topic was approved! Supervisor {supervisor_user.full_name or supervisor_user.email} has been assigned to supervise your work. You are now in Phase 3 (Chapters writing).")
+    _notify_student(db, paper, f"Your thesis topic was approved! Supervisor {supervisor_user.full_name or supervisor_user.email} has been assigned to supervise your work. You can now submit your Project Proposal for Phase 2.")
     
     create_notification(
         db,
@@ -2503,17 +2622,7 @@ def complete_phase3(
     if not is_supervisor:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor can complete Phase 3")
     
-    all_approved = (
-        paper.ch1_supervisor_approved and
-        paper.ch2_supervisor_approved and
-        paper.ch3_supervisor_approved and
-        paper.ch4_supervisor_approved and
-        paper.ch5_supervisor_approved and
-        paper.combined_thesis_supervisor_approved
-    )
-    if not all_approved:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot complete Phase 3: All 5 chapters and the combined thesis must be approved by the supervisor first")
-        
+    paper.combined_thesis_supervisor_approved = True
     paper.status = "phase4_pending_examiners"
     db.add(paper)
     
@@ -3241,57 +3350,9 @@ def thesis_assign_supervisor_alias(
     return assign_supervisor(paper_id=paper_id, supervisor_id=supervisor_id, db=db, current_user=current_user)
 
 
-@router.post("/theses/{paper_id}/proposal", response_model=PaperRead)
-async def thesis_submit_proposal_alias(
-    paper_id: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-) -> PaperRead:
-    """Canonical spec alias: Student submits proposal."""
-    return await upload_paper_endpoint(file=file, title=None, abstract=None, discipline=None, db=db, current_user=current_user)
 
 
-@router.post("/theses/{paper_id}/proposal/decision", response_model=PaperRead)
-def thesis_proposal_decision_alias(
-    paper_id: int,
-    decision: str = Form(...),
-    comments: str | None = Form(None),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-) -> PaperRead:
-    """Canonical spec alias: Supervisor accepts or requests revision for proposal."""
-    payload = PaperReview(decision=decision, comments=comments)
-    return review_paper_endpoint(paper_id=paper_id, payload=payload, db=db, current_admin=current_user)
 
-
-@router.post("/theses/{paper_id}/steps", response_model=PaperRead)
-def thesis_submit_step_alias(
-    paper_id: int,
-    ch1: bool = Form(True),
-    ch2: bool = Form(False),
-    ch3: bool = Form(False),
-    ch4: bool = Form(False),
-    ch5: bool = Form(False),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-) -> PaperRead:
-    """Canonical spec alias: Student submits a Step / chapter checklist update."""
-    return student_update_checklist(paper_id=paper_id, ch1=ch1, ch2=ch2, ch3=ch3, ch4=ch4, ch5=ch5, db=db, current_user=current_user)
-
-
-@router.post("/steps/{step_id}/decision", response_model=PaperRead)
-def step_decision_alias(
-    step_id: int,
-    decision: str = Form(...),
-    comments: str | None = Form(None),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-) -> PaperRead:
-    """Canonical spec alias: Supervisor approves/revises a Step."""
-    # step_id maps to paper_id in step workflow
-    payload = PaperReview(decision=decision, comments=comments)
-    return review_paper_endpoint(paper_id=step_id, payload=payload, db=db, current_admin=current_user)
 
 
 @router.post("/theses/{paper_id}/finish-steps", response_model=PaperRead)

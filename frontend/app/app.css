@@ -48,13 +48,23 @@
 html,
 body {
   @apply bg-background text-foreground;
-
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+  min-height: 100vh;
+  height: 100%;
+  width: 100%;
+  margin: 0;
 }
 
-* {
-  @apply border-border outline-ring/50;
+html {
+  color-scheme: light;
+}
+
+body {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
 }
 

@@ -25,12 +25,18 @@ import {
   apiAssignExaminers,
   apiUploadResults,
   apiSupervisorApproveCorrections,
+  apiCoordinatorApproveCorrections,
+  apiHodApproveCorrections,
+  apiStepDecision,
   apiSupervisorApproveCombinedThesis,
   apiListDepartments,
   apiDownloadApprovedZip,
   apiDownloadExaminerResultsZip,
   apiDownloadExaminerAssignedZip,
+  apiProposalDecision,
+  apiBase,
 } from '../../lib/api'
+import { DocxViewer } from './DocxViewer'
 import type { ApiPaper, ApiUser } from '../../lib/api'
 
 const ACCESS_TOKEN_KEY = 'murrs_access_token'
@@ -63,31 +69,31 @@ function formatStatusLabel(status: string): string {
     case 'phase2_proposal_accepted':
       return 'Phase 2 — Proposal Accepted'
     case 'phase3_chapters':
-      return 'Phase 3 — Chapter Review (Steps in Progress)'
+      return 'Phase 2 — Steps in Progress (Chapter Submissions)'
     case 'phase3_steps_in_progress':
-      return 'Phase 3 — Steps in Progress'
+      return 'Phase 2 — Steps in Progress'
     case 'phase3_all_steps_approved':
-      return 'Phase 3 — All Steps Approved'
+      return 'Phase 2 — All Steps Approved (Ready for Examination)'
     case 'phase4_pending_examiners':
-      return 'Phase 4 — Awaiting Examiner Assignment'
+      return 'Phase 3 — Awaiting Examiner Assignment'
     case 'phase4_marking':
-      return 'Phase 4 — Under Examination / Marking'
+      return 'Phase 3 — Under Examination / Marking'
     case 'phase4_examination_completed':
-      return 'Phase 4 — Examination Completed'
+      return 'Phase 3 — Examination Completed'
     case 'phase5_corrections':
-      return 'Phase 5 — Post-Defense Corrections'
+      return 'Phase 4 — Post-Examination Corrections Required'
     case 'phase5_pending_supervisor':
-      return 'Phase 5 — Corrections Awaiting Supervisor Review'
+      return 'Phase 4 — Corrections Awaiting Supervisor Approval'
     case 'phase5_pending_coordinator':
-      return 'Phase 5 — Corrections Awaiting Coordinator Approval'
+      return 'Phase 4 — Corrections Awaiting Coordinator Sign-off'
     case 'phase5_pending_hod':
-      return 'Phase 5 — Corrections Awaiting HOD Approval'
+      return 'Phase 4 — Corrections Awaiting HOD Sign-off'
     case 'phase5_pending_hod_and_coordinator':
-      return 'Phase 5 — Corrections Awaiting HOD & Coordinator Approval'
+      return 'Phase 4 — Corrections Awaiting HOD & Coordinator Sign-off'
     case 'phase5_approved_for_library':
       return 'Phase 5 — Approved for Library Publication'
     case 'phase5_published':
-      return 'Phase 5 — Published in Library Repository'
+      return 'Phase 5 — Published in GIMPA Thesis Repository'
     default:
       return status
   }
@@ -97,8 +103,23 @@ function formatDocumentTypeLabel(docType: string | null, status: string): string
   if (status === 'phase1_proposal_submitted' || docType === 'thesis_topic') {
     return 'Thesis Topic Submission (Phase 1)'
   }
-  if (status.startsWith('phase2') || docType === 'proposal') {
+  if (status === 'phase2_proposal_submitted' || status === 'phase2_proposal_accepted' || status === 'phase2_pending_supervisor' || status === 'phase2_pending_coordinator') {
     return 'Project Proposal (Phase 2)'
+  }
+  if (status === 'phase3_chapters' || status === 'phase3_steps_in_progress' || status === 'phase3_all_steps_approved') {
+    return 'Steps / Chapter Review (Phase 2 — Continuation)'
+  }
+  if (status === 'phase4_pending_examiners' || status === 'phase4_marking' || status === 'phase4_examination_completed') {
+    return 'Examination (Phase 3)'
+  }
+  if (status === 'phase5_corrections' || status === 'phase5_pending_supervisor' || status === 'phase5_pending_coordinator' || status === 'phase5_pending_hod' || status === 'phase5_pending_hod_and_coordinator') {
+    return 'Corrections & Dual Approval (Phase 4)'
+  }
+  if (status === 'phase5_approved_for_library' || status === 'phase5_published') {
+    return 'Library Publication (Phase 5)'
+  }
+  if (docType === 'proposal') {
+    return 'Project Proposal'
   }
   return docType || 'Research Paper'
 }
@@ -686,8 +707,10 @@ export function ApprovalWorkflow() {
                   <FileText className="size-5" />
                   <span>
                     {selectedPaper.status === 'phase1_proposal_submitted' || selectedPaper.document_type === 'thesis_topic'
-                      ? 'Thesis Topic Description / Problem Statement'
-                      : 'Abstract preview'}
+                      ? 'Phase 1 — Thesis Topic Description'
+                      : selectedPaper.status === 'phase2_proposal_submitted' || selectedPaper.status === 'phase2_proposal_accepted'
+                      ? 'Phase 2 — Project Proposal Preview'
+                      : 'Thesis Abstract / Summary'}
                   </span>
                 </div>
                 <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
@@ -698,11 +721,24 @@ export function ApprovalWorkflow() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="min-w-[120px]"
+                      className="min-w-[160px]"
                       onClick={() => void handleDownloadDocument(selectedPaper.id)}
                       disabled={!isAuthenticated || documentLoading}
                     >
-                      {documentLoading ? 'Downloading...' : 'Download File'}
+                      {documentLoading ? 'Downloading...' :
+                        selectedPaper.status === 'phase1_proposal_submitted' || selectedPaper.document_type === 'thesis_topic'
+                          ? '↓ Download Topic Submission'
+                          : selectedPaper.status === 'phase2_proposal_submitted' || selectedPaper.status === 'phase2_proposal_accepted'
+                          ? '↓ Download Project Proposal'
+                          : '↓ Download Thesis Document'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="min-w-[160px] text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 font-semibold"
+                      onClick={() => window.open(`/editor?paperId=${selectedPaper.id}`, '_blank')}
+                    >
+                      📝 Edit in Document Editor
                     </Button>
                   </div>
                 )}
@@ -723,16 +759,18 @@ export function ApprovalWorkflow() {
                       Open in New Tab
                     </Button>
                   </div>
-                  {(documentMimeType || '').toLowerCase().includes('pdf') ? (
+                  {(documentMimeType || '').toLowerCase().includes('pdf') || (documentViewerName || '').toLowerCase().endsWith('.pdf') ? (
                     <iframe
                       src={documentViewerUrl}
                       title="Paper Document Viewer"
                       className="w-full h-[70vh] rounded border bg-white"
                     />
                   ) : (
-                    <div className="rounded border p-3 text-sm text-muted-foreground">
-                      This file format may not render inline in all browsers. Download to review and edit.
-                    </div>
+                    <DocxViewer
+                      fileUrl={documentViewerUrl}
+                      token={localStorage.getItem(ACCESS_TOKEN_KEY)}
+                      filename={documentViewerName || selectedPaper.file_name || 'Document.docx'}
+                    />
                   )}
                 </div>
               )}
@@ -842,9 +880,6 @@ export function ApprovalWorkflow() {
                           try {
                             // Assign supervisor & transition status to phase1_topic_accepted -> Phase 2
                             await apiAssignSupervisor(selectedPaper.id, Number(selectedSupervisorId), token)
-                            if (reviewComments.trim()) {
-                              await apiReviewPaper(selectedPaper.id, 'approve', reviewComments, token)
-                            }
                             setDialogOpen(false)
                             setSelectedPaper(null)
                             await loadAll()
@@ -961,177 +996,256 @@ export function ApprovalWorkflow() {
                 )
               })()}
 
-              {selectedPaper.status === 'phase3_chapters' && (isSupervisor || isAdmin) && (
+              {/* ====================================================
+               * PHASE 2 — SUPERVISOR: Proposal Accept / Revise Panel
+               * Shows when student has submitted their project proposal
+               * and it is awaiting the supervisor's decision.
+               * ==================================================== */}
+              {selectedPaper.status === 'phase2_proposal_submitted' && (isSupervisor || isAdmin) && (
+                <div className="border-2 border-amber-400/40 rounded-xl p-5 bg-amber-50/50 dark:bg-amber-950/10 space-y-4">
+                  <h4 className="font-bold text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                    <FileText className="size-4" />
+                    Phase 2: Project Proposal Review (Supervisor Action Required)
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    The student has submitted their <strong>Project Proposal</strong> for your review. Download the document above, 
+                    then choose to <strong>Accept</strong> the proposal (which will allow the student to begin submitting thesis steps) 
+                    or <strong>Request Revision</strong> (which sends it back to the student with your feedback).
+                  </p>
+
+                  {/* Show previous supervisor comment if any */}
+                  {selectedPaper.review_comments && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-3">
+                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1">Previous Feedback Sent to Student:</p>
+                      <p className="text-xs text-muted-foreground whitespace-pre-line">{selectedPaper.review_comments}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold">Feedback / Comments for Student</Label>
+                    <Textarea
+                      placeholder="Enter your feedback for the student (required when requesting revision, optional when accepting)..."
+                      value={reviewComments}
+                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setReviewComments(e.target.value)}
+                      rows={4}
+                      className="text-sm"
+                    />
+                  </div>
+
+                  {reviewError && (
+                    <p className="text-xs text-destructive font-medium">{reviewError}</p>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row gap-3 justify-end pt-3 border-t border-amber-300/30">
+                    <Button
+                      variant="outline"
+                      className="border-amber-500 text-amber-600 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-500/70 hover:bg-amber-100 dark:hover:bg-amber-900/60 font-semibold shadow-sm"
+                      disabled={submittingReview || !reviewComments.trim()}
+                      onClick={async () => {
+                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                        if (!token || !selectedPaper) return
+                        setSubmittingReview(true)
+                        setReviewError('')
+                        try {
+                          await apiProposalDecision(selectedPaper.id, 'revise', reviewComments, token)
+                          setDialogOpen(false)
+                          setSelectedPaper(null)
+                          setReviewComments('')
+                          await loadAll()
+                        } catch (err) {
+                          setReviewError(err instanceof Error ? err.message : 'Failed to request revision')
+                        } finally {
+                          setSubmittingReview(false)
+                        }
+                      }}
+                    >
+                      {submittingReview ? 'Sending...' : '↺ Request Revision (Send Back)'}
+                    </Button>
+                    <Button
+                      className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white dark:bg-emerald-600 dark:hover:bg-emerald-500 dark:text-white font-bold shadow-md border-0"
+                      disabled={submittingReview}
+                      onClick={async () => {
+                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                        if (!token || !selectedPaper) return
+                        setSubmittingReview(true)
+                        setReviewError('')
+                        try {
+                          await apiProposalDecision(selectedPaper.id, 'accepted', reviewComments, token)
+                          setDialogOpen(false)
+                          setSelectedPaper(null)
+                          setReviewComments('')
+                          await loadAll()
+                        } catch (err) {
+                          setReviewError(err instanceof Error ? err.message : 'Failed to accept proposal')
+                        } finally {
+                          setSubmittingReview(false)
+                        }
+                      }}
+                    >
+                      {submittingReview ? 'Processing...' : '✓ Accept Proposal (Advance to Steps Phase)'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* ====================================================
+               * PHASE 2 — SUPERVISOR: Dynamic Steps Review Panel
+               * Shows when proposal is accepted & student submits steps.
+               * ==================================================== */}
+              {(selectedPaper.status === 'phase3_chapters' || selectedPaper.status === 'phase3_steps_in_progress') && (isSupervisor || isAdmin) && (
                 <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
                   <h4 className="font-bold text-sm text-primary flex items-center gap-2">
                     <CheckSquare className="size-4" />
-                    Phase 3: Chapter Review (Supervisor)
+                    Phase 2: Dynamic Steps Review (Supervisor)
                   </h4>
                   <p className="text-xs text-muted-foreground">
-                    Review one chapter at a time. Accepting the current chapter unlocks the next chapter for review.
+                    Review thesis steps/chapters submitted by the student. Approve or request revisions per step, and click <strong>Finish Steps</strong> when all required work is completed to advance to Phase 3 (Examination).
                   </p>
 
-                  {(() => {
-                    const currentChapter = getCurrentChapter(supChecklist)
-                    const studentDoneKey = `ch${currentChapter}_student_done` as keyof ApiPaper
-                    const currentChapterName = chapterLabel(currentChapter)
-                    const acceptedAllChapters = supChecklist.ch1 && supChecklist.ch2 && supChecklist.ch3 && supChecklist.ch4 && supChecklist.ch5
-
-                    return (
-                      <>
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                          {[1, 2, 3, 4, 5].map((chapter) => {
-                            const key = `ch${chapter}` as ChapterKey
-                            const isCurrent = chapter === currentChapter && !acceptedAllChapters
-                            return (
-                              <div
-                                key={chapter}
-                                className={`rounded-md border p-3 text-xs ${isCurrent ? 'border-primary bg-primary/10' : 'bg-background/60'}`}
-                              >
-                                <p className="font-semibold">Chapter {chapter}</p>
-                                <Badge variant={supChecklist[key] ? 'default' : isCurrent ? 'outline' : 'secondary'} className="mt-2 text-[10px]">
-                                  {supChecklist[key] ? 'Accepted' : isCurrent ? 'In Review' : 'Locked'}
-                                </Badge>
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        <div className="rounded-lg border bg-background/70 p-4 space-y-3">
+                  {/* List of Student Steps */}
+                  {selectedPaper.steps && selectedPaper.steps.length > 0 ? (
+                    <div className="space-y-3">
+                      {selectedPaper.steps.map((st) => (
+                        <div key={st.id} className="rounded-lg border bg-background p-3 text-xs space-y-2">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold">
-                                {acceptedAllChapters ? 'All chapters accepted' : `Chapter ${currentChapter}: Chapter ${currentChapterName}`}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {acceptedAllChapters
-                                  ? 'Move this thesis to examiner assignment.'
-                                  : selectedPaper[studentDoneKey]
-                                    ? `The student marked Chapter ${currentChapter} as ready for review.`
-                                    : `Chapter ${currentChapter} is waiting for the student to mark it ready.`}
-                              </p>
-                            </div>
-                            {!acceptedAllChapters && (
-                              <Badge variant={selectedPaper[studentDoneKey] ? 'default' : 'secondary'}>
-                                {selectedPaper[studentDoneKey] ? 'Student Ready' : 'Student Pending'}
-                              </Badge>
-                            )}
+                            <span className="font-semibold text-foreground text-sm">
+                              Step {st.step_number}: {st.title || `Step ${st.step_number}`}
+                            </span>
+                            <Badge variant={st.status === 'approved' ? 'default' : st.status === 'revise' ? 'destructive' : 'secondary'} className="capitalize text-[10px]">
+                              {st.status}
+                            </Badge>
                           </div>
-
-                          {!acceptedAllChapters && (
-                            <div className="space-y-2">
-                              <Label htmlFor="chapter-feedback-comments">Feedback Comments (Optional)</Label>
-                              <Textarea
-                                id="chapter-feedback-comments"
-                                placeholder="Add any feedback for the student..."
-                                value={reviewComments}
-                                onChange={(e) => setReviewComments(e.target.value)}
-                                rows={3}
-                              />
-                            </div>
+                          {st.supervisor_comment && (
+                            <p className="text-muted-foreground bg-muted/40 p-2 rounded text-[11px]">
+                              <strong className="text-foreground">Feedback:</strong> {st.supervisor_comment}
+                            </p>
                           )}
-                        </div>
-                      </>
-                    )
-                  })()}
-                  {reviewError && (
-                    <p className="text-xs text-destructive">{reviewError}</p>
-                  )}
-                  <div className="flex gap-2 justify-end">
-                    {(() => {
-                      const currentChapter = getCurrentChapter(supChecklist)
-                      const currentKey = `ch${currentChapter}` as ChapterKey
-                      const currentChapterName = chapterLabel(currentChapter)
-                      const acceptedAllChapters = supChecklist.ch1 && supChecklist.ch2 && supChecklist.ch3 && supChecklist.ch4 && supChecklist.ch5
-                      const nextChecklist = { ...supChecklist, [currentKey]: true }
-
-                      return (
-                        <>
-                          {!acceptedAllChapters && (
+                          <div className="flex flex-wrap gap-2 pt-1">
                             <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                if (!token) return
+                                try {
+                                  const { apiDownloadStepFile } = await import('../../lib/api')
+                                  const { blob, filename } = await apiDownloadStepFile(st.id, token)
+                                  const url = window.URL.createObjectURL(blob)
+                                  const a = document.createElement('a')
+                                  a.href = url
+                                  a.download = filename
+                                  document.body.appendChild(a)
+                                  a.click()
+                                  a.remove()
+                                  window.URL.revokeObjectURL(url)
+                                } catch (err) {
+                                  window.alert(err instanceof Error ? err.message : 'Download failed')
+                                }
+                              }}
+                              className="text-xs h-8 text-primary border-primary/30 hover:bg-primary/10 font-semibold"
+                            >
+                              <Download className="size-3 mr-1" /> Download Step {st.step_number} File
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                window.open(`/editor?stepId=${st.id}`, '_blank')
+                              }}
+                              className="text-xs h-8 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold"
+                            >
+                              📝 View & Edit Step {st.step_number} in Editor
+                            </Button>
+                            <Button
+                              size="sm"
                               variant="outline"
                               onClick={async () => {
                                 const token = localStorage.getItem(ACCESS_TOKEN_KEY)
                                 if (!token) return
                                 setSubmittingReview(true)
                                 try {
-                                  await apiSupervisorUpdateChecklist(selectedPaper.id, supChecklist, token, reviewComments, currentChapter)
-                                  setReviewError('')
+                                  await apiStepDecision(st.id, 'approved', reviewComments, token)
                                   setReviewComments('')
-                                } catch (err) {
-                                  setReviewError(err instanceof Error ? err.message : 'Rejection failed')
-                                } finally {
-                                  setSubmittingReview(false)
-                                }
-                              }}
-                              disabled={submittingReview}
-                              className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                            >
-                              Reject Chapter {currentChapterName}
-                            </Button>
-                          )}
-                          {!acceptedAllChapters && (
-                            <Button
-                              onClick={async () => {
-                                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                                if (!token) return
-                                setSubmittingReview(true)
-                                try {
-                                  const updated = await apiSupervisorUpdateChecklist(selectedPaper.id, nextChecklist, token, reviewComments)
-                                  setSupChecklist(nextChecklist)
-                                  setSelectedPaper(updated)
-                                  setReviewError('')
-                                  setReviewComments('')
-                                  if (currentChapter === 5) {
-                                    await apiCompletePhase3(selectedPaper.id, token)
-                                    setDialogOpen(false)
-                                    setSelectedPaper(null)
-                                    await loadAll()
-                                  }
-                                } catch (err) {
-                                  setReviewError(err instanceof Error ? err.message : 'Approval failed')
-                                } finally {
-                                  setSubmittingReview(false)
-                                }
-                              }}
-                              disabled={submittingReview}
-                            >
-                              {submittingReview ? 'Processing...' : `Accept Chapter ${currentChapterName}`}
-                            </Button>
-                          )}
-                          {acceptedAllChapters && (
-                            <Button
-                              onClick={async () => {
-                                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                                if (!token) return
-                                setSubmittingReview(true)
-                                try {
-                                  await apiCompletePhase3(selectedPaper.id, token)
-                                  setDialogOpen(false)
-                                  setSelectedPaper(null)
                                   await loadAll()
                                 } catch (err) {
-                                  setReviewError(err instanceof Error ? err.message : 'Completion failed')
+                                  setReviewError(err instanceof Error ? err.message : 'Step approval failed')
                                 } finally {
                                   setSubmittingReview(false)
                                 }
                               }}
                               disabled={submittingReview}
+                              className="text-xs h-8 text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-700 dark:hover:bg-emerald-950/40 font-semibold"
                             >
-                              {submittingReview ? 'Completing...' : 'Move to Examiner Assignment'}
+                              ✓ Approve Step {st.step_number}
                             </Button>
-                          )}
-                        </>
-                      )
-                    })()}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                if (!token) return
+                                setSubmittingReview(true)
+                                try {
+                                  await apiStepDecision(st.id, 'revise', reviewComments || 'Revision requested on step', token)
+                                  setReviewComments('')
+                                  await loadAll()
+                                } catch (err) {
+                                  setReviewError(err instanceof Error ? err.message : 'Step revision failed')
+                                } finally {
+                                  setSubmittingReview(false)
+                                }
+                              }}
+                              disabled={submittingReview}
+                              className="text-xs h-8 text-amber-600 border-amber-200 hover:bg-amber-50 hover:text-amber-600 dark:hover:text-amber-300"
+                            >
+                              Request Step Revision
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border border-dashed rounded p-3 text-center text-xs text-muted-foreground">
+                      No steps submitted by student yet.
+                    </div>
+                  )}
+
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label htmlFor="step-overall-comments">Step Feedback Comments (Optional)</Label>
+                    <Textarea
+                      id="step-overall-comments"
+                      placeholder="Add feedback notes when approving or requesting revisions on a step..."
+                      value={reviewComments}
+                      onChange={(e) => setReviewComments(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+
+                  {reviewError && (
+                    <p className="text-xs text-destructive">{reviewError}</p>
+                  )}
+
+                  <div className="flex justify-end border-t pt-3">
                     <Button
-                      variant="ghost"
                       onClick={async () => {
-                        setReviewComments('')
+                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                        if (!token) return
+                        setSubmittingReview(true)
+                        try {
+                          await apiCompletePhase3(selectedPaper.id, token)
+                          setDialogOpen(false)
+                          setSelectedPaper(null)
+                          await loadAll()
+                        } catch (err) {
+                          setReviewError(err instanceof Error ? err.message : 'Finish steps failed')
+                        } finally {
+                          setSubmittingReview(false)
+                        }
                       }}
                       disabled={submittingReview}
+                      className="bg-primary text-primary-foreground font-semibold"
                     >
-                      Clear Feedback
+                      {submittingReview ? 'Completing...' : 'Finish Steps (Advance to Phase 3 — Examination)'}
                     </Button>
                   </div>
                 </div>
@@ -1141,7 +1255,7 @@ export function ApprovalWorkflow() {
                 <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
                   <h4 className="font-bold text-sm text-primary flex items-center gap-2">
                     <Shield className="size-4" />
-                    Phase 4: Assign Examiners (HOD / Coordinator)
+                    Phase 3: Assign Examiners (HOD / Coordinator)
                   </h4>
                   <p className="text-xs text-muted-foreground">
                     Assign one internal and one external examiner to mark this thesis.
@@ -1221,7 +1335,7 @@ export function ApprovalWorkflow() {
                 <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
                   <h4 className="font-bold text-sm text-primary flex items-center gap-2">
                     <Award className="size-4" />
-                    Phase 4: Examiner Marking & Feedback
+                    Phase 3: Examiner Marking & Feedback
                   </h4>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <p className="text-xs text-muted-foreground">
@@ -1358,7 +1472,7 @@ export function ApprovalWorkflow() {
                 <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
                   <h4 className="font-bold text-sm text-primary flex items-center gap-2">
                     <CheckCircle className="size-4" />
-                    Phase 5: Supervisor Approve Corrections
+                    Phase 4: Supervisor — Review Corrections
                   </h4>
                   <p className="text-xs text-muted-foreground">
                     The student has uploaded their corrected thesis file. Review the changes and approve them to pass to HOD/Coordinator.
@@ -1402,7 +1516,7 @@ export function ApprovalWorkflow() {
                 <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
                   <h4 className="font-bold text-sm text-primary flex items-center gap-2">
                     <Shield className="size-4" />
-                    Phase 5: Departmental Sign-off
+                    Phase 4: Dual Sign-off (HOD & Coordinator)
                   </h4>
                   <p className="text-xs text-muted-foreground">
                     Supervisor approved. HOD and Coordinator must sign off to send the corrected thesis to the Librarian for publication.
@@ -1461,7 +1575,11 @@ export function ApprovalWorkflow() {
                             if (!token) return
                             setSubmittingReview(true)
                             try {
-                              await apiReviewPaper(selectedPaper.id, 'revision', reviewComments || 'Revision requested in HOD/Coordinator final sign-off', token)
+                              if (isCoordinator) {
+                                await apiCoordinatorApproveCorrections(selectedPaper.id, 'revise', reviewComments || 'Revision requested by Project Coordinator', token)
+                              } else {
+                                await apiHodApproveCorrections(selectedPaper.id, 'revise', reviewComments || 'Revision requested by HOD', token)
+                              }
                               setDialogOpen(false)
                               setSelectedPaper(null)
                               await loadAll()
@@ -1482,7 +1600,11 @@ export function ApprovalWorkflow() {
                             if (!token) return
                             setSubmittingReview(true)
                             try {
-                              await apiReviewPaper(selectedPaper.id, 'approve', reviewComments, token)
+                              if (isCoordinator) {
+                                await apiCoordinatorApproveCorrections(selectedPaper.id, 'approved', reviewComments, token)
+                              } else {
+                                await apiHodApproveCorrections(selectedPaper.id, 'approved', reviewComments, token)
+                              }
                               setDialogOpen(false)
                               setSelectedPaper(null)
                               await loadAll()
@@ -1494,15 +1616,13 @@ export function ApprovalWorkflow() {
                           }} 
                           disabled={submittingReview}
                         >
-                          {submittingReview ? 'Signing...' : selectedPaper.status === 'phase5_pending_coordinator' ? 'Sign as Project Coordinator' : 'Sign & Approve Final Work (HOD)'}
+                          {submittingReview ? 'Signing...' : isCoordinator ? 'Sign as Project Coordinator' : 'Sign & Approve Final Work (HOD)'}
                         </Button>
                       </div>
                     </div>
                   ) : (
                     <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 p-3 rounded-lg">
-                      {selectedPaper.status === 'phase5_pending_coordinator'
-                        ? 'Currently awaiting the Project Coordinator signature.'
-                        : 'Currently awaiting the HOD signature.'}
+                      Awaiting sign-off signatures from Supervisor, Project Coordinator, and HOD.
                     </div>
                   )}
                 </div>

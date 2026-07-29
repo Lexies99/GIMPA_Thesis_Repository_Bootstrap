@@ -21,6 +21,10 @@ import {
   apiUploadDraft,
   apiDownloadExaminerScript,
   apiUploadCorrections,
+  apiDeleteThesis,
+  apiDeleteStep,
+  apiDownloadStepFile,
+  apiBase,
 } from '../../lib/api'
 import type {
   ApiPaper,
@@ -34,7 +38,8 @@ import type {
 } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentCommentViewer } from './DocumentCommentViewer'
-import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle } from 'lucide-react'
+import { DocxViewer } from './DocxViewer'
+import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Eye, Download } from 'lucide-react'
 
 interface StudentPaperWorkflowProps {
   paper: ApiPaper
@@ -49,6 +54,7 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
   const [file, setFile] = useState<File | null>(null)
   const [combinedFile, setCombinedFile] = useState<File | null>(null)
   const [draftFile, setDraftFile] = useState<File | null>(null)
+  const [viewingStepId, setViewingStepId] = useState<number | null>(null)
   
   const [ch1, setCh1] = useState(!!paper.ch1_student_done)
   const [ch2, setCh2] = useState(!!paper.ch2_student_done)
@@ -167,113 +173,124 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
       case 'phase1_proposal_submitted':
         return {
           icon: <Clock className="size-5 text-amber-500 animate-pulse" />,
-          title: 'Phase 1: Proposal Submitted',
-          desc: 'Your project proposal has been submitted successfully. It is currently awaiting review and approval by the Head of Department (HOD).',
+          title: 'Phase 1: Topic Submitted',
+          desc: 'Your thesis topic has been submitted successfully. It is currently awaiting review and acceptance by the Head of Department (HOD) / Project Coordinator.',
           color: 'border-amber-200 bg-amber-50/50 dark:border-amber-900/30 dark:bg-amber-950/10',
           textColor: 'text-amber-800 dark:text-amber-300'
         }
-      case 'phase1_proposal_rejected':
+      case 'phase1_topic_accepted':
         return {
-          icon: <AlertCircle className="size-5 text-destructive" />,
-          title: 'Phase 1: Proposal Rejected',
-          desc: 'Your project proposal was rejected by the HOD. Please review the feedback comments and upload a revised version in the Upload tab.',
-          color: 'border-destructive/20 bg-destructive/5',
-          textColor: 'text-destructive'
-        }
-      case 'phase2_pending_coordinator':
-        return {
-          icon: <CheckCircle2 className="size-5 text-green-500 animate-bounce" />,
-          title: 'Phase 2: Coordinator Assignment',
-          desc: 'Your proposal has been accepted! Currently awaiting the HOD to assign your Project Coordinator.',
+          icon: <CheckCircle2 className="size-5 text-green-500" />,
+          title: 'Phase 2: Project Proposal Submission Required',
+          desc: 'Your topic was accepted and a supervisor has been assigned! Please upload your full Project Proposal below for supervisor review.',
           color: 'border-green-200 bg-green-50/50 dark:border-green-900/30 dark:bg-green-950/10',
           textColor: 'text-green-800 dark:text-green-300'
         }
-      case 'phase2_pending_supervisor':
+      case 'phase1_topic_rejected':
+      case 'phase1_proposal_rejected':
+        return {
+          icon: <AlertCircle className="size-5 text-destructive" />,
+          title: 'Phase 1: Topic Rejected',
+          desc: 'Your topic was rejected by the HOD. Please review feedback comments and resubmit.',
+          color: 'border-destructive/20 bg-destructive/5',
+          textColor: 'text-destructive'
+        }
+      case 'phase2_proposal_submitted':
         return {
           icon: <Clock className="size-5 text-blue-500 animate-pulse" />,
-          title: 'Phase 2: Supervisor Assignment',
-          desc: 'Project Coordinator assigned. Currently awaiting supervisor assignment to oversee your thesis chapters.',
+          title: 'Phase 2: Proposal Submitted — Awaiting Supervisor Review',
+          desc: 'Your project proposal has been submitted to your assigned supervisor for review and approval.',
           color: 'border-blue-200 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/10',
           textColor: 'text-blue-800 dark:text-blue-300'
+        }
+      case 'phase3_chapters':
+      case 'phase3_steps_in_progress':
+      case 'phase2_proposal_accepted':
+        return {
+          icon: <FileText className="size-5 text-indigo-500 animate-pulse" />,
+          title: 'Phase 2: Dynamic Steps Progress',
+          desc: 'Proposal accepted! Please submit your thesis steps/chapters for supervisor review below. Your supervisor will advance you to Phase 3 (Examination) when all steps are complete.',
+          color: 'border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/30 dark:bg-indigo-950/10',
+          textColor: 'text-indigo-800 dark:text-indigo-300'
         }
       case 'phase4_pending_examiners':
         return {
           icon: <CheckCircle2 className="size-5 text-green-500" />,
-          title: 'Phase 4: Examiner Assignment',
-          desc: 'All 5 chapters have been completed and approved by your supervisor! Currently awaiting assignment of Internal and External Examiners.',
+          title: 'Phase 3: Awaiting Examiner Assignment',
+          desc: 'Your supervisor has marked all steps complete! Currently awaiting assignment of Internal and External Examiners by the HOD/Project Coordinator.',
           color: 'border-green-200 bg-green-50/50 dark:border-green-900/30 dark:bg-green-950/10',
           textColor: 'text-green-800 dark:text-green-300'
         }
       case 'phase4_marking':
         return {
           icon: <Clock className="size-5 text-indigo-500 animate-pulse" />,
-          title: 'Phase 4: Thesis Assessment',
-          desc: 'Your thesis is currently under review, marking, and grading by the assigned examiners.',
-          color: 'border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/30 dark:bg-indigo-950/10',
-          textColor: 'text-indigo-800 dark:text-indigo-300'
-        }
-      case 'phase3_chapters':
-        return {
-          icon: <FileText className="size-5 text-indigo-500 animate-pulse" />,
-          title: 'Phase 3: Chapters Review',
-          desc: 'Your supervisor has been assigned! You are now in Phase 3 (Chapters writing). Please work on your chapter drafts and update your progress below.',
+          title: 'Phase 3: Examination Underway',
+          desc: 'Your thesis is currently under marking and evaluation by assigned Internal and External Examiners. You will be notified when examiner feedback is available.',
           color: 'border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/30 dark:bg-indigo-950/10',
           textColor: 'text-indigo-800 dark:text-indigo-300'
         }
       case 'revision':
         return {
           icon: <AlertCircle className="size-5 text-amber-500 animate-pulse" />,
-          title: 'Revision Required',
-          desc: 'Your supervisor has requested revisions on one or more chapters. Please check the feedback comments, upload the corrected drafts, and check them off when ready.',
+          title: 'Step Revision Required',
+          desc: 'Your supervisor requested revisions on a submitted step. Please check comments and upload your revised step file.',
           color: 'border-amber-200 bg-amber-50/50 dark:border-amber-900/30 dark:bg-amber-950/10',
           textColor: 'text-amber-800 dark:text-amber-300'
         }
       case 'phase5_corrections':
         return {
-          icon: <FileText className="size-5 text-indigo-500 animate-pulse" />,
-          title: 'Phase 5: Post-Defense Corrections',
-          desc: 'Your thesis assessment has been completed. Please review the examiner feedback, make the necessary corrections, and upload your final document.',
-          color: 'border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/30 dark:bg-indigo-950/10',
-          textColor: 'text-indigo-800 dark:text-indigo-300'
+          icon: <FileText className="size-5 text-orange-500 animate-pulse" />,
+          title: 'Phase 4: Post-Examination Corrections Required',
+          desc: 'Examiner feedback has been compiled by the HOD. Please review the comments and upload your corrected document for dual sign-off (Supervisor → HOD/Coordinator).',
+          color: 'border-orange-200 bg-orange-50/50 dark:border-orange-900/30 dark:bg-orange-950/10',
+          textColor: 'text-orange-800 dark:text-orange-300'
+        }
+      case 'phase5_pending_supervisor':
+        return {
+          icon: <Clock className="size-5 text-blue-500 animate-pulse" />,
+          title: 'Phase 4: Corrections — Awaiting Supervisor Review',
+          desc: 'Corrections submitted. Currently awaiting review and approval from your Supervisor (Sign-off 1 of 2).',
+          color: 'border-blue-200 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/10',
+          textColor: 'text-blue-800 dark:text-blue-300'
         }
       case 'phase5_pending_coordinator':
         return {
           icon: <Clock className="size-5 text-blue-500 animate-pulse" />,
-          title: 'Phase 5: Coordinator Sign-off',
-          desc: 'Your corrections have been uploaded successfully. Awaiting final review and sign-off by the Project Coordinator.',
+          title: 'Phase 4: Corrections — Awaiting Coordinator Sign-off',
+          desc: 'Supervisor approved! Currently awaiting review and sign-off from the Project Coordinator (Sign-off 2 of 2).',
           color: 'border-blue-200 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/10',
           textColor: 'text-blue-800 dark:text-blue-300'
         }
       case 'phase5_pending_hod':
         return {
           icon: <Clock className="size-5 text-blue-500 animate-pulse" />,
-          title: 'Phase 5: HOD Sign-off',
-          desc: 'Your corrections have been approved by the coordinator. Awaiting final approval and sign-off by the Head of Department (HOD).',
-          color: 'border-blue-200 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/10',
-          textColor: 'text-blue-800 dark:text-blue-300'
-        }
-      case 'phase5_pending_supervisor':
-        return {
-          icon: <Clock className="size-5 text-blue-500 animate-pulse" />,
-          title: 'Phase 5: Corrections Review',
-          desc: 'Your examiner corrections have been uploaded successfully. Awaiting your supervisor\'s final review and approval.',
+          title: 'Phase 4: Corrections — Awaiting HOD Sign-off',
+          desc: 'Supervisor approved! Currently awaiting final review and sign-off from the Head of Department (Sign-off 2 of 2).',
           color: 'border-blue-200 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/10',
           textColor: 'text-blue-800 dark:text-blue-300'
         }
       case 'phase5_pending_hod_and_coordinator':
         return {
           icon: <Clock className="size-5 text-indigo-500 animate-pulse" />,
-          title: 'Phase 5: Final Departmental Review',
-          desc: 'Your supervisor approved the corrections! Awaiting final verification and clearance from the HOD and Project Coordinator.',
+          title: 'Phase 4: Corrections — Awaiting HOD & Coordinator Sign-off',
+          desc: 'Supervisor approved! Currently awaiting clearance sign-offs from the Project Coordinator and HOD (dual sign-off gate).',
           color: 'border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/30 dark:bg-indigo-950/10',
           textColor: 'text-indigo-800 dark:text-indigo-300'
         }
       case 'phase5_approved_for_library':
+        return {
+          icon: <CheckCircle2 className="size-5 text-emerald-500" />,
+          title: 'Phase 5: Approved — Awaiting Library Publication',
+          desc: 'Dual sign-off (Supervisor + HOD/Coordinator) complete! Your thesis is awaiting final review and publication by the Librarian.',
+          color: 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/30 dark:bg-emerald-950/10',
+          textColor: 'text-emerald-800 dark:text-emerald-300'
+        }
+      case 'phase5_published':
       case 'approved':
         return {
           icon: <CheckCircle2 className="size-5 text-emerald-500" />,
-          title: 'Approved for Publication',
-          desc: 'Congratulations! Your thesis has been fully approved by the department. It is now published in the repository.',
+          title: 'Phase 5: Published in GIMPA Thesis Repository',
+          desc: 'Congratulations! Your thesis has been officially published by the Librarian in the GIMPA Institutional Repository.',
           color: 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/30 dark:bg-emerald-950/10',
           textColor: 'text-emerald-800 dark:text-emerald-300'
         }
@@ -286,168 +303,241 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
 
   return (
     <div className="mt-3 border border-border/60 rounded-lg p-3 bg-muted/20 space-y-3">
-      {(paper.status === 'phase3_chapters' || paper.status === 'revision') && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Chapters Progress (Student Checklist)
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            Check chapters once you have finished drafts for them. Your supervisor must approve all 5 chapters to proceed.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 pt-1">
-            {[
-              { id: 'ch1', name: 'Chapter 1', val: ch1, sup: paper.ch1_supervisor_approved, enabled: true },
-              { id: 'ch2', name: 'Chapter 2', val: ch2, sup: paper.ch2_supervisor_approved, enabled: !!paper.ch1_supervisor_approved },
-              { id: 'ch3', name: 'Chapter 3', val: ch3, sup: paper.ch3_supervisor_approved, enabled: !!paper.ch2_supervisor_approved },
-              { id: 'ch4', name: 'Chapter 4', val: ch4, sup: paper.ch4_supervisor_approved, enabled: !!paper.ch3_supervisor_approved },
-              { id: 'ch5', name: 'Chapter 5', val: ch5, sup: paper.ch5_supervisor_approved, enabled: !!paper.ch4_supervisor_approved },
-            ].map((ch) => {
-              const isDisabled = !ch.enabled;
-              return (
-                <div 
-                  key={ch.id} 
-                  className={`border rounded p-2 flex flex-col justify-between gap-2 transition-all ${
-                    isDisabled 
-                      ? 'bg-muted/50 border-muted opacity-60 text-muted-foreground' 
-                      : 'bg-background hover:border-primary/30'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id={`student-${paper.id}-${ch.id}`}
-                      checked={ch.val}
-                      disabled={isDisabled}
-                      onChange={(e) => void handleCheckboxChange(ch.id, e.target.checked)}
-                      className="rounded border-gray-300 disabled:opacity-50"
-                    />
-                    <label 
-                      htmlFor={`student-${paper.id}-${ch.id}`} 
-                      className={`text-xs font-medium ${isDisabled ? 'cursor-not-allowed text-muted-foreground/80' : 'cursor-pointer'}`}
-                    >
-                      {ch.name}
-                    </label>
-                  </div>
-                  <div className="text-[10px]">
-                    <span className={isDisabled ? 'text-muted-foreground/80' : 'text-muted-foreground'}>Approved:</span>{' '}
-                    {ch.sup ? (
-                      <span className="text-green-600 font-semibold">Yes</span>
-                    ) : (
-                      <span className={isDisabled ? 'text-muted-foreground/80 font-medium' : 'text-amber-600 font-semibold'}>
-                        {isDisabled ? 'Locked' : 'No'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+      {/* PHASE 2 — PROJECT PROPOSAL UPLOAD SECTION */}
+      {(paper.status === 'phase1_topic_accepted' || paper.status === 'phase2_proposal_submitted') && (
+        <div className="space-y-3 border-b pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Phase 2: Submit Project Proposal
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {paper.status === 'phase2_proposal_submitted'
+                  ? 'Your Project Proposal has been submitted to your supervisor. You may upload a revised document below if needed.'
+                  : 'Upload your complete Project Proposal document (PDF or DOCX) for your supervisor review. Once accepted, you will proceed to thesis steps.'}
+              </p>
+            </div>
           </div>
-          {!paper.ch5_supervisor_approved && (
-            <div className="space-y-3 mt-4 border-t pt-3 animate-in fade-in duration-200">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Upload Draft/Working Chapter Document
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                Upload your chapter draft/updated document. Your supervisor will be notified to review it.
-              </p>
-              <form onSubmit={handleUploadDraft} className="space-y-2">
-                <div className="flex gap-2 items-center">
-                  <Input
-                    id={`draft-file-${paper.id}`}
-                    type="file"
-                    accept=".pdf,.doc,.docx"
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDraftFile(e.target.files?.[0] || null)}
-                    className="h-9 text-xs"
-                    required
-                  />
-                  <Button type="submit" size="sm" disabled={submitting || !draftFile}>
-                    {submitting ? 'Uploading...' : 'Upload Draft'}
-                  </Button>
-                </div>
-              </form>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!draftFile) return
+              setSubmitting(true)
+              try {
+                const { apiSubmitProposal } = await import('../../lib/api')
+                await apiSubmitProposal(paper.id, draftFile, token)
+                setSuccess('Project Proposal submitted successfully for supervisor review!')
+                setDraftFile(null)
+                onUpdate()
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Proposal submission failed')
+              } finally {
+                setSubmitting(false)
+              }
+            }}
+            className="space-y-2"
+          >
+            <div className="flex gap-2 items-center">
+              <Input
+                type="file"
+                accept=".pdf,.doc,.docx"
+                onChange={(e) => setDraftFile(e.target.files?.[0] || null)}
+                className="h-9 text-xs"
+                required
+              />
+              <Button type="submit" size="sm" disabled={submitting || !draftFile} className="bg-primary text-primary-foreground font-semibold">
+                {submitting ? 'Submitting...' : 'Upload Project Proposal'}
+              </Button>
             </div>
-          )}
-          {paper.ch5_supervisor_approved && !paper.combined_thesis_student_done && (
-            <div className="space-y-3 mt-4 border-t pt-3 animate-in fade-in duration-200">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Upload Combined Thesis Document
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                All 5 chapters have been approved by your supervisor. Please upload the complete, combined thesis document below for final sign-off.
-              </p>
-              <form onSubmit={handleUploadCombinedThesis} className="space-y-2">
-                <div className="flex gap-2 items-center">
-                  <Input
-                    id={`combined-file-${paper.id}`}
-                    type="file"
-                    accept=".pdf,.doc,.docx"
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCombinedFile(e.target.files?.[0] || null)}
-                    className="h-9 text-xs"
-                    required
-                  />
-                  <Button type="submit" size="sm" disabled={submitting || !combinedFile}>
-                    {submitting ? 'Uploading...' : 'Upload Combined Thesis'}
-                  </Button>
-                </div>
-              </form>
-            </div>
-          )}
-          {paper.ch5_supervisor_approved && paper.combined_thesis_student_done && !paper.combined_thesis_supervisor_approved && (
-            <div className="space-y-3 mt-4 border-t pt-3 animate-in fade-in duration-200">
-              <div className="flex items-start gap-3 border border-blue-200 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/10 rounded-lg p-3">
-                <div className="mt-0.5"><Clock className="size-5 text-blue-500 animate-pulse" /></div>
-                <div className="space-y-1">
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Combined Thesis Review</p>
-                  <p className="text-xs text-blue-800 dark:text-blue-300">Combined thesis uploaded. Awaiting supervisor approval.</p>
-                </div>
-              </div>
-            </div>
-          )}
+          </form>
         </div>
       )}
 
-      {paper.status === 'phase5_corrections' && (
+      {(paper.status === 'phase3_chapters' || paper.status === 'phase3_steps_in_progress' || paper.status === 'phase2_proposal_accepted' || paper.status === 'revision') && (
         <div className="space-y-3">
-          {(paper.internal_result_file_name || paper.external_result_file_name) && (
-            <div className="space-y-2 border-b pb-3">
+          <div className="flex items-center justify-between border-b pb-2">
+            <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Download Examiner Marked Scripts
+                Phase 2: Dynamic Steps Progress
               </p>
-              <div className="flex flex-wrap gap-2">
-                {paper.internal_result_file_name && (
-                  <Button size="sm" variant="outline" onClick={() => void handleDownloadExaminerScript('internal')} className="flex items-center gap-1.5 text-xs">
-                    <FileText className="size-4" />
-                    Internal Examiner Script
-                  </Button>
-                )}
-                {paper.external_result_file_name && (
-                  <Button size="sm" variant="outline" onClick={() => void handleDownloadExaminerScript('external')} className="flex items-center gap-1.5 text-xs">
-                    <FileText className="size-4" />
-                    External Examiner Script
-                  </Button>
-                )}
+              <p className="text-[11px] text-muted-foreground">
+                Submit your thesis steps/chapters for supervisor review. Your supervisor will mark all steps as finished to advance you to Phase 3 (Examination).
+              </p>
+            </div>
+          </div>
+
+          {/* List of Dynamic Steps */}
+          {paper.steps && paper.steps.length > 0 ? (
+            <div className="space-y-2">
+              {paper.steps.map((st) => (
+                <div key={st.id} className="border rounded-md p-2.5 bg-background text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-foreground">
+                      Step {st.step_number}: {st.title || `Step ${st.step_number}`}
+                    </span>
+                    <Badge variant={st.status === 'approved' ? 'default' : st.status === 'revise' ? 'destructive' : 'secondary'} className="capitalize text-[10px]">
+                      {st.status}
+                    </Badge>
+                  </div>
+                  {st.supervisor_comment && (
+                    <div className="bg-muted/50 rounded p-1.5 text-[11px] text-muted-foreground">
+                      <span className="font-semibold">Supervisor Feedback:</span> {st.supervisor_comment}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/40 mt-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px] text-primary border-primary/30 font-semibold"
+                      onClick={() => setViewingStepId(viewingStepId === st.id ? null : st.id)}
+                    >
+                      <Eye className="size-3 mr-1" /> {viewingStepId === st.id ? 'Close Reader' : `👁 View Step ${st.step_number}`}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      onClick={async () => {
+                        try {
+                          const { blob, filename } = await apiDownloadStepFile(st.id, token)
+                          const url = window.URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = filename
+                          document.body.appendChild(a)
+                          a.click()
+                          a.remove()
+                          window.URL.revokeObjectURL(url)
+                        } catch (err) {
+                          window.alert(err instanceof Error ? err.message : 'Download failed')
+                        }
+                      }}
+                    >
+                      <Download className="size-3 mr-1" /> Download
+                    </Button>
+                    {st.status !== 'approved' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={async () => {
+                          if (!window.confirm(`Delete Step ${st.step_number}? This cannot be undone.`)) return
+                          try {
+                            await apiDeleteStep(st.id, token)
+                            onUpdate()
+                          } catch (err) {
+                            window.alert(err instanceof Error ? err.message : 'Failed to delete step')
+                          }
+                        }}
+                      >
+                        <Trash2 className="size-3 mr-1" /> Delete
+                      </Button>
+                    )}
+                  </div>
+
+                  {viewingStepId === st.id && (
+                    <div className="pt-2">
+                      <DocxViewer
+                        fileUrl={`${apiBase}/theses/steps/${st.id}/file?t=${Date.now()}`}
+                        token={token}
+                        filename={st.title || `Step_${st.step_number}.docx`}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="border border-dashed rounded p-3 text-center text-xs text-muted-foreground">
+              No steps submitted yet. Upload your first step below.
+            </div>
+          )}
+
+          {/* Form to submit step */}
+          <div className="border-t pt-3 space-y-2">
+            <p className="text-xs font-semibold text-foreground">Submit Next Thesis Step</p>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                if (!draftFile) return
+                setSubmitting(true)
+                try {
+                  const nextStepNum = (paper.steps?.length || 0) + 1
+                  const { apiSubmitStep } = await import('../../lib/api')
+                  await apiSubmitStep(paper.id, nextStepNum, `Step ${nextStepNum}`, draftFile, token)
+                  setSuccess(`Step ${nextStepNum} submitted successfully!`)
+                  setDraftFile(null)
+                  onUpdate()
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Step submission failed')
+                } finally {
+                  setSubmitting(false)
+                }
+              }}
+              className="space-y-2"
+            >
+              <div className="flex gap-2 items-center">
+                <Input
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  onChange={(e) => setDraftFile(e.target.files?.[0] || null)}
+                  className="h-9 text-xs"
+                  required
+                />
+                <Button type="submit" size="sm" disabled={submitting || !draftFile}>
+                  {submitting ? 'Submitting...' : 'Upload Step File'}
+                </Button>
               </div>
-            </div>
-          )}
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Upload Examiner Corrections
-          </p>
-          {paper.examiner_corrections && (
-            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded p-2.5 text-xs text-amber-800 dark:text-amber-300">
-              <span className="font-semibold block mb-1">Corrections Required:</span>
-              <p className="whitespace-pre-line">{paper.examiner_corrections}</p>
-            </div>
-          )}
-          <form onSubmit={handleUploadCorrections} className="space-y-2">
-            <Label htmlFor={`file-corrections-${paper.id}`} className="text-xs font-medium">
-              Select corrected thesis document (PDF/DOCX)
-            </Label>
-            <div className="flex gap-2 items-center">
-              <Input
-                id={`file-corrections-${paper.id}`}
-                type="file"
-                accept=".pdf,.doc,.docx"
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFile(e.target.files?.[0] || null)}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {(paper.status.startsWith('phase5') || paper.status.startsWith('phase4')) && (
+        <div className="space-y-3">
+          {paper.status === 'phase5_corrections' && (
+            <div className="space-y-3">
+              {(paper.internal_result_file_name || paper.external_result_file_name) && (
+                <div className="space-y-2 border-b pb-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Download Examiner Marked Scripts
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {paper.internal_result_file_name && (
+                      <Button size="sm" variant="outline" onClick={() => void handleDownloadExaminerScript('internal')} className="flex items-center gap-1.5 text-xs">
+                        <FileText className="size-4" />
+                        Internal Examiner Script
+                      </Button>
+                    )}
+                    {paper.external_result_file_name && (
+                      <Button size="sm" variant="outline" onClick={() => void handleDownloadExaminerScript('external')} className="flex items-center gap-1.5 text-xs">
+                        <FileText className="size-4" />
+                        External Examiner Script
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Upload Examiner Corrections
+              </p>
+              {paper.examiner_corrections && (
+                <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded p-2.5 text-xs text-amber-800 dark:text-amber-300">
+                  <span className="font-semibold block mb-1">Compiled Examiner Comments:</span>
+                  <p className="whitespace-pre-line">{paper.examiner_corrections}</p>
+                </div>
+              )}
+              <form onSubmit={handleUploadCorrections} className="space-y-2">
+                <Label htmlFor={`file-corrections-${paper.id}`} className="text-xs font-medium">
+                  Select corrected thesis document (PDF/DOCX)
+                </Label>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    id={`file-corrections-${paper.id}`}
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFile(e.target.files?.[0] || null)}
                 className="h-9 text-xs"
                 required
               />
@@ -458,6 +548,8 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
           </form>
         </div>
       )}
+    </div>
+  )}
 
       {statusDetails && (
         <div className={`flex items-start gap-3 border rounded-lg p-3 ${statusDetails.color} animate-in fade-in slide-in-from-top-1 duration-200`}>
@@ -888,9 +980,52 @@ export function Dashboard({ userRole }: DashboardProps) {
                   <div key={paper.id} className="p-3 border rounded-md space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-medium">{paper.title}</p>
-                      <Badge variant={paper.status === 'approved' ? 'default' : paper.status === 'revision' ? 'secondary' : 'outline'}>
-                        {paper.status}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={
+                          paper.status === 'approved' || paper.status === 'phase5_published' ? 'default' :
+                          paper.status === 'revision' || paper.status === 'phase1_topic_rejected' || paper.status === 'phase1_proposal_rejected' ? 'destructive' :
+                          paper.status === 'phase5_approved_for_library' || paper.status === 'phase5_published' ? 'default' :
+                          paper.status.startsWith('phase5') ? 'secondary' : 'outline'
+                        } className="text-[10px] whitespace-nowrap">
+                          {paper.status === 'phase1_proposal_submitted' ? 'Phase 1 — Awaiting HOD Review' :
+                           paper.status === 'phase1_topic_accepted' ? 'Phase 2 — Proposal Required' :
+                           paper.status === 'phase1_topic_rejected' || paper.status === 'phase1_proposal_rejected' ? 'Phase 1 — Topic Rejected' :
+                           paper.status === 'phase2_proposal_submitted' ? 'Phase 2 — Proposal Submitted' :
+                           paper.status === 'phase2_proposal_accepted' ? 'Phase 2 — Proposal Accepted' :
+                           paper.status === 'phase3_chapters' || paper.status === 'phase3_steps_in_progress' ? 'Phase 2 — Steps in Progress' :
+                           paper.status === 'phase4_pending_examiners' ? 'Phase 3 — Awaiting Examiners' :
+                           paper.status === 'phase4_marking' ? 'Phase 3 — Under Examination' :
+                           paper.status === 'phase5_corrections' ? 'Phase 4 — Corrections Required' :
+                           paper.status === 'phase5_pending_supervisor' ? 'Phase 4 — Awaiting Supervisor' :
+                           paper.status === 'phase5_pending_coordinator' ? 'Phase 4 — Awaiting Coordinator' :
+                           paper.status === 'phase5_pending_hod' ? 'Phase 4 — Awaiting HOD' :
+                           paper.status === 'phase5_pending_hod_and_coordinator' ? 'Phase 4 — Awaiting Coord & HOD' :
+                           paper.status === 'phase5_approved_for_library' ? 'Phase 5 — Ready for Publication' :
+                           paper.status === 'phase5_published' || paper.status === 'approved' ? '✓ Published' :
+                           paper.status}
+                        </Badge>
+                        {(paper.status === 'phase1_proposal_submitted' || paper.status === 'phase1_topic_rejected') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            title="Delete this submission"
+                            onClick={async () => {
+                              if (!window.confirm('Are you sure you want to delete this thesis submission? This action cannot be undone.')) return
+                              const tok = localStorage.getItem('murrs_access_token') || ''
+                              try {
+                                await apiDeleteThesis(paper.id, tok)
+                                loadData()
+                              } catch (err) {
+                                window.alert(err instanceof Error ? err.message : 'Failed to delete submission')
+                              }
+                            }}
+                          >
+                            <Trash2 className="size-3.5 mr-1" />
+                            Delete
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Submitted: {paper.created_at ? new Date(paper.created_at).toLocaleString() : '-'}

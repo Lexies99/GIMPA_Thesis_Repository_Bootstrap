@@ -206,6 +206,21 @@ def create_paper(
     for tag_id in tag_ids:
         db.add(PaperTag(paper_id=paper.id, tag_id=tag_id))
 
+    from app.models.thesis_system import Thesis
+    existing_thesis = db.query(Thesis).filter(Thesis.id == paper.id).first()
+    if not existing_thesis and created_by_id:
+        thesis = Thesis(
+            id=paper.id,
+            student_id=created_by_id,
+            department_id=paper.department_id,
+            topic_title=paper.title,
+            topic_description=paper.abstract,
+            topic_status="pending",
+            supervisor_id=supervisor_id,
+            phase=1,
+        )
+        db.add(thesis)
+
     db.commit()
     db.refresh(paper)
     return get_paper(db, paper.id) or paper

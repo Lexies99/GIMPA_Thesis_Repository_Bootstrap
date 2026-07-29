@@ -18,6 +18,17 @@ def clear_theses_keep_accounts() -> None:
         print("Clearing thesis database records while preserving all user accounts...")
 
         tables_to_empty = [
+            "document_comments",
+            "audit_log",
+            "publications",
+            "corrections",
+            "hod_comments",
+            "examiner_uploads",
+            "examiner_assignments",
+            "step_finalization",
+            "steps",
+            "proposals",
+            "theses",
             "paper_annotations",
             "paper_workflow_events",
             "paper_reviews",

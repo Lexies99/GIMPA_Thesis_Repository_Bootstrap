@@ -35,5 +35,12 @@ def revoke_refresh_token(db: Session, record: RefreshToken) -> RefreshToken:
 def is_refresh_token_valid(record: RefreshToken) -> bool:
     if record.revoked:
         return False
-    now = datetime.now(timezone.utc)
-    return record.expires_at > now
+    expires_at = record.expires_at
+    if expires_at is None:
+        return False
+    if expires_at.tzinfo is None:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+    else:
+        now = datetime.now(timezone.utc)
+    return expires_at > now
+
