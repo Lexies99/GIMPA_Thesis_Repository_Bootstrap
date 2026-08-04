@@ -53,7 +53,8 @@ const TabsList = React.forwardRef<HTMLDivElement, TabsListProps>(
     <div
       ref={ref}
       role="tablist"
-      className={`inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground ${className || ""}`}
+      className={`inline-flex h-10 items-center justify-center rounded-md p-1 ${className || ""}`}
+      style={{backgroundColor:'var(--bg-input)',color:'var(--text-muted)',border:'1px solid var(--border-color)'}}
       {...props}
     />
   )
@@ -81,9 +82,10 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
         }}
         className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
           isActive
-            ? "bg-background text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground"
+            ? "bg-purple-600 text-white shadow-sm font-semibold"
+            : "hover:text-purple-400"
         } ${className || ""}`}
+        style={!isActive ? {color:'var(--text-muted)'} : undefined}
         {...props}
       />
     )

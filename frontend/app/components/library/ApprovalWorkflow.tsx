@@ -547,133 +547,131 @@ export function ApprovalWorkflow() {
 
         <TabsContent value="pending" className="space-y-4">
           {(isHOD || isCoordinator || isDean || isAdmin) && (
-            <Card className="border-primary/20 bg-primary/5">
-              <CardContent className="py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div>
-                  <h4 className="text-sm font-semibold flex items-center gap-2">
-                    <Award className="size-4 text-primary" />
-                    {isDean ? 'School & Department Master Results Hub' : 'Department Examiner Results Hub'}
-                  </h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Open ONLYOFFICE Excel workbooks with dedicated tabs for each Certification Type (Undergraduate, Masters, MPhil, PhD).
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {(isHOD || isCoordinator || isAdmin) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                      onClick={() => window.open('/editor?type=dept_results_excel', '_blank')}
-                    >
-                      📊 Department Results (ONLYOFFICE Excel)
-                    </Button>
-                  )}
-                  {(isDean || isAdmin) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
-                      onClick={() => window.open('/editor?type=dean_results_excel', '_blank')}
-                    >
-                      🎓 School Master Results (ONLYOFFICE Excel)
-                    </Button>
-                  )}
+            <div className="ta-card p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2 m-0">
+                  <Award className="size-4 text-purple-400" />
+                  {isDean ? 'School & Department Master Results Hub' : 'Department Examiner Results Hub'}
+                </h4>
+                <p className="text-xs text-slate-400 mt-1 m-0">
+                  Open ONLYOFFICE Excel workbooks with dedicated tabs for each Certification Type (Undergraduate, Masters, MPhil, PhD).
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {(isHOD || isCoordinator || isAdmin) && (
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                    onClick={() => window.open('/editor?type=examiner_results_excel', '_blank')}
+                    className="btn-ta-glass text-xs"
+                    onClick={() => window.open('/editor?type=dept_results_excel', '_blank')}
                   >
-                    📝 My Examiner Sheet (ONLYOFFICE Excel)
+                    📊 Department Results (ONLYOFFICE Excel)
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
+                )}
+                {(isDean || isAdmin) && (
+                  <Button
+                    size="sm"
+                    className="btn-ta-glass text-xs"
+                    onClick={() => window.open('/editor?type=dean_results_excel', '_blank')}
+                  >
+                    🎓 School Master Results (ONLYOFFICE Excel)
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  className="btn-ta-glass text-xs"
+                  onClick={() => window.open('/editor?type=examiner_results_excel', '_blank')}
+                >
+                  📝 My Examiner Sheet (ONLYOFFICE Excel)
+                </Button>
+              </div>
+            </div>
           )}
 
           {pendingSubmissions.some(p => p.status === 'phase4_marking' && (p.internal_examiner_id === user?.id || p.external_examiner_id === user?.id)) && !(isHOD || isCoordinator || isDean || isAdmin) && (
-            <Card className="border-primary/20 bg-primary/5">
-              <CardContent className="py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div>
-                  <h4 className="text-sm font-semibold flex items-center gap-2">
-                    <Award className="size-4 text-primary" />
-                    Assigned Marking Works
-                  </h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    You are assigned as examiner for papers listed below. Mark inline via ONLYOFFICE, use Excel results sheets, or download files offline.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                    onClick={() => window.open('/editor?type=examiner_results_excel', '_blank')}
-                  >
-                    📊 Open Results Spreadsheet (ONLYOFFICE Excel)
-                  </Button>
-                  <Button size="sm" onClick={handleDownloadExaminerAssignedZip} disabled={downloadingZip}>
-                    {downloadingZip ? 'Downloading...' : 'Download All Assigned Papers ZIP'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ta-card p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2 m-0">
+                  <Award className="size-4 text-purple-400" />
+                  Assigned Marking Works
+                </h4>
+                <p className="text-xs text-slate-400 mt-1 m-0">
+                  You are assigned as examiner for papers listed below. Mark inline via ONLYOFFICE, use Excel results sheets, or download files offline.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  className="btn-ta-glass text-xs"
+                  onClick={() => window.open('/editor?type=examiner_results_excel', '_blank')}
+                >
+                  📊 Open Results Spreadsheet (ONLYOFFICE Excel)
+                </Button>
+                <Button size="sm" className="btn-ta-purple text-xs" onClick={handleDownloadExaminerAssignedZip} disabled={downloadingZip}>
+                  {downloadingZip ? 'Downloading...' : 'Download All Assigned Papers ZIP'}
+                </Button>
+              </div>
+            </div>
           )}
 
           {pendingSubmissions.map((paper) => (
-            <Card key={paper.id}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="outline">PAPER-{paper.id}</Badge>
-                      <Badge>{isLibrarian ? 'Ready to Publish' : 'Pending'}</Badge>
-                    </div>
-                    <CardTitle className="mb-2">{paper.title}</CardTitle>
-                    <CardDescription>
-                      Submitted by {paper.authors.map((a) => a.name).join(', ') || 'Unknown'} • {paper.discipline || 'General'} • {formatDocumentTypeLabel(paper.document_type, paper.status)}
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Clock className="size-4" />
-                      Submitted {paper.created_at ? new Date(paper.created_at).toLocaleDateString() : '-'}
+            <div key={paper.id} className="ta-card p-5 space-y-4">
+              <div className="flex items-start justify-between border-b border-white/10 pb-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] font-mono font-bold bg-slate-800 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
+                      PAPER-{paper.id}
                     </span>
-                    <span>Status: {formatStatusLabel(paper.status)}</span>
+                    <span className="badge-ta-purple text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                      {isLibrarian ? 'Ready to Publish' : 'Pending'}
+                    </span>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="outline" className="flex-1" onClick={() => openReviewDialog(paper)}>
-                      <Eye className="size-4 mr-2" />
-                      {isLibrarian ? 'Review & Publish' : 'Review Paper'}
-                    </Button>
-                    {paper.status === 'phase4_marking' && (paper.internal_examiner_id === user?.id || paper.external_examiner_id === user?.id || isAdmin || isHOD || isCoordinator) && (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
-                        >
-                          📝 View Work (ONLYOFFICE)
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => window.open(`/editor?paperId=${paper.id}&type=comments`, '_blank')}
-                        >
-                          💬 Open Comments (ONLYOFFICE)
-                        </Button>
-                      </>
-                    )}
-                  </div>
+                  <h3 className="text-lg font-bold text-white mb-1">{paper.title}</h3>
+                  <p className="text-xs text-slate-400 m-0">
+                    Submitted by <strong className="text-slate-200">{paper.authors.map((a) => a.name).join(', ') || 'Unknown'}</strong> • {paper.discipline || 'General'} • {formatDocumentTypeLabel(paper.document_type, paper.status)}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-6 text-xs text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="size-3.5 text-purple-400" />
+                    Submitted {paper.created_at ? new Date(paper.created_at).toLocaleDateString() : '-'}
+                  </span>
+                  <span>Status: <strong className="text-purple-300">{formatStatusLabel(paper.status)}</strong></span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-white/10">
+                  <Button
+                    size="sm"
+                    className="btn-ta-purple text-xs flex items-center gap-1.5"
+                    onClick={() => {
+                      setSelectedPaper(paper)
+                      setDialogOpen(true)
+                    }}
+                  >
+                    <Eye className="size-3.5" />
+                    <span>Review Paper</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="btn-ta-glass text-xs flex items-center gap-1.5"
+                    onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
+                  >
+                    <FileText className="size-3.5 text-purple-400" />
+                    <span>View Work (ONLYOFFICE)</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="btn-ta-glass text-xs flex items-center gap-1.5"
+                    onClick={() => window.open(`/editor?paperId=${paper.id}&type=comments`, '_blank')}
+                  >
+                    <MessageSquare className="size-3.5 text-purple-400" />
+                    <span>Open Comments (ONLYOFFICE)</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
           ))}
         </TabsContent>
 
@@ -807,28 +805,28 @@ export function ApprovalWorkflow() {
 
           {selectedPaper && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl border" style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-color)' }}>
                 <div>
-                  <p className="text-sm font-medium">Author</p>
-                  <p className="text-sm text-muted-foreground">{selectedPaper.authors.map((a) => a.name).join(', ') || 'Unknown'}</p>
+                  <p className="text-xs font-semibold m-0" style={{ color: 'var(--text-muted)' }}>Author</p>
+                  <p className="text-sm font-bold m-0 mt-0.5" style={{ color: 'var(--text-main)' }}>{selectedPaper.authors.map((a) => a.name).join(', ') || 'Unknown'}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Department</p>
-                  <p className="text-sm text-muted-foreground">{selectedPaper.discipline || 'General'}</p>
+                  <p className="text-xs font-semibold m-0" style={{ color: 'var(--text-muted)' }}>Department</p>
+                  <p className="text-sm font-bold m-0 mt-0.5" style={{ color: 'var(--text-main)' }}>{selectedPaper.discipline || 'General'}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Submission ID</p>
-                  <p className="text-sm text-muted-foreground">PAPER-{selectedPaper.id}</p>
+                  <p className="text-xs font-semibold m-0" style={{ color: 'var(--text-muted)' }}>Submission ID</p>
+                  <p className="text-sm font-mono font-bold m-0 mt-0.5 text-purple-500">PAPER-{selectedPaper.id}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Document Type</p>
-                  <p className="text-sm text-muted-foreground">{formatDocumentTypeLabel(selectedPaper.document_type, selectedPaper.status)}</p>
+                  <p className="text-xs font-semibold m-0" style={{ color: 'var(--text-muted)' }}>Document Type</p>
+                  <p className="text-sm font-bold m-0 mt-0.5" style={{ color: 'var(--text-main)' }}>{formatDocumentTypeLabel(selectedPaper.document_type, selectedPaper.status)}</p>
                 </div>
               </div>
 
-              <div className="border rounded-lg p-6 bg-white dark:bg-card space-y-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-                  <FileText className="size-5" />
+              <div className="border rounded-xl p-5 space-y-3" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                <div className="flex items-center gap-2 text-sm font-bold text-purple-500">
+                  <FileText className="size-5 text-purple-500" />
                   <span>
                     {selectedPaper.status === 'phase1_proposal_submitted' || selectedPaper.document_type === 'thesis_topic'
                       ? 'Phase 1 — Thesis Topic Description'
@@ -837,29 +835,31 @@ export function ApprovalWorkflow() {
                       : 'Thesis Abstract / Summary'}
                   </span>
                 </div>
-                <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                <p className="text-sm whitespace-pre-wrap leading-relaxed m-0 font-normal" style={{ color: 'var(--text-main)' }}>
                   {selectedPaper.abstract || 'No description provided.'}
                 </p>
                 {selectedPaper.file_name && (
-                  <div className="flex w-full items-center justify-start gap-2 pt-2 border-t">
+                  <div className="flex flex-wrap w-full items-center justify-start gap-2 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="min-w-[160px]"
+                      className="min-w-[160px] btn-ta-purple text-xs"
                       onClick={() => void handleDownloadDocument(selectedPaper.id)}
                       disabled={!isAuthenticated || documentLoading}
                     >
+                      <Download className="size-3.5 mr-1" />
                       {documentLoading ? 'Downloading...' :
                         selectedPaper.status === 'phase1_proposal_submitted' || selectedPaper.document_type === 'thesis_topic'
-                          ? '↓ Download Topic Submission'
+                          ? 'Download Topic Submission'
                           : selectedPaper.status === 'phase2_proposal_submitted' || selectedPaper.status === 'phase2_proposal_accepted'
-                          ? '↓ Download Project Proposal'
-                          : '↓ Download Thesis Document'}
+                          ? 'Download Project Proposal'
+                          : 'Download Thesis Document'}
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="min-w-[160px] text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 font-semibold"
+                      className="min-w-[160px] text-xs font-semibold"
+                      style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                       onClick={() => window.open(`/editor?paperId=${selectedPaper.id}`, '_blank')}
                     >
                       📝 Edit in Document Editor
@@ -1472,35 +1472,34 @@ export function ApprovalWorkflow() {
 
               {/* Phase 4: Examiner Marking & Evaluation Panel */}
               {selectedPaper.status === 'phase4_marking' && (isSupervisor || isAdmin || isHOD || isCoordinator || selectedPaper.internal_examiner_id === user?.id || selectedPaper.external_examiner_id === user?.id) && (
-                <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1 border-b border-primary/10">
-                    <h4 className="font-bold text-sm text-primary flex items-center gap-2">
-                      <Award className="size-4" />
+                <div className="border rounded-xl p-5 space-y-4" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                    <h4 className="font-bold text-sm text-purple-500 flex items-center gap-2 m-0">
+                      <Award className="size-4 text-purple-500" />
                       Phase 4: Examiner In-System Grading & Feedback
                     </h4>
                     <Button
                       size="sm"
-                      variant="outline"
-                      className="h-8 text-xs shrink-0 self-start sm:self-auto border-primary/30 hover:bg-primary/10"
+                      className="btn-ta-purple text-xs flex items-center gap-1.5"
                       onClick={() => void handleDownloadDocument(selectedPaper.id)}
                       disabled={documentLoading}
                     >
-                      <Download className="size-3.5 mr-1.5" />
+                      <Download className="size-3.5" />
                       {documentLoading ? 'Downloading...' : 'Download Thesis File'}
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    <strong className="text-foreground">Step 1:</strong> Use the ONLYOFFICE tools below to view the student's work, author comments in ONLYOFFICE Word, or enter scores in ONLYOFFICE Excel.<br />
-                    <strong className="text-foreground">Step 2:</strong> Once finished in ONLYOFFICE, click <strong className="text-primary">"Submit In-System Evaluation"</strong> below to finalize.
+                  <p className="text-xs leading-relaxed m-0" style={{ color: 'var(--text-sub)' }}>
+                    <strong style={{ color: 'var(--text-main)' }}>Step 1:</strong> Use the ONLYOFFICE tools below to view the student's work, author comments in ONLYOFFICE Word, or enter scores in ONLYOFFICE Excel.<br />
+                    <strong style={{ color: 'var(--text-main)' }}>Step 2:</strong> Once finished in ONLYOFFICE, click <strong className="text-purple-500">"Submit In-System Evaluation"</strong> below to finalize.
                   </p>
 
                   {/* ONLYOFFICE Evaluation Tools Panel */}
-                  <div className="border border-primary/20 rounded-xl p-4 bg-background/60 space-y-3">
-                    <h5 className="font-semibold text-xs text-primary flex items-center gap-1.5">
-                      <FileEdit className="size-4" />
+                  <div className="border rounded-xl p-4 space-y-3" style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-color)' }}>
+                    <h5 className="font-semibold text-xs text-purple-500 flex items-center gap-1.5 m-0">
+                      <FileEdit className="size-4 text-purple-500" />
                       ONLYOFFICE In-App Marking & Feedback Tools
                     </h5>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs m-0" style={{ color: 'var(--text-muted)' }}>
                       Click below to view the student's submitted thesis, write qualitative feedback in ONLYOFFICE Word, or edit marks in ONLYOFFICE Excel:
                     </p>
                     <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -1508,6 +1507,7 @@ export function ApprovalWorkflow() {
                         type="button"
                         size="sm"
                         variant="outline"
+                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                         onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=paper`, '_blank')}
                       >
                         📝 View / Edit Student Work (ONLYOFFICE)
@@ -1516,6 +1516,7 @@ export function ApprovalWorkflow() {
                         type="button"
                         size="sm"
                         variant="outline"
+                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                         onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=comments`, '_blank')}
                       >
                         💬 Open Comments Document (ONLYOFFICE Word)
@@ -1524,6 +1525,7 @@ export function ApprovalWorkflow() {
                         type="button"
                         size="sm"
                         variant="outline"
+                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                         onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=excel`, '_blank')}
                       >
                         📊 Open Marks Sheet (ONLYOFFICE Excel)
@@ -1554,7 +1556,7 @@ export function ApprovalWorkflow() {
                         Recommendation
                       </Label>
                       <Select value={examinerRecommendation} onValueChange={setExaminerRecommendation}>
-                        <SelectTrigger id="examiner-recommendation-select">
+                        <SelectTrigger>
                           <SelectValue placeholder="Select recommendation" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1731,7 +1733,7 @@ export function ApprovalWorkflow() {
                         <MessageSquare className="size-3.5 text-slate-200" />
                         💬 View Examiners' Comments Document (ONLYOFFICE Word)
                       </button>
-                      {selectedPaper.file_path && (
+                      {(selectedPaper as any).file_path && (
                         <button
                           type="button"
                           onClick={() => void handleDownloadPaper(selectedPaper.id)}
@@ -1836,7 +1838,7 @@ export function ApprovalWorkflow() {
                         <MessageSquare className="size-3.5 text-slate-200" />
                         💬 View Examiners' Comments Document (ONLYOFFICE Word)
                       </button>
-                      {selectedPaper.file_path && (
+                      {(selectedPaper as any).file_path && (
                         <button
                           type="button"
                           onClick={() => void handleDownloadPaper(selectedPaper.id)}

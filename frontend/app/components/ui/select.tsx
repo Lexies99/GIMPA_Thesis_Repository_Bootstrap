@@ -6,12 +6,18 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   children: React.ReactNode
 }
 
-const Select = ({ value, onValueChange, children, className, ...props }: SelectProps) => {
+const Select = ({ value, onValueChange, children, className, style, ...props }: SelectProps & { style?: React.CSSProperties }) => {
   return (
     <select
       value={value}
       onChange={(e) => onValueChange(e.target.value)}
-      className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className || ""}`}
+      className={`flex h-10 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 ${className || ""}`}
+      style={{
+        backgroundColor: "var(--bg-input)",
+        borderColor: "var(--border-color)",
+        color: "var(--text-main)",
+        ...style,
+      }}
       {...props}
     >
       {children}

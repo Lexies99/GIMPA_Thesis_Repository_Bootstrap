@@ -176,13 +176,15 @@ export function SearchDiscovery() {
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-          <Input
+        <div className="content-search-bar" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+          <Search className="content-search-icon" style={{color:'var(--text-muted)'}} />
+          <input
+            type="text"
             placeholder="Search papers, authors, keywords..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 py-2 h-10 text-foreground bg-background border-input"
+            className="content-search-input"
+            style={{background:'transparent',border:'none',outline:'none',color:'var(--text-main)'}}
           />
         </div>
 
@@ -200,32 +202,34 @@ export function SearchDiscovery() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  Filters
-                </CardTitle>
-                {activeFilterCount > 0 && (
-                  <Button size="sm" variant="ghost" onClick={clearFilters}>
-                    <X className="h-3 w-3" /> Clear
-                  </Button>
-                )}
-              </div>
-              {activeFilterCount > 0 && <p className="text-xs text-muted-foreground mt-2">{activeFilterCount} active</p>}
-            </CardHeader>
-            <CardContent className="space-y-6">
+          <div className="ta-card p-4 space-y-5">
+            <div className="flex items-center justify-between border-b pb-3" style={{borderColor:'var(--border-color)'}}>
+              <h3 className="text-sm font-bold m-0 flex items-center gap-2">
+                <Filter className="h-4 w-4 text-purple-400" />
+                Filters
+              </h3>
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 bg-red-500/10 px-2 py-0.5 rounded-lg border border-red-500/20"
+                >
+                  <X className="h-3 w-3" /> Clear
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-5">
+              {/* Discipline Filter */}
               <div>
-                <h4 className="font-semibold text-sm mb-3">Discipline</h4>
-                <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2">Discipline</h4>
+                <div className="space-y-0.5 max-h-60 overflow-y-auto pr-1">
                   {visibleDisciplines.map((d) => (
-                    <label key={d} className="flex items-center gap-2 cursor-pointer hover:text-foreground text-muted-foreground text-sm">
+                    <label key={d} className="filter-label">
                       <input
                         type="checkbox"
                         checked={activeFilters.discipline?.includes(d) || false}
                         onChange={() => toggleFilter('discipline', d)}
-                        className="w-4 h-4"
                       />
                       <span>{d}</span>
                     </label>
@@ -233,16 +237,16 @@ export function SearchDiscovery() {
                 </div>
               </div>
 
-              <div>
-                <h4 className="font-semibold text-sm mb-3">School</h4>
-                <div className="space-y-2">
+              {/* School Filter */}
+              <div className="border-t pt-4" style={{borderColor:'var(--border-color)'}}>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2">School</h4>
+                <div className="space-y-0.5">
                   {schools.map((u) => (
-                    <label key={u} className="flex items-center gap-2 cursor-pointer hover:text-foreground text-muted-foreground text-sm">
+                    <label key={u} className="filter-label">
                       <input
                         type="checkbox"
                         checked={activeFilters.university?.includes(u) || false}
                         onChange={() => toggleFilter('university', u)}
-                        className="w-4 h-4"
                       />
                       <span>{u}</span>
                     </label>
@@ -250,24 +254,24 @@ export function SearchDiscovery() {
                 </div>
               </div>
 
-              <div>
-                <h4 className="font-semibold text-sm mb-3">Year</h4>
-                <div className="space-y-2">
+              {/* Year Filter */}
+              <div className="border-t pt-4" style={{borderColor:'var(--border-color)'}}>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2">Year</h4>
+                <div className="space-y-0.5">
                   {years.map((y) => (
-                    <label key={y} className="flex items-center gap-2 cursor-pointer hover:text-foreground text-muted-foreground text-sm">
+                    <label key={y} className="filter-label">
                       <input
                         type="checkbox"
                         checked={activeFilters.year?.includes(y) || false}
                         onChange={() => toggleFilter('year', y)}
-                        className="w-4 h-4"
                       />
                       <span>{y}</span>
                     </label>
                   ))}
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
         <div className="lg:col-span-3 space-y-4">
@@ -275,7 +279,10 @@ export function SearchDiscovery() {
             <div className="flex items-center gap-3">
               <p className="text-sm text-muted-foreground">Found {papers.length} results</p>
               <Dialog open={showSaveSearch} onOpenChange={setShowSaveSearch}>
-                <DialogTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-9 px-3">
+                <DialogTrigger
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors h-9 px-3 border"
+                  style={{backgroundColor:'var(--bg-card)',borderColor:'var(--border-color)',color:'var(--text-sub)'}}
+                >
                   Save Search
                 </DialogTrigger>
                 <DialogContent>
@@ -296,13 +303,27 @@ export function SearchDiscovery() {
               </Dialog>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant={viewMode === 'list' ? 'default' : 'outline'} onClick={() => setViewMode('list')}>
+              <div className="flex items-center gap-1 rounded-lg border p-0.5" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+                <button
+                  className="p-1.5 rounded-md transition-colors"
+                  style={viewMode === 'list'
+                    ? {backgroundColor:'#8b5cf6',color:'#fff'}
+                    : {backgroundColor:'transparent',color:'var(--text-muted)'}}
+                  onClick={() => setViewMode('list')}
+                  title="List view"
+                >
                   <List className="h-4 w-4" />
-                </Button>
-                <Button size="sm" variant={viewMode === 'grid' ? 'default' : 'outline'} onClick={() => setViewMode('grid')}>
+                </button>
+                <button
+                  className="p-1.5 rounded-md transition-colors"
+                  style={viewMode === 'grid'
+                    ? {backgroundColor:'#8b5cf6',color:'#fff'}
+                    : {backgroundColor:'transparent',color:'var(--text-muted)'}}
+                  onClick={() => setViewMode('grid')}
+                  title="Grid view"
+                >
                   <Grid3x3 className="h-4 w-4" />
-                </Button>
+                </button>
               </div>
               <Select value={sortBy} onValueChange={setSortBy}>
                 <SelectTrigger>

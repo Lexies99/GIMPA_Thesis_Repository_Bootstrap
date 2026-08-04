@@ -5,18 +5,41 @@ interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
-  ({ className, variant = "default", ...props }, ref) => {
-    const variants = {
-      default: "border transparent bg-primary text-primary-foreground hover:bg-primary/80",
-      secondary: "border transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
-      destructive: "border transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
-      outline: "text-foreground"
+  ({ className, variant = "default", style, ...props }, ref) => {
+    const getStyle = (): React.CSSProperties => {
+      switch (variant) {
+        case "outline":
+          return {
+            backgroundColor: "var(--bg-input)",
+            borderColor: "var(--border-color)",
+            color: "var(--text-sub)",
+          }
+        case "secondary":
+          return {
+            backgroundColor: "var(--bg-subtle)",
+            borderColor: "var(--border-color)",
+            color: "var(--text-muted)",
+          }
+        case "destructive":
+          return {
+            backgroundColor: "#ef4444",
+            borderColor: "transparent",
+            color: "#ffffff",
+          }
+        default:
+          return {
+            backgroundColor: "#8b5cf6",
+            borderColor: "transparent",
+            color: "#ffffff",
+          }
+      }
     }
 
     return (
       <div
         ref={ref}
-        className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${variants[variant]} ${className || ""}`}
+        className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors ${className || ""}`}
+        style={{ ...getStyle(), ...style }}
         {...props}
       />
     )

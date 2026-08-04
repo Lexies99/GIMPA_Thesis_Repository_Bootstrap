@@ -165,23 +165,27 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
+    <div className="min-h-screen bg-[#0b0d1b] flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-600/15 blur-3xl rounded-full pointer-events-none" />
+
+      <div className="w-full max-w-md space-y-6 relative z-10">
         <div className="text-center space-y-2">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <BookOpen className="h-8 w-8 text-primary" />
-            <h1 className="text-3xl font-bold">GRR</h1>
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
+              <BookOpen className="h-6 w-6 text-white" />
+            </div>
           </div>
-          <h2 className="text-2xl font-bold">Create Account</h2>
-          <p className="text-muted-foreground">Staff self-registration</p>
+          <h2 className="text-2xl font-black text-white tracking-wide m-0">Create Staff Account</h2>
+          <p className="text-xs text-slate-400">Self-registration for GIMPA academic staff</p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign Up</CardTitle>
-            <CardDescription>Use your GIMPA staff email</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="ta-card p-6 space-y-5">
+          <div className="border-b border-white/10 pb-3">
+            <h3 className="text-base font-bold text-white m-0">Registration Form</h3>
+            <p className="text-xs text-slate-400 m-0">Requires verification by Librarian upon submission</p>
+          </div>
+
+          <div className="space-y-4">
             {error && (
               <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-md">
                 <AlertCircle className="h-4 w-4" />
@@ -275,16 +279,16 @@ export default function SignupPage() {
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create your password" className="mt-1" />
             </div>
 
-            <Button onClick={handleCreateAccount} className="w-full" size="lg" disabled={loading}>
+            <Button onClick={handleCreateAccount} className="btn-ta-purple w-full text-xs py-2.5" disabled={loading}>
               <UserPlus className="h-4 w-4 mr-2" />
               {loading ? 'Submitting...' : 'Create Account'}
             </Button>
 
-            <Button variant="ghost" className="w-full" onClick={() => navigate('/login')}>
+            <Button onClick={() => navigate('/login')} className="btn-ta-glass w-full text-xs">
               Back to Login
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   )

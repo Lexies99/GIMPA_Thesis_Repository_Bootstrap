@@ -53,55 +53,55 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
+    <div className="min-h-screen bg-[#0b0d1b] flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background glow effects */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-600/15 blur-3xl rounded-full pointer-events-none" />
+
+      <div className="w-full max-w-md space-y-6 relative z-10">
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <BookOpen className="h-8 w-8 text-primary" />
-            <h1 className="text-3xl font-bold">GTR</h1>
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
+              <BookOpen className="h-6 w-6 text-white" />
+            </div>
           </div>
-          <h2 className="text-2xl font-bold">GIMPA Thesis Repository</h2>
-          <p className="text-muted-foreground">Sign in to access research papers and resources</p>
+          <h2 className="text-2xl font-black text-white tracking-wide m-0">GIMPA Thesis Repository</h2>
+          <p className="text-xs text-slate-400">Sign in to access research papers, supervisor reviews & repository tools</p>
         </div>
 
-        {/* Guest Access */}
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle className="text-base">Quick Access</CardTitle>
-            <CardDescription>View papers without creating an account</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={handleGuestAccess} variant="outline" className="w-full">
-              Continue as Guest
-            </Button>
-            <p className="text-xs text-muted-foreground mt-3 text-center">
-              You can read abstracts and search papers, but download requires an account
-            </p>
-          </CardContent>
-        </Card>
+        {/* Guest Access Card */}
+        <div className="ta-card p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-bold text-white m-0">Quick Guest Access</h3>
+            <p className="text-xs text-slate-400 m-0">Explore thesis catalog and search abstracts without signing in</p>
+          </div>
+          <Button onClick={handleGuestAccess} className="btn-ta-glass w-full text-xs">
+            Continue as Guest →
+          </Button>
+        </div>
 
-        {/* Login Form */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign In</CardTitle>
-            <CardDescription>Sign in with your institutional account</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        {/* Login Form Card */}
+        <div className="ta-card p-6 space-y-5">
+          <div className="border-b border-white/10 pb-3">
+            <h3 className="text-base font-bold text-white m-0">Account Sign In</h3>
+            <p className="text-xs text-slate-400 m-0">Use your institutional GIMPA credentials</p>
+          </div>
+
+          <div className="space-y-4">
             {error && (
-              <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-md">
-                <AlertCircle className="h-4 w-4" />
-                <p className="text-sm">{error}</p>
+              <div className="flex items-center gap-2 p-3 bg-red-500/15 border border-red-500/30 text-red-300 rounded-xl text-xs">
+                <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                <p className="m-0">{error}</p>
               </div>
             )}
 
             {/* Email */}
             <div>
-              <Label htmlFor="email">Email Address</Label>
+              <Label htmlFor="email" className="text-xs font-medium text-slate-300">Email Address</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="name@university.edu"
+                placeholder="name@gimpa.edu.gh"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -111,7 +111,7 @@ export default function LoginPage() {
 
             {/* Password */}
             <div>
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-xs font-medium text-slate-300">Password</Label>
               <div className="relative mt-1">
                 <Input
                   id="password"
@@ -125,7 +125,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute inset-y-0 right-2 flex items-center text-muted-foreground hover:text-foreground"
+                  className="absolute inset-y-0 right-2 flex items-center text-slate-400 hover:text-white"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -134,13 +134,12 @@ export default function LoginPage() {
             </div>
 
             {/* Submit Button */}
-            <Button onClick={handleLogin} className="w-full" size="lg" disabled={loading}>
+            <Button onClick={handleLogin} className="btn-ta-purple w-full text-xs py-2.5" disabled={loading}>
               <LogIn className="h-4 w-4 mr-2" />
-              Sign In
+              {loading ? 'Signing In...' : 'Sign In'}
             </Button>
-
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   )

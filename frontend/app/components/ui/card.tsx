@@ -3,10 +3,16 @@ import * as React from "react"
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
+>(({ className, style, ...props }, ref) => (
   <div
     ref={ref}
-    className={`rounded-lg border border-border bg-card text-card-foreground shadow-sm ${className || ""}`}
+    className={`rounded-lg border shadow-sm ${className || ""}`}
+    style={{
+      backgroundColor: "var(--bg-card)",
+      borderColor: "var(--border-color)",
+      color: "var(--text-main)",
+      ...style,
+    }}
     {...props}
   />
 ))

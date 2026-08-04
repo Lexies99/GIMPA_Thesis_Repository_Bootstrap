@@ -822,130 +822,130 @@ export function AccountManagement() {
       )}
 
       {canBatchAssignExaminers && (
-        <Card className="border-primary/30">
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-semibold flex items-center gap-2 text-primary">
-                  <FileSpreadsheet className="h-5 w-5" />
-                  Phase 3: Automated Batch Examiner Mapping (CSV / Excel)
-                </h3>
-                <CardDescription>
-                  Upload a batch file mapping Student_ID (or Thesis ID), Internal_Examiner_ID, and External_Examiner_ID to automatically assign examiners and route theses into examination.
-                </CardDescription>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                type="button"
-                className="gap-2 shrink-0"
-                onClick={async () => {
-                  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                  if (!token) return
-                  try {
-                    const blob = await apiDownloadBulkExaminerTemplate(token)
-                    const url = window.URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = 'Download_Examiner_Mapping_Template.csv'
-                    a.click()
-                    window.URL.revokeObjectURL(url)
-                  } catch (err) {
-                    setExaminerBulkMessage('Failed to download template')
-                  }
-                }}
-              >
-                <Download className="h-4 w-4" />
-                Download Template (.csv)
-              </Button>
+        <div className="ta-card p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10 pb-3 gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white m-0 flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-purple-400" />
+                Phase 3: Automated Batch Examiner Mapping (CSV / Excel)
+              </h3>
+              <p className="text-xs text-slate-400 m-0 mt-0.5">
+                Upload a batch file mapping Student_ID (or Thesis ID), Internal_Examiner_ID, and External_Examiner_ID to automatically assign examiners and route theses into examination.
+              </p>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault()
-                if (!examinerFile) return
+            <Button
+              size="sm"
+              type="button"
+              className="btn-ta-glass text-xs shrink-0 flex items-center gap-1.5"
+              onClick={async () => {
                 const token = localStorage.getItem(ACCESS_TOKEN_KEY)
                 if (!token) return
-                setIsExaminerBulkUploading(true)
-                setExaminerBulkMessage('')
-                setExaminerBulkSummary(null)
                 try {
-                  const res = await apiBulkAssignExaminers(examinerFile, token)
-                  setExaminerBulkSummary(res)
-                  setExaminerBulkMessage(`Successfully processed ${res.successful} out of ${res.total_processed} examiner assignments!`)
+                  const blob = await apiDownloadBulkExaminerTemplate(token)
+                  const url = window.URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'Download_Examiner_Mapping_Template.csv'
+                  a.click()
+                  window.URL.revokeObjectURL(url)
                 } catch (err) {
-                  setExaminerBulkMessage(extractErrorMessage(err))
-                } finally {
-                  setIsExaminerBulkUploading(false)
+                  setExaminerBulkMessage('Failed to download template')
                 }
               }}
-              className="space-y-4"
             >
-              <div className="space-y-2">
-                <Label htmlFor="examiner-batch-file">Select Batch Examiner Mapping File (.csv or .xlsx)</Label>
-                <Input
-                  id="examiner-batch-file"
-                  type="file"
-                  accept=".csv,.xlsx,.xlsm"
-                  onChange={(e) => setExaminerFile(e.target.files?.[0] || null)}
-                />
-              </div>
-              <Button type="submit" disabled={!examinerFile || isExaminerBulkUploading} size="sm">
-                {isExaminerBulkUploading ? 'Mapping Examiners...' : 'Upload & Map Examiner Batch'}
-              </Button>
-              {examinerBulkMessage && (
-                <p className="text-sm font-medium text-primary mt-2">{examinerBulkMessage}</p>
-              )}
-              {examinerBulkSummary && (
-                <div className="text-sm space-y-2 border rounded-md p-3 bg-primary/10 border-primary/20 mt-3">
-                  <div className="flex items-center gap-2 font-bold text-primary">
-                    <FileCheck className="h-4 w-4" />
-                    Examiner Batch Mapping Summary: {examinerBulkSummary.successful} / {examinerBulkSummary.total_processed} successfully mapped!
-                  </div>
-                  {examinerBulkSummary.errors.length > 0 && (
-                    <ul className="mt-1 list-disc pl-5 text-xs text-destructive max-h-36 overflow-y-auto">
-                      {examinerBulkSummary.errors.map((err, idx) => (
-                        <li key={`exam-err-${idx}`}>{err}</li>
-                      ))}
-                    </ul>
-                  )}
+              <Download className="h-3.5 w-3.5" />
+              Download Template (.csv)
+            </Button>
+          </div>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!examinerFile) return
+              const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+              if (!token) return
+              setIsExaminerBulkUploading(true)
+              setExaminerBulkMessage('')
+              setExaminerBulkSummary(null)
+              try {
+                const res = await apiBulkAssignExaminers(examinerFile, token)
+                setExaminerBulkSummary(res)
+                setExaminerBulkMessage(`Successfully processed ${res.successful} out of ${res.total_processed} examiner assignments!`)
+              } catch (err) {
+                setExaminerBulkMessage(extractErrorMessage(err))
+              } finally {
+                setIsExaminerBulkUploading(false)
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="examiner-batch-file" className="text-xs font-semibold text-slate-300">
+                Select Batch Examiner Mapping File (.csv or .xlsx)
+              </Label>
+              <Input
+                id="examiner-batch-file"
+                type="file"
+                accept=".csv,.xlsx,.xlsm"
+                onChange={(e) => setExaminerFile(e.target.files?.[0] || null)}
+                className="h-10 text-xs"
+              />
+            </div>
+            <Button type="submit" disabled={!examinerFile || isExaminerBulkUploading} className="btn-ta-purple text-xs">
+              {isExaminerBulkUploading ? 'Mapping Examiners...' : 'Upload & Map Examiner Batch'}
+            </Button>
+            {examinerBulkMessage && (
+              <p className="text-xs font-medium text-purple-300 m-0 mt-2">{examinerBulkMessage}</p>
+            )}
+            {examinerBulkSummary && (
+              <div className="text-xs space-y-2 border border-purple-500/30 rounded-xl p-3 bg-purple-950/20 text-slate-200 mt-3">
+                <div className="flex items-center gap-2 font-bold text-purple-300">
+                  <FileCheck className="h-4 w-4" />
+                  Examiner Batch Mapping Summary: {examinerBulkSummary.successful} / {examinerBulkSummary.total_processed} successfully mapped!
                 </div>
-              )}
-            </form>
-          </CardContent>
-        </Card>
+                {examinerBulkSummary.errors.length > 0 && (
+                  <ul className="mt-1 list-disc pl-5 text-xs text-red-300 max-h-36 overflow-y-auto">
+                    {examinerBulkSummary.errors.map((err, idx) => (
+                      <li key={`exam-err-${idx}`}>{err}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </form>
+        </div>
       )}
 
       {canViewAssignments && (
-        <Card>
-          <CardHeader>
-            <h3 className="text-lg font-semibold">Institutional Role Overview</h3>
-            <CardDescription>
+        <div className="ta-card p-5 space-y-4">
+          <div className="border-b pb-3" style={{borderColor:'var(--border-color)'}}>
+            <h3 className="text-base font-bold m-0" style={{color:'var(--text-main)'}}>Institutional Role Overview</h3>
+            <p className="text-xs m-0 mt-0.5" style={{color:'var(--text-muted)'}}>
               Overview of Deans and Head of Departments (HODs) across schools.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
+          </div>
+
+          <div className="space-y-4">
             {schoolsOverviewData.map((schoolInfo) => (
-              <div key={schoolInfo.schoolName} className="rounded-lg border p-4 space-y-3 bg-card/50">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2 gap-1">
-                  <h4 className="font-bold text-base text-primary">{schoolInfo.schoolName}</h4>
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Dean: </span>
-                    <span className="font-medium text-foreground">
+              <div key={schoolInfo.schoolName} className="rounded-xl border p-4 space-y-3" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2.5 gap-1" style={{borderColor:'var(--border-color)'}}>
+                  <h4 className="font-bold text-sm text-purple-500 m-0">{schoolInfo.schoolName}</h4>
+                  <div className="text-xs">
+                    <span style={{color:'var(--text-muted)'}}>Dean: </span>
+                    <span className="font-semibold" style={{color:'var(--text-main)'}}>
                       {schoolInfo.deanIds.length === 0
                         ? 'Not assigned'
                         : schoolInfo.deanIds.map(uid => displayNameByUserId(uid)).join(', ')}
                     </span>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                   {schoolInfo.depts.map((dept) => (
-                    <div key={dept.id} className="rounded-md border border-border/60 p-3 bg-background/40 flex flex-col justify-between">
-                      <span className="font-semibold text-sm">{dept.name}</span>
-                      <div className="text-xs mt-2 pt-2 border-t border-border/40">
-                        <span className="text-muted-foreground font-medium">HOD: </span>
-                        <span className="text-foreground">
+                    <div key={dept.id} className="rounded-xl border p-3 flex flex-col justify-between" style={{backgroundColor:'var(--bg-subtle)',borderColor:'var(--border-color)'}}>
+                      <span className="font-bold text-xs" style={{color:'var(--text-main)'}}>{dept.name}</span>
+                      <div className="text-[11px] mt-2 pt-2 border-t" style={{borderColor:'var(--border-color)'}}>
+                        <span className="font-medium" style={{color:'var(--text-muted)'}}>HOD: </span>
+                        <span className="text-purple-500 font-bold">
                           {dept.hod_user_id ? displayNameByUserId(dept.hod_user_id) : 'Not assigned'}
                         </span>
                       </div>
@@ -955,27 +955,27 @@ export function AccountManagement() {
               </div>
             ))}
             {schoolsOverviewData.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">No schools or departments found.</p>
+              <p className="text-xs text-center py-4" style={{color:'var(--text-muted)'}}>No schools or departments found.</p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {canManageAssignments && (
-        <Card>
-          <CardHeader>
-            <h3 className="text-lg font-semibold">Department Role Assignment</h3>
-            <CardDescription>Admin assigns Dean, Dean assigns HOD, HOD appoints Project Coordinator(s), and Project Coordinator(s) appoint project supervisors.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="ta-card p-5 space-y-4">
+          <div className="border-b pb-3" style={{borderColor:'var(--border-color)'}}>
+            <h3 className="text-base font-bold m-0" style={{color:'var(--text-main)'}}>Department Role Assignment</h3>
+            <p className="text-xs m-0 mt-0.5" style={{color:'var(--text-muted)'}}>Admin assigns Dean, Dean assigns HOD, HOD appoints Project Coordinator(s), and Project Coordinator(s) appoint project supervisors.</p>
+          </div>
+          <div className="space-y-4">
             {loadingError && (
-              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
                 {loadingError}
               </div>
             )}
             {canAssignDean && (
-              <div className="space-y-2 rounded-md border p-3">
-                <p className="text-sm font-medium">Assign Dean</p>
+              <div className="space-y-2.5 rounded-xl border p-4" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+                <p className="text-xs font-bold text-purple-500 uppercase tracking-wider m-0">Assign Dean</p>
                 <Select value={selectedSchoolKey} onValueChange={setSelectedSchoolKey}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
@@ -998,7 +998,9 @@ export function AccountManagement() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button onClick={() => void handleAssignDeanBySchool()} disabled={savingAssignment}>Assign Dean</Button>
+                <Button onClick={() => void handleAssignDeanBySchool()} disabled={savingAssignment} className="btn-ta-purple text-xs">
+                  Assign Dean
+                </Button>
               </div>
             )}
             {visibleDepartments.length > 0 && (
@@ -1006,7 +1008,7 @@ export function AccountManagement() {
                 <div>
                   {!hasRole('system_admin') && (
                     <>
-                      <p className="text-sm font-medium mb-2">Department</p>
+                      <p className="text-xs font-bold mb-1.5" style={{color:'var(--text-sub)'}}>Department</p>
                       <Select value={selectedDepartmentId} onValueChange={setSelectedDepartmentId}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select department" />
@@ -1022,15 +1024,15 @@ export function AccountManagement() {
                 </div>
 
                 {selectedDepartment && (
-                  <div className="rounded-md border p-3 text-sm space-y-1">
-                    <p><span className="font-medium">Current Dean:</span> {displayNameByUserId(selectedDepartment.dean_user_id)}</p>
-                    <p><span className="font-medium">Current HOD:</span> {displayNameByUserId(selectedDepartment.hod_user_id)}</p>
+                  <div className="rounded-xl border p-3 text-xs space-y-1" style={{backgroundColor:'var(--bg-subtle)',borderColor:'var(--border-color)'}}>
+                    <p className="m-0"><span style={{color:'var(--text-muted)'}}>Current Dean:</span> <span className="font-semibold" style={{color:'var(--text-main)'}}>{displayNameByUserId(selectedDepartment.dean_user_id)}</span></p>
+                    <p className="m-0"><span style={{color:'var(--text-muted)'}}>Current HOD:</span> <span className="font-bold text-purple-500">{displayNameByUserId(selectedDepartment.hod_user_id)}</span></p>
                   </div>
                 )}
 
                 {canAssignHod && selectedDepartment && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <p className="text-sm font-medium">Assign HOD</p>
+                  <div className="space-y-2.5 rounded-xl border p-4" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+                    <p className="text-xs font-bold text-purple-500 uppercase tracking-wider m-0">Assign HOD</p>
                     <Select value={selectedHodUserId} onValueChange={setSelectedHodUserId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select HOD user" />
@@ -1043,13 +1045,13 @@ export function AccountManagement() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button onClick={() => void handleAssignHod()} disabled={savingAssignment}>Assign HOD</Button>
+                    <Button onClick={() => void handleAssignHod()} disabled={savingAssignment} className="btn-ta-purple text-xs">Assign HOD</Button>
                   </div>
                 )}
 
                 {canAssignSupervisors && selectedDepartment && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <p className="text-sm font-medium">Appoint Project Supervisors</p>
+                  <div className="space-y-3 rounded-xl border p-4" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+                    <p className="text-xs font-bold text-purple-500 uppercase tracking-wider m-0">Appoint Project Supervisors</p>
                     <Select value={selectedSupervisorUserId} onValueChange={setSelectedSupervisorUserId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select supervisor user" />
@@ -1062,24 +1064,25 @@ export function AccountManagement() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button onClick={() => void handleAddSupervisor()} disabled={savingAssignment}>Add Supervisor</Button>
+                    <Button onClick={() => void handleAddSupervisor()} disabled={savingAssignment} className="btn-ta-purple text-xs">Add Supervisor</Button>
 
-                    <div className="space-y-2 pt-2">
-                      <p className="text-sm font-medium">Current Supervisors</p>
+                    <div className="space-y-2 pt-2 border-t" style={{borderColor:'var(--border-color)'}}>
+                      <p className="text-xs font-bold m-0" style={{color:'var(--text-sub)'}}>Current Supervisors</p>
                       {departmentSupervisors.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No supervisors assigned yet.</p>
+                        <p className="text-xs m-0" style={{color:'var(--text-muted)'}}>No supervisors assigned yet.</p>
                       ) : (
                         departmentSupervisors.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
-                            <span>{displayNameByUserId(item.supervisor_user_id)}</span>
-                            <Button
-                              size="sm"
-                              variant="outline"
+                          <div key={item.id} className="flex items-center justify-between rounded-xl border p-2.5 text-xs" style={{backgroundColor:'var(--bg-subtle)',borderColor:'var(--border-color)'}}>
+                            <span className="font-semibold" style={{color:'var(--text-main)'}}>{displayNameByUserId(item.supervisor_user_id)}</span>
+                            <button
+                              type="button"
                               onClick={() => void handleRemoveSupervisor(item.supervisor_user_id)}
                               disabled={savingAssignment}
+                              className="px-2.5 py-1 text-xs font-semibold text-red-400 hover:text-white bg-red-500/10 hover:bg-red-600 rounded-lg border border-red-500/20 transition-all flex items-center gap-1 cursor-pointer"
                             >
-                              Remove
-                            </Button>
+                              <Trash2 className="size-3" />
+                              <span>Remove</span>
+                            </button>
                           </div>
                         ))
                       )}
@@ -1088,8 +1091,8 @@ export function AccountManagement() {
                 )}
 
                 {canAssignCoordinators && selectedDepartment && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <p className="text-sm font-medium">Appoint Project Coordinators</p>
+                  <div className="space-y-3 rounded-xl border p-4" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+                    <p className="text-xs font-bold text-purple-500 uppercase tracking-wider m-0">Appoint Project Coordinators</p>
                     <Select value={selectedCoordinatorUserId} onValueChange={setSelectedCoordinatorUserId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select project coordinator user" />
@@ -1102,24 +1105,25 @@ export function AccountManagement() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button onClick={() => void handleAddCoordinator()} disabled={savingAssignment}>Add Project Coordinator</Button>
+                    <Button onClick={() => void handleAddCoordinator()} disabled={savingAssignment} className="btn-ta-purple text-xs">Add Project Coordinator</Button>
 
-                    <div className="space-y-2 pt-2">
-                      <p className="text-sm font-medium">Current Project Coordinators</p>
+                    <div className="space-y-2 pt-2 border-t" style={{borderColor:'var(--border-color)'}}>
+                      <p className="text-xs font-bold m-0" style={{color:'var(--text-sub)'}}>Current Project Coordinators</p>
                       {currentDepartmentCoordinators.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No project coordinators assigned yet.</p>
+                        <p className="text-xs m-0" style={{color:'var(--text-muted)'}}>No project coordinators assigned yet.</p>
                       ) : (
                         currentDepartmentCoordinators.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
-                            <span>{item.full_name || item.email} ({item.email})</span>
-                            <Button
-                              size="sm"
-                              variant="outline"
+                          <div key={item.id} className="flex items-center justify-between rounded-xl border p-2.5 text-xs" style={{backgroundColor:'var(--bg-subtle)',borderColor:'var(--border-color)'}}>
+                            <span className="font-semibold" style={{color:'var(--text-main)'}}>{item.full_name || item.email} ({item.email})</span>
+                            <button
+                              type="button"
                               onClick={() => void handleRemoveCoordinator(item.id)}
                               disabled={savingAssignment}
+                              className="px-2.5 py-1 text-xs font-semibold text-red-400 hover:text-white bg-red-500/10 hover:bg-red-600 rounded-lg border border-red-500/20 transition-all flex items-center gap-1 cursor-pointer"
                             >
-                              Remove
-                            </Button>
+                              <Trash2 className="size-3" />
+                              <span>Remove</span>
+                            </button>
                           </div>
                         ))
                       )}
@@ -1129,25 +1133,26 @@ export function AccountManagement() {
               </div>
             )}
             {visibleDepartments.length === 0 && !canAssignDean && (
-              <div className="rounded-md border p-3 text-sm text-muted-foreground">
+              <div className="rounded-xl border p-3 text-xs" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)',color:'var(--text-muted)'}}>
                 No departments are configured yet. Department role assignment needs departments to be created/imported first.
               </div>
             )}
-            {assignmentMessage && <p className="text-sm">{assignmentMessage}</p>}
+            {assignmentMessage && <p className="text-xs font-semibold text-purple-500 m-0">{assignmentMessage}</p>}
             {schoolDeanSummary.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <p className="text-sm font-medium">Current Deans by School</p>
+              <div className="space-y-2 pt-3 border-t" style={{borderColor:'var(--border-color)'}}>
+                <p className="text-xs font-bold m-0" style={{color:'var(--text-sub)'}}>Current Deans by School</p>
                 {schoolDeanSummary.map((row) => (
-                  <div key={row.institutionId} className="flex items-center justify-between rounded-md border p-2 text-sm">
-                    <span>{row.schoolName}</span>
-                    <span className="text-muted-foreground">{row.deanLabel}</span>
+                  <div key={row.institutionId} className="flex items-center justify-between rounded-xl border p-2.5 text-xs" style={{backgroundColor:'var(--bg-subtle)',borderColor:'var(--border-color)'}}>
+                    <span className="font-semibold" style={{color:'var(--text-main)'}}>{row.schoolName}</span>
+                    <span className="text-purple-500 font-semibold font-mono">{row.deanLabel}</span>
                   </div>
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
+
 
       {canCreateExternalExaminer && (
       <Card>

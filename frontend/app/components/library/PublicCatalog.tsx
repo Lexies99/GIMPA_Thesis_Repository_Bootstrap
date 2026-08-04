@@ -127,72 +127,66 @@ export function PublicCatalog() {
   }, [papers])
 
   const PaperCard = ({ paper }: { paper: ApiPaper }) => (
-    <Card className="hover:shadow-lg transition-all cursor-pointer" onClick={() => openAbstract(paper)}>
+    <Card className="ta-card transition-all hover:scale-[1.01] cursor-pointer" onClick={() => openAbstract(paper)}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1">
-            <CardTitle className="text-base line-clamp-2 hover:text-primary">{paper.title}</CardTitle>
-            <CardDescription className="text-xs mt-1">{paper.authors.map((a) => a.name).join(', ') || 'Unknown Author'}</CardDescription>
+            <CardTitle className="text-base font-bold line-clamp-2 hover:text-purple-400 transition-colors m-0">{paper.title}</CardTitle>
+            <CardDescription className="text-xs mt-1 font-medium">{paper.authors.map((a) => a.name).join(', ') || 'Unknown Author'}</CardDescription>
           </div>
-          <div className="flex items-center gap-1 text-yellow-500 flex-shrink-0">
-            <Star className="h-4 w-4 fill-yellow-500" />
-            <span className="text-xs font-semibold">{(paper.rating ?? 0).toFixed(1)}</span>
+          <div className="flex items-center gap-1 text-amber-400 shrink-0 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
+            <Star className="h-3.5 w-3.5 fill-amber-400" />
+            <span className="text-xs font-bold font-mono">{(paper.rating ?? 0).toFixed(1)}</span>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground line-clamp-2">{paper.abstract || 'No abstract available.'}</p>
+      <CardContent className="space-y-4">
+        <p className="text-xs line-clamp-3 leading-relaxed opacity-90">{paper.abstract || 'No abstract available.'}</p>
 
-        <div className="flex gap-1 flex-wrap">
-          <Badge variant="outline" className="text-xs">{paper.year}</Badge>
-          <Badge variant="outline" className="text-xs">{paper.discipline || 'General'}</Badge>
-          <Badge variant="secondary" className="text-xs">{paper.university || 'Unknown'}</Badge>
+        <div className="flex gap-1.5 flex-wrap">
+          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border" style={{color:'#a78bfa',backgroundColor:'rgba(139,92,246,0.1)',borderColor:'rgba(139,92,246,0.2)'}}>{paper.year}</span>
+          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border" style={{color:'var(--text-sub)',backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>{paper.discipline || 'General'}</span>
+          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border" style={{color:'var(--text-muted)',backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>{paper.university || 'Unknown'}</span>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 text-xs">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-auto p-0 justify-start text-muted-foreground hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation()
-              openAbstract(paper)
-            }}
+        <div className="grid grid-cols-3 gap-2 text-xs border-t pt-3" style={{borderColor:'var(--border-color)'}}>
+          <button
+            className="flex items-center gap-1 hover:text-purple-400 transition-colors text-left"
+            style={{color:'var(--text-muted)',background:'none',border:'none',padding:0,cursor:'pointer'}}
+            onClick={(e) => { e.stopPropagation(); openAbstract(paper) }}
           >
-            <Eye className="h-3 w-3 mr-1" />
+            <Eye className="h-3.5 w-3.5 shrink-0" />
             <span>{formatViewCount(paper.views)}</span>
-          </Button>
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <Download className="h-3 w-3" />
+          </button>
+          <div className="flex items-center gap-1" style={{color:'var(--text-muted)'}}>
+            <Download className="h-3.5 w-3.5 shrink-0" />
             <span>{paper.downloads}</span>
           </div>
-          <div className="text-muted-foreground">
+          <div style={{color:'var(--text-muted)'}}>
             Cite: {paper.citations}
           </div>
         </div>
 
-        <div className="flex gap-2 pt-2">
+        <div className="flex gap-2 pt-1">
           <Button
             size="sm"
-            variant="outline"
-            className="flex-1"
+            className="btn-ta-purple flex-1 text-xs"
             onClick={(e) => {
               e.stopPropagation()
               void handleDownload(paper.id)
             }}
             disabled={!isAuthenticated || user?.role === 'guest'}
           >
-            <Download className="h-3 w-3 mr-1" />
+            <Download className="h-3.5 w-3.5 mr-1.5" />
             Download
           </Button>
           <Button
             size="sm"
-            variant={bookmarked.has(paper.id) ? 'default' : 'outline'}
+            className={`px-3 text-xs ${bookmarked.has(paper.id) ? 'btn-ta-purple' : 'btn-ta-glass'}`}
             onClick={(e) => {
               e.stopPropagation()
               toggleBookmark(paper.id)
             }}
-            className="px-3"
           >
             <Bookmark className="h-4 w-4" />
           </Button>
@@ -208,23 +202,39 @@ export function PublicCatalog() {
           <h2 className="text-2xl font-bold">Public Catalog</h2>
           <p className="text-sm text-muted-foreground mt-1">Browse and discover research papers</p>
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant={viewMode === 'grid' ? 'default' : 'outline'} onClick={() => setViewMode('grid')}>
+        <div className="flex items-center gap-2 rounded-lg border p-0.5" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+          <button
+            onClick={() => setViewMode('grid')}
+            className="p-2 rounded-md transition-colors"
+            style={viewMode === 'grid'
+              ? {backgroundColor:'#8b5cf6',color:'#fff'}
+              : {backgroundColor:'transparent',color:'var(--text-muted)'}}
+            title="Grid view"
+          >
             <Grid3x3 className="h-4 w-4" />
-          </Button>
-          <Button size="sm" variant={viewMode === 'list' ? 'default' : 'outline'} onClick={() => setViewMode('list')}>
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className="p-2 rounded-md transition-colors"
+            style={viewMode === 'list'
+              ? {backgroundColor:'#8b5cf6',color:'#fff'}
+              : {backgroundColor:'transparent',color:'var(--text-muted)'}}
+            title="List view"
+          >
             <List className="h-4 w-4" />
-          </Button>
+          </button>
         </div>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-        <Input
+      <div className="content-search-bar" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+        <Search className="content-search-icon" style={{color:'var(--text-muted)'}} />
+        <input
+          type="text"
           placeholder="Search papers, authors, disciplines..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 text-foreground bg-background border-input"
+          className="content-search-input"
+          style={{background:'transparent',border:'none',outline:'none',color:'var(--text-main)'}}
         />
       </div>
 
