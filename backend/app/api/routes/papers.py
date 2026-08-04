@@ -80,7 +80,20 @@ def _verify_editor_token(*, token: str, paper_id: int, action: str) -> bool:
     return hmac.compare_digest(token_sig, expected_sig)
 
 
-def _to_paper_read(paper: Paper, db: Session | None = None, current_user = None) -> PaperRead:
+def _clean_examiner_corrections(text: str | None) -> str | None:
+    if not text:
+        return text
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    seen = set()
+    deduped = []
+    for line in lines:
+        if line not in seen:
+            seen.add(line)
+            deduped.append(line)
+    return "\n\n".join(deduped)
+
+
+def _to_paper_read(paper: Paper, db: Session | None = None, current_user: User | None = None) -> PaperRead:
     # Check if user can view examiner marks/scores
     can_view_marks = False
     if current_user:
@@ -154,11 +167,9 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user = None)
         ch3_supervisor_approved=paper.ch3_supervisor_approved,
         ch4_supervisor_approved=paper.ch4_supervisor_approved,
         ch5_supervisor_approved=paper.ch5_supervisor_approved,
-        combined_thesis_student_done=paper.combined_thesis_student_done,
-        combined_thesis_supervisor_approved=paper.combined_thesis_supervisor_approved,
         internal_score=internal_score,
         external_score=external_score,
-        examiner_corrections=paper.examiner_corrections,
+        examiner_corrections=_clean_examiner_corrections(paper.examiner_corrections),
         examiner_result_file_name=examiner_result_file_name,
         internal_result_file_name=internal_result_file_name,
         external_result_file_name=external_result_file_name,
@@ -692,16 +703,16 @@ def get_pipeline_metrics(
             item["milestone_status"] = "Phase 1 — Proposal Submitted"
             phases["phase1_proposals"]["students"].append(item)
             phases["phase1_proposals"]["count"] += 1
-        elif status in {"pending_coordinator", "pending_hod_and_coordinator", "phase2_pending_coordinator", "phase2_pending_supervisor"}:
-            item["milestone_status"] = "Phase 2 — Pending Allocation"
+        elif status in {"phase1_topic_accepted", "phase2_proposal_submitted", "phase2_proposal_accepted", "pending_coordinator", "pending_hod_and_coordinator", "phase2_pending_coordinator", "phase2_pending_supervisor"}:
+            item["milestone_status"] = "Phase 2 — Proposal & Allocation"
             phases["phase2_allocation"]["students"].append(item)
             phases["phase2_allocation"]["count"] += 1
-        elif status in {"pending_lecturer", "revision", "phase3_chapters"}:
-            item["milestone_status"] = "Phase 3 — Chapter Review"
+        elif status in {"pending_lecturer", "revision", "phase3_chapters", "phase3_steps_in_progress"}:
+            item["milestone_status"] = "Phase 3 — Chapter Writing & Review"
             phases["phase3_chapters"]["students"].append(item)
             phases["phase3_chapters"]["count"] += 1
         elif status in {"pending_examiner", "phase4_pending_examiners", "phase4_marking"}:
-            item["milestone_status"] = "Phase 4 — Examination"
+            item["milestone_status"] = "Phase 4 — Examination & Marking"
             phases["phase4_examination"]["students"].append(item)
             phases["phase4_examination"]["count"] += 1
         elif status in {
@@ -713,12 +724,13 @@ def get_pipeline_metrics(
             "phase5_pending_hod",
             "phase5_pending_hod_and_coordinator",
             "phase5_approved_for_library",
+            "phase5_published",
         }:
-            item["milestone_status"] = "Phase 5 — Final Sign-off"
+            item["milestone_status"] = "Phase 5 — Corrections & Final Sign-off"
             phases["phase5_signoff"]["students"].append(item)
             phases["phase5_signoff"]["count"] += 1
         else:
-            item["milestone_status"] = f"Phase 3 — {p.status}"
+            item["milestone_status"] = f"In Progress ({p.status})"
             phases["phase3_chapters"]["students"].append(item)
             phases["phase3_chapters"]["count"] += 1
 
@@ -985,29 +997,37 @@ def read_department_supervisor_review_summary(
         )
     ]
 
-    supervisor_ids: set[int] = set(
-        int(row[0])
-        for row in (
+    supervisor_ids: set[int] = set()
+
+    # 1. Department Supervisors mapping table
+    if dept_ids:
+        dept_sup_rows = (
             db.query(DepartmentSupervisor.supervisor_user_id)
             .filter(
-                DepartmentSupervisor.department_id.in_(dept_ids) if dept_ids else False,
+                DepartmentSupervisor.department_id.in_(dept_ids),
                 DepartmentSupervisor.active.is_(True),
             )
             .all()
         )
-    )
+        supervisor_ids.update(int(row[0]) for row in dept_sup_rows)
 
-    fallback_project_supervisors = (
-        db.query(User.id)
-        .join(UserRole, UserRole.user_id == User.id)
-        .filter(
-            func.lower(func.coalesce(User.department, "")) == reviewer_department,
-            func.lower(UserRole.role) == "project_supervisor",
-            User.is_active.is_(True),
-        )
-        .all()
+    # 2. Users with supervisor/lecturer roles
+    query_users = db.query(User.id).filter(User.is_active.is_(True))
+    if not current_user.is_admin and reviewer_department:
+        query_users = query_users.filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
+    
+    query_users = query_users.filter(
+        func.lower(User.role).in_(["project_supervisor", "lecturer", "hod", "project_coordinator"])
     )
-    supervisor_ids.update(int(row[0]) for row in fallback_project_supervisors)
+    supervisor_ids.update(int(row[0]) for row in query_users.all())
+
+    # 3. Any user assigned as supervisor_id on papers in the department
+    paper_sups = db.query(Paper.supervisor_id).filter(Paper.supervisor_id.isnot(None))
+    if not current_user.is_admin and reviewer_department:
+        paper_sups = paper_sups.join(User, Paper.created_by_id == User.id).filter(
+            func.lower(func.coalesce(User.department, "")) == reviewer_department
+        )
+    supervisor_ids.update(int(row[0]) for row in paper_sups.all())
 
     if not supervisor_ids:
         return []
@@ -1029,8 +1049,6 @@ def read_department_supervisor_review_summary(
         .join(User, User.id == Paper.created_by_id)
         .filter(
             PaperReviewLog.reviewer_id.in_(list(supervisor_ids)),
-            func.lower(func.coalesce(PaperReviewLog.reviewer_role, "")).in_(["lecturer", "project_supervisor"]),
-            func.lower(func.coalesce(User.department, "")) == reviewer_department,
             func.lower(func.coalesce(User.role, "")).in_(["student", "member"]),
         )
         .group_by(PaperReviewLog.reviewer_id)
@@ -1041,17 +1059,55 @@ def read_department_supervisor_review_summary(
         int(row[0]): (int(row[1] or 0), int(row[2] or 0)) for row in review_rows
     }
 
+    # Also count assigned papers per supervisor for accurate reviews & approvals count
+    assigned_paper_counts = (
+        db.query(
+            Paper.supervisor_id,
+            func.count(Paper.id).label("assigned_total"),
+            func.sum(
+                case(
+                    (
+                        Paper.status.in_(
+                            [
+                                "phase5_pending_supervisor",
+                                "phase5_pending_coordinator",
+                                "phase5_pending_hod",
+                                "phase5_pending_hod_and_coordinator",
+                                "phase5_approved_for_library",
+                                "approved",
+                                "phase5_published",
+                            ]
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("approved_total"),
+        )
+        .filter(Paper.supervisor_id.in_(list(supervisor_ids)))
+        .group_by(Paper.supervisor_id)
+        .all()
+    )
+    assigned_dict = {
+        int(row[0]): (int(row[1] or 0), int(row[2] or 0)) for row in assigned_paper_counts if row[0] is not None
+    }
+
     summary: list[SupervisorReviewSummary] = []
     for supervisor in supervisors:
-        reviews_done, approvals_done = counts_by_supervisor.get(supervisor.id, (0, 0))
+        log_reviews, log_approvals = counts_by_supervisor.get(supervisor.id, (0, 0))
+        ass_total, ass_approved = assigned_dict.get(supervisor.id, (0, 0))
+        
+        total_reviews = max(log_reviews, ass_total)
+        total_approvals = max(log_approvals, ass_approved)
+
         summary.append(
             SupervisorReviewSummary(
                 supervisor_user_id=supervisor.id,
                 supervisor_name=supervisor.full_name,
                 supervisor_email=supervisor.email,
                 department=supervisor.department,
-                reviews_done=reviews_done,
-                approvals_done=approvals_done,
+                reviews_done=total_reviews,
+                approvals_done=total_approvals,
             )
         )
 
@@ -2034,7 +2090,7 @@ def _build_multi_cert_excel_workbook(target_path: Path, sheet_prefix: str, paper
     wb.save(target_path)
 
 
-def _get_target_doc_path(paper, doc_type: str, user=None, assigned_papers=None) -> tuple[Path, str, str, str]:
+def _get_target_doc_path(paper, doc_type: str, user=None, assigned_papers=None, db: Session | None = None) -> tuple[Path, str, str, str]:
     """Returns (file_path, file_name, file_ext, document_type) for ONLYOFFICE."""
     base_dir = Path(paper.file_path).parent if paper and paper.file_path else Path("uploads/examiners")
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -2044,27 +2100,61 @@ def _get_target_doc_path(paper, doc_type: str, user=None, assigned_papers=None) 
         student_name = paper.authors[0].name
 
     if doc_type == "comments" and paper:
-        is_internal = user and paper.internal_examiner_id == user.id
-        is_external = user and paper.external_examiner_id == user.id
-        role_label = "Internal Examiner" if is_internal else ("External Examiner" if is_external else "Examiner")
-        role_tag = "internal" if is_internal else ("external" if is_external else f"user_{user.id}" if user else "gen")
-        
-        target = base_dir / f"paper_{paper.id}_comments_{role_tag}.docx"
-        file_display_name = f"Paper_{paper.id}_{role_label.replace(' ', '_')}_Comments.docx"
+        target = base_dir / f"paper_{paper.id}_comments.docx"
+        file_display_name = f"Paper_{paper.id}_Examiner_Comments.docx"
 
-        if not target.exists():
+        rebuild_needed = not target.exists()
+        if target.exists():
+            try:
+                import docx
+                existing_paragraphs = [p.text for p in docx.Document(target).paragraphs if p.text.strip()]
+                existing_fulltext = "\n".join(existing_paragraphs)
+                if "Examiner Evaluation Summary:" in existing_fulltext or "No detailed qualitative text notes entered yet" in existing_fulltext or (paper and paper.examiner_corrections and paper.examiner_corrections.strip() not in existing_fulltext):
+                    rebuild_needed = True
+            except Exception:
+                rebuild_needed = True
+
+        if rebuild_needed:
             try:
                 import docx
                 doc = docx.Document()
-                doc.add_heading(f"{role_label} Review & Qualitative Comments", level=1)
+                doc.add_heading("Examiner Review & Qualitative Comments", level=1)
                 doc.add_paragraph(f"Paper ID: #{paper.id}")
                 doc.add_paragraph(f"Thesis Title: {paper.title}")
                 doc.add_paragraph(f"Student Author: {student_name}")
-                if user:
-                    doc.add_paragraph(f"Examiner: {user.full_name or user.email} ({role_label})")
                 doc.add_paragraph("--------------------------------------------------------------------------------")
                 doc.add_heading("Qualitative Feedback & Required Revisions:", level=2)
-                doc.add_paragraph("Please enter detailed line-item feedback, qualitative corrections, and grading remarks here...")
+                
+                int_comments = ""
+                ext_comments = ""
+                if db:
+                    from app.models.thesis_system import ExaminationResult
+                    results = db.query(ExaminationResult).filter(ExaminationResult.thesis_id == paper.id).all()
+                    for r in results:
+                        if r.examiner_type == "internal" or r.examiner_id == paper.internal_examiner_id:
+                            if r.general_comments and r.general_comments.strip():
+                                int_comments = r.general_comments.strip()
+                        elif r.examiner_type == "external" or r.examiner_id == paper.external_examiner_id:
+                            if r.general_comments and r.general_comments.strip():
+                                ext_comments = r.general_comments.strip()
+
+                has_notes = False
+                if int_comments:
+                    doc.add_paragraph(f"Internal Examiner Remarks:\n{int_comments}")
+                    has_notes = True
+                if ext_comments and ext_comments != int_comments:
+                    doc.add_paragraph(f"External Examiner Remarks:\n{ext_comments}")
+                    has_notes = True
+                
+                raw_corrections = _clean_examiner_corrections(paper.examiner_corrections)
+                if raw_corrections and raw_corrections.strip() and raw_corrections.strip() != int_comments and raw_corrections.strip() != ext_comments:
+                    doc.add_paragraph(f"Compiled Remarks & Instructions:\n{raw_corrections.strip()}")
+                    has_notes = True
+
+                if not has_notes:
+                    doc.add_paragraph("")
+                    doc.add_paragraph("")
+                
                 doc.save(target)
             except Exception:
                 target.write_bytes(b"Examiner Comments Document\n")
@@ -2198,7 +2288,7 @@ def download_paper_file_public(
         elif doc_type == "dean_excel":
             assigned_papers = db.query(Paper).all()
 
-    target, file_name, file_ext, _ = _get_target_doc_path(paper, doc_type, user=user, assigned_papers=assigned_papers)
+    target, file_name, file_ext, _ = _get_target_doc_path(paper, doc_type, user=user, assigned_papers=assigned_papers, db=db)
     if not target.exists() or not target.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
 
@@ -2375,7 +2465,7 @@ def get_editor_config(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
 
-    target, file_name, file_ext, doc_kind = _get_target_doc_path(paper, doc_type, user=current_user)
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(paper, doc_type, user=current_user, db=db)
 
     # Basic access gate for editor config.
     if not current_user.is_admin and paper.created_by_id != current_user.id and paper.supervisor_id not in {None, current_user.id}:
@@ -2385,7 +2475,7 @@ def get_editor_config(
     file_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="file"), safe="")
     callback_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="callback"), safe="")
     callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
-    file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}&doc_type={doc_type}&uid={current_user.id}"
+    file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}&doc_type={doc_type}&uid={current_user.id}&v={int(target.stat().st_mtime if target.exists() else 0)}"
     callback_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/editor-callback?token={callback_token}&doc_type={doc_type}&uid={current_user.id}"
 
     session_key = f"paper-{paper.id}-{doc_type}-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
@@ -3314,6 +3404,50 @@ async def upload_corrections(
     return _to_paper_read(paper, db, current_user)
 
 
+@router.post("/papers/{paper_id}/submit-in-system-corrections", response_model=PaperRead)
+async def submit_in_system_corrections(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    
+    if paper.created_by_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the student author can submit corrections")
+    
+    if not paper.file_path or not Path(paper.file_path).exists():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No in-system document found to submit")
+    
+    paper.status = "phase5_pending_supervisor"
+    db.add(paper)
+    
+    _record_workflow_event(
+        db,
+        paper_id=paper.id,
+        event_type="submit_in_system_corrections",
+        actor_id=current_user.id,
+        actor_role="student",
+        from_status="phase5_corrections",
+        to_status=paper.status,
+        message="Student submitted in-system ONLYOFFICE edits as final corrections, awaiting supervisor approval.",
+    )
+    db.commit()
+    db.refresh(paper)
+    
+    if paper.supervisor_id:
+        create_notification(
+            db,
+            user_id=paper.supervisor_id,
+            paper_id=paper.id,
+            ntype="workflow_update",
+            message=f"Student submitted in-system ONLYOFFICE corrections for '{paper.title}'. Please review and approve."
+        )
+        
+    return _to_paper_read(paper, db, current_user)
+
+
 @router.post("/papers/{paper_id}/supervisor-approve-corrections", response_model=PaperRead)
 def supervisor_approve_corrections(
     paper_id: int,
@@ -3350,6 +3484,145 @@ def supervisor_approve_corrections(
         f"Supervisor approved corrections for '{paper.title}', awaiting final sign-off."
     )
     
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/coordinator-approve-corrections", response_model=PaperRead)
+def coordinator_approve_corrections(
+    paper_id: int,
+    decision: str = Form("approved"),
+    comment: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    allowed = (
+        current_user.is_admin
+        or has_role(db, current_user, "project_coordinator")
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "system_admin")
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Project Coordinator or Admin can approve corrections")
+
+    if decision == "approved":
+        paper.project_coordinator_approved_by_id = current_user.id
+        paper.project_coordinator_approved_at = datetime.now(timezone.utc)
+        
+        if paper.hod_approved_at is not None or has_role(db, current_user, "hod") or current_user.is_admin:
+            paper.status = "phase5_approved_for_library"
+        else:
+            paper.status = "phase5_pending_hod"
+        
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="coordinator_approve_corrections",
+            actor_id=current_user.id,
+            actor_role="project_coordinator",
+            from_status="phase5_pending_coordinator",
+            to_status=paper.status,
+            message="Project Coordinator approved corrections.",
+        )
+    else:
+        paper.status = "phase5_corrections"
+        paper.review_comments = comment or "Revisions requested by Project Coordinator."
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="coordinator_reject_corrections",
+            actor_id=current_user.id,
+            actor_role="project_coordinator",
+            from_status="phase5_pending_coordinator",
+            to_status=paper.status,
+            message=f"Project Coordinator requested revisions: {comment}",
+        )
+
+    db.commit()
+    db.refresh(paper)
+
+    if paper.created_by_id:
+        notif_msg = f"Project Coordinator reviewed your corrections: {decision.upper()}."
+        create_notification(
+            db,
+            user_id=paper.created_by_id,
+            paper_id=paper.id,
+            ntype="workflow_update",
+            message=notif_msg,
+        )
+
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/hod-approve-corrections", response_model=PaperRead)
+def hod_approve_corrections(
+    paper_id: int,
+    decision: str = Form("approved"),
+    comment: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    allowed = (
+        current_user.is_admin
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "system_admin")
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Head of Department (HOD) or Admin can approve corrections")
+
+    if decision == "approved":
+        paper.hod_approved_by_id = current_user.id
+        paper.hod_approved_at = datetime.now(timezone.utc)
+        
+        if paper.project_coordinator_approved_at is not None or current_user.is_admin:
+            paper.status = "phase5_approved_for_library"
+        else:
+            paper.status = "phase5_pending_coordinator"
+
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="hod_approve_corrections",
+            actor_id=current_user.id,
+            actor_role="hod",
+            from_status="phase5_pending_hod",
+            to_status=paper.status,
+            message="HOD signed and approved corrections.",
+        )
+    else:
+        paper.status = "phase5_corrections"
+        paper.review_comments = comment or "Revisions requested by HOD."
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="hod_reject_corrections",
+            actor_id=current_user.id,
+            actor_role="hod",
+            from_status="phase5_pending_hod",
+            to_status=paper.status,
+            message=f"HOD requested revisions: {comment}",
+        )
+
+    db.commit()
+    db.refresh(paper)
+
+    if paper.created_by_id:
+        notif_msg = f"Head of Department (HOD) reviewed your corrections: {decision.upper()}."
+        create_notification(
+            db,
+            user_id=paper.created_by_id,
+            paper_id=paper.id,
+            ntype="workflow_update",
+            message=notif_msg,
+        )
+
     return _to_paper_read(paper, db, current_user)
 
 

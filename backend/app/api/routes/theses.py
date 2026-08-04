@@ -1443,6 +1443,10 @@ def coordinator_correction_decision(
         correction = db.query(Correction).filter(Correction.thesis_id == thesis_id).order_by(Correction.version.desc()).first()
 
     if not correction:
+        paper = db.query(Paper).filter(Paper.id == (thesis_id or correction_id)).first()
+        if paper:
+            from app.api.routes.papers import coordinator_approve_corrections
+            return coordinator_approve_corrections(paper_id=paper.id, decision=decision, comment=comment, db=db, current_user=current_user)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correction record not found")
 
     target_thesis_id = correction.thesis_id
@@ -1516,6 +1520,10 @@ def hod_correction_decision(
         correction = db.query(Correction).filter(Correction.thesis_id == thesis_id).order_by(Correction.version.desc()).first()
 
     if not correction:
+        paper = db.query(Paper).filter(Paper.id == (thesis_id or correction_id)).first()
+        if paper:
+            from app.api.routes.papers import hod_approve_corrections
+            return hod_approve_corrections(paper_id=paper.id, decision=decision, comment=comment, db=db, current_user=current_user)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correction record not found")
 
     target_thesis_id = correction.thesis_id

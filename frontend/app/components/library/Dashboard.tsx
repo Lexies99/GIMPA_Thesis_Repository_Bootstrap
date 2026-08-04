@@ -39,7 +39,7 @@ import type {
 } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentCommentViewer } from './DocumentCommentViewer'
-import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download } from 'lucide-react'
+import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download, FileEdit } from 'lucide-react'
 
 interface StudentPaperWorkflowProps {
   paper: ApiPaper
@@ -150,14 +150,35 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
     }
   }
 
-  const handleUploadCorrections = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!file) return
+  const handleInSystemCorrectionsSubmit = async () => {
+    const activeToken = token || localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || localStorage.getItem('access_token') || ''
     setError('')
     setSuccess('')
     setSubmitting(true)
     try {
-      await apiUploadCorrections(paper.id, file, token)
+      const { apiSubmitInSystemCorrections } = await import('../../lib/api')
+      await apiSubmitInSystemCorrections(paper.id, activeToken)
+      setSuccess('In-system ONLYOFFICE corrections submitted successfully! Awaiting supervisor approval.')
+      onUpdate()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Submission failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleUploadCorrections = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!file) {
+      await handleInSystemCorrectionsSubmit()
+      return
+    }
+    const activeToken = token || localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || localStorage.getItem('access_token') || ''
+    setError('')
+    setSuccess('')
+    setSubmitting(true)
+    try {
+      await apiUploadCorrections(paper.id, file, activeToken)
       setSuccess('Corrections uploaded successfully. Awaiting supervisor approval.')
       setFile(null)
       onUpdate()
@@ -516,40 +537,60 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
       {(paper.status.startsWith('phase5') || paper.status.startsWith('phase4')) && (
         <div className="space-y-3">
           {paper.status === 'phase5_corrections' && (
-            <div className="space-y-3">
-              {(paper.internal_result_file_name || paper.external_result_file_name) && (
-                <div className="space-y-2 border-b pb-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Download Examiner Marked Scripts
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {paper.internal_result_file_name && (
-                      <Button size="sm" variant="outline" onClick={() => void handleDownloadExaminerScript('internal')} className="flex items-center gap-1.5 text-xs">
-                        <FileText className="size-4" />
-                        Internal Examiner Script
-                      </Button>
-                    )}
-                    {paper.external_result_file_name && (
-                      <Button size="sm" variant="outline" onClick={() => void handleDownloadExaminerScript('external')} className="flex items-center gap-1.5 text-xs">
-                        <FileText className="size-4" />
-                        External Examiner Script
-                      </Button>
-                    )}
-                  </div>
+            <div className="space-y-4">
+              {/* ONLYOFFICE & Download Tools Panel for Student Revisions */}
+              <div className="border border-primary/20 bg-primary/5 rounded-lg p-3 space-y-2">
+                <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                  <FileEdit className="size-4" />
+                  ONLYOFFICE In-App Revision & Examiner Feedback Tools
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Read examiner remarks, work on corrections directly inside ONLYOFFICE Word, or download marked scripts offline:
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                  >
+                    <FileEdit className="size-3.5 text-slate-200" />
+                    📝 Edit & Work on Thesis in ONLYOFFICE
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open(`/editor?paperId=${paper.id}&type=comments`, '_blank')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                  >
+                    <MessageSquare className="size-3.5 text-slate-200" />
+                    💬 View Comments Document (ONLYOFFICE Word)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleInSystemCorrectionsSubmit}
+                    disabled={submitting}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow transition-colors cursor-pointer border border-emerald-500 disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="size-3.5 text-white" />
+                    {submitting ? 'Submitting...' : '🚀 Submit In-System ONLYOFFICE Edits'}
+                  </button>
+                  {paper.internal_result_file_name && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => void handleDownloadExaminerScript('internal')} className="flex items-center gap-1.5 text-xs">
+                      <FileText className="size-3.5" />
+                      📥 Download Internal Examiner Script
+                    </Button>
+                  )}
+                  {paper.external_result_file_name && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => void handleDownloadExaminerScript('external')} className="flex items-center gap-1.5 text-xs">
+                      <FileText className="size-3.5" />
+                      📥 Download External Examiner Script
+                    </Button>
+                  )}
                 </div>
-              )}
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Upload Examiner Corrections
-              </p>
-              {paper.examiner_corrections && (
-                <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded p-2.5 text-xs text-amber-800 dark:text-amber-300">
-                  <span className="font-semibold block mb-1">Compiled Examiner Comments:</span>
-                  <p className="whitespace-pre-line">{paper.examiner_corrections}</p>
-                </div>
-              )}
+              </div>
+
               <form onSubmit={handleUploadCorrections} className="space-y-2">
                 <Label htmlFor={`file-corrections-${paper.id}`} className="text-xs font-medium">
-                  Select corrected thesis document (PDF/DOCX)
+                  Upload corrected thesis file (Optional if edited directly in ONLYOFFICE)
                 </Label>
                 <div className="flex gap-2 items-center">
                   <Input
@@ -557,18 +598,17 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
                     type="file"
                     accept=".pdf,.doc,.docx"
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFile(e.target.files?.[0] || null)}
-                className="h-9 text-xs"
-                required
-              />
-              <Button type="submit" size="sm" disabled={submitting || !file}>
-                {submitting ? 'Uploading...' : 'Submit Corrections'}
-              </Button>
+                    className="h-9 text-xs"
+                  />
+                  <Button type="submit" size="sm" disabled={submitting} className="whitespace-nowrap">
+                    {submitting ? 'Submitting...' : file ? 'Submit Uploaded File' : 'Submit In-System Corrections'}
+                  </Button>
+                </div>
+              </form>
             </div>
-          </form>
+          )}
         </div>
       )}
-    </div>
-  )}
 
       {statusDetails && (
         <div className={`flex items-start gap-3 border rounded-lg p-3 ${statusDetails.color} animate-in fade-in slide-in-from-top-1 duration-200`}>
@@ -650,6 +690,11 @@ export function Dashboard({ userRole }: DashboardProps) {
         )
         if (pipe) {
           setPipelineMetrics(pipe)
+          const phaseKeys: (keyof ApiPipelineMetrics)[] = ['phase1_proposals', 'phase2_allocation', 'phase3_chapters', 'phase4_examination', 'phase5_signoff']
+          const activeKey = phaseKeys.find((k) => (pipe[k]?.count ?? 0) > 0)
+          if (activeKey) {
+            setSelectedPhaseKey(activeKey)
+          }
         }
       } catch {
         if (!cancelled) {
@@ -1080,13 +1125,11 @@ export function Dashboard({ userRole }: DashboardProps) {
                       </div>
                     )}
 
-                    {localStorage.getItem('murrs_access_token') && (
-                      <StudentPaperWorkflow
-                        paper={paper}
-                        token={localStorage.getItem('murrs_access_token') || ''}
-                        onUpdate={loadData}
-                      />
-                    )}
+                    <StudentPaperWorkflow
+                      paper={paper}
+                      token={localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || ''}
+                      onUpdate={loadData}
+                    />
                   </div>
                 ))
               )}

@@ -298,6 +298,24 @@ export function ApprovalWorkflow() {
     }
   }
 
+  const handleDownloadPaper = async (paperId: number) => {
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+    if (!token) return
+    try {
+      const { blob, filename } = await apiDownloadPaperFile(paperId, token)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Download failed')
+    }
+  }
+
   const loadAll = async () => {
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
     if (!token) {
@@ -1513,6 +1531,54 @@ export function ApprovalWorkflow() {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="examiner-score-input" className="text-xs font-semibold">
+                        Numerical Score (0 – 100%)
+                      </Label>
+                      <Input
+                        id="examiner-score-input"
+                        type="number"
+                        min={0}
+                        max={100}
+                        placeholder="e.g. 85"
+                        value={selectedPaper.internal_examiner_id === user?.id ? internalScore : (selectedPaper.external_examiner_id === user?.id ? externalScore : (internalScore || externalScore))}
+                        onChange={(e) => {
+                          setInternalScore(e.target.value)
+                          setExternalScore(e.target.value)
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="examiner-recommendation-select" className="text-xs font-semibold">
+                        Recommendation
+                      </Label>
+                      <Select value={examinerRecommendation} onValueChange={setExaminerRecommendation}>
+                        <SelectTrigger id="examiner-recommendation-select">
+                          <SelectValue placeholder="Select recommendation" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Pass">Pass</SelectItem>
+                          <SelectItem value="Pass with Revisions">Pass with Revisions</SelectItem>
+                          <SelectItem value="Fail">Fail</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="examiner-comments-input" className="text-xs font-semibold">
+                      Qualitative Remarks & Corrections
+                    </Label>
+                    <Textarea
+                      id="examiner-comments-input"
+                      rows={3}
+                      placeholder="Enter specific feedback, corrections, or instructions for the student..."
+                      value={examinerCorrections}
+                      onChange={(e) => setExaminerCorrections(e.target.value)}
+                    />
+                  </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="results-file-input">Annotated Script / Mark Sheet (Optional File Upload)</Label>
                     <Input 
@@ -1530,12 +1596,17 @@ export function ApprovalWorkflow() {
                       onClick={async () => {
                         const isUserInternal = isAdmin || isHOD || isCoordinator || selectedPaper.internal_examiner_id === user?.id
                         const isUserExternal = isAdmin || isHOD || isCoordinator || selectedPaper.external_examiner_id === user?.id
-                        
-                        let scoreVal: number | undefined = undefined
-                        if (isUserInternal && selectedPaper.internal_score !== undefined && selectedPaper.internal_score !== null) {
-                          scoreVal = selectedPaper.internal_score
-                        } else if (isUserExternal && selectedPaper.external_score !== undefined && selectedPaper.external_score !== null) {
-                          scoreVal = selectedPaper.external_score
+
+                        const enteredScoreStr = isUserInternal ? internalScore : externalScore
+                        const parsedScore = enteredScoreStr.trim() !== '' ? parseFloat(enteredScoreStr) : NaN
+
+                        let scoreVal: number | undefined = !isNaN(parsedScore) ? parsedScore : undefined
+                        if (scoreVal === undefined) {
+                          if (isUserInternal && selectedPaper.internal_score !== undefined && selectedPaper.internal_score !== null) {
+                            scoreVal = selectedPaper.internal_score
+                          } else if (isUserExternal && selectedPaper.external_score !== undefined && selectedPaper.external_score !== null) {
+                            scoreVal = selectedPaper.external_score
+                          }
                         }
                         
                         const commentsVal = examinerCorrections.trim() || 'Qualitative feedback and evaluation completed in ONLYOFFICE Document & Excel Editors'
@@ -1552,8 +1623,8 @@ export function ApprovalWorkflow() {
                           
                           // Also trigger upload results for paper compatibility
                           await apiUploadResults(selectedPaper.id, {
-                            internalScore: isUserInternal ? (selectedPaper.internal_score ?? undefined) : undefined,
-                            externalScore: isUserExternal ? (selectedPaper.external_score ?? undefined) : undefined,
+                            internalScore: isUserInternal ? (scoreVal ?? selectedPaper.internal_score ?? undefined) : (selectedPaper.internal_score ?? undefined),
+                            externalScore: isUserExternal ? (scoreVal ?? selectedPaper.external_score ?? undefined) : (selectedPaper.external_score ?? undefined),
                             examinerCorrections: commentsVal,
                             file: resultsFile || undefined
                           }, token)
@@ -1633,6 +1704,45 @@ export function ApprovalWorkflow() {
                       <p className="text-muted-foreground whitespace-pre-line">{selectedPaper.examiner_corrections}</p>
                     </div>
                   )}
+
+                  {/* ONLYOFFICE & Download Tools Panel for Supervisor Review */}
+                  <div className="bg-background border border-primary/20 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                      <FileEdit className="size-4" />
+                      ONLYOFFICE In-App Inspection & Verification Tools
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Inspect the student's corrected thesis in ONLYOFFICE Word to verify their edits, or review the compiled examiner feedback document:
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=paper`, '_blank')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow transition-colors cursor-pointer border border-emerald-500"
+                      >
+                        <FileEdit className="size-3.5 text-white" />
+                        📝 View Student's Corrected Thesis (ONLYOFFICE Word)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=comments`, '_blank')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                      >
+                        <MessageSquare className="size-3.5 text-slate-200" />
+                        💬 View Examiners' Comments Document (ONLYOFFICE Word)
+                      </button>
+                      {selectedPaper.file_path && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDownloadPaper(selectedPaper.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                        >
+                          <Download className="size-3.5 text-slate-200" />
+                          📥 Download Corrected File
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   {reviewError && (
                     <p className="text-xs text-destructive">{reviewError}</p>
                   )}
@@ -1699,6 +1809,45 @@ export function ApprovalWorkflow() {
                       </div>
                     </div>
                   )}
+
+                  {/* ONLYOFFICE & Download Tools Panel for Dual Sign-off */}
+                  <div className="bg-background border border-primary/20 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                      <FileEdit className="size-4" />
+                      ONLYOFFICE In-App Inspection & Verification Tools
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Inspect the student's corrected thesis in ONLYOFFICE Word before final sign-off, or view the compiled examiner feedback document:
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=paper`, '_blank')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow transition-colors cursor-pointer border border-emerald-500"
+                      >
+                        <FileEdit className="size-3.5 text-white" />
+                        📝 View Student's Corrected Thesis (ONLYOFFICE Word)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=comments`, '_blank')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                      >
+                        <MessageSquare className="size-3.5 text-slate-200" />
+                        💬 View Examiners' Comments Document (ONLYOFFICE Word)
+                      </button>
+                      {selectedPaper.file_path && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDownloadPaper(selectedPaper.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                        >
+                          <Download className="size-3.5 text-slate-200" />
+                          📥 Download Corrected File
+                        </button>
+                      )}
+                    </div>
+                  </div>
 
                   {((selectedPaper.status === 'phase5_pending_coordinator' && (isCoordinator || isAdmin)) ||
                     (selectedPaper.status === 'phase5_pending_hod' && (isHOD || isAdmin))) ? (
