@@ -1,149 +1,70 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   
-  --color-background: #0f172a;
-  --color-foreground: #f8fafc;
-  --color-card: #1e293b;
-  --color-card-foreground: #f8fafc;
-  --color-primary: #3b82f6;
+  --color-background: #ffffff;
+  --color-foreground: #030213;
+  --color-card: #ffffff;
+  --color-card-foreground: #030213;
+  --color-primary: #030213;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #334155;
-  --color-secondary-foreground: #f8fafc;
-  --color-muted: #1e293b;
-  --color-muted-foreground: #94a3b8;
-  --color-accent: #eab308;
-  --color-accent-foreground: #0f172a;
-  --color-border: rgba(255, 255, 255, 0.1);
-  --color-input: #1e293b;
-  --color-input-background: #0f172a;
-  --color-ring: #3b82f6;
-  --color-destructive: #ef4444;
+  --color-secondary: #f3f3f5;
+  --color-secondary-foreground: #030213;
+  --color-muted: #ececf0;
+  --color-muted-foreground: #717182;
+  --color-accent: #e9ebef;
+  --color-accent-foreground: #030213;
+  --color-border: rgba(0, 0, 0, 0.1);
+  --color-input: transparent;
+  --color-input-background: #f3f3f5;
+  --color-ring: #030213;
+  --color-destructive: #d4183d;
   --color-destructive-foreground: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   @theme {
-    --color-background: #0b132b;
-    --color-foreground: #f1f5f9;
-    --color-card: #1c2541;
-    --color-card-foreground: #f1f5f9;
-    --color-primary: #38bdf8;
-    --color-primary-foreground: #0f172a;
-    --color-secondary: #334155;
-    --color-secondary-foreground: #f1f5f9;
-    --color-muted: #1e293b;
-    --color-muted-foreground: #94a3b8;
-    --color-accent: #f59e0b;
-    --color-accent-foreground: #0b132b;
-    --color-border: rgba(255, 255, 255, 0.08);
-    --color-input: #1e293b;
-    --color-input-background: #0b132b;
-    --color-ring: #38bdf8;
+    --color-background: #0a0a0a;
+    --color-foreground: #f5f5f5;
+    --color-card: #1a1a1a;
+    --color-card-foreground: #f5f5f5;
+    --color-primary: #f5f5f5;
+    --color-primary-foreground: #000000;
+    --color-secondary: #2a2a2a;
+    --color-secondary-foreground: #f5f5f5;
+    --color-muted: #3a3a3a;
+    --color-muted-foreground: #a0a0a0;
+    --color-accent: #2a2a2a;
+    --color-accent-foreground: #f5f5f5;
+    --color-border: rgba(255, 255, 255, 0.1);
+    --color-input: #2a2a2a;
+    --color-input-background: #1a1a1a;
+    --color-ring: #f5f5f5;
   }
 }
 
 html,
 body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  font-family: var(--font-sans);
+  @apply bg-background text-foreground;
   min-height: 100vh;
   height: 100%;
   width: 100%;
   margin: 0;
 }
 
-/* GIMPA Academic Theme & Bootstrap Utility Enhancements */
-.gimpa-hero-banner {
-  background: linear-gradient(135deg, #0b192c 0%, #1e3a8a 50%, #1e1b4b 100%);
-  border: 1px solid rgba(234, 179, 8, 0.25);
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+html {
+  color-scheme: light;
 }
 
-.gimpa-gold-badge {
-  background: linear-gradient(135deg, #eab308 0%, #ca8a04 100%);
-  color: #0f172a;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  box-shadow: 0 2px 8px rgba(234, 179, 8, 0.4);
+body {
+  color-scheme: dark;
 }
 
-.gimpa-card {
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1rem;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.gimpa-card:hover {
-  border-color: rgba(59, 130, 246, 0.3);
-  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.4);
-}
-
-.gimpa-stat-card {
-  position: relative;
-  overflow: hidden;
-  border-radius: 1rem;
-  padding: 1.25rem;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.gimpa-stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.4);
-}
-
-.gimpa-stat-blue {
-  background: linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(30, 41, 59, 0.9) 100%);
-  border-left: 4px solid #3b82f6;
-}
-
-.gimpa-stat-violet {
-  background: linear-gradient(135deg, rgba(109, 40, 217, 0.4) 0%, rgba(30, 41, 59, 0.9) 100%);
-  border-left: 4px solid #8b5cf6;
-}
-
-.gimpa-stat-emerald {
-  background: linear-gradient(135deg, rgba(6, 95, 70, 0.4) 0%, rgba(30, 41, 59, 0.9) 100%);
-  border-left: 4px solid #10b981;
-}
-
-.gimpa-stat-amber {
-  background: linear-gradient(135deg, rgba(180, 83, 9, 0.4) 0%, rgba(30, 41, 59, 0.9) 100%);
-  border-left: 4px solid #f59e0b;
-}
-
-/* Bootstrap Overrides for Modern Dark Theme */
-.card {
-  background-color: #1e293b !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  color: #f8fafc !important;
-}
-
-.btn-primary {
-  background-color: #2563eb !important;
-  border-color: #1d4ed8 !important;
-  color: #ffffff !important;
-  font-weight: 600;
-}
-
-.btn-primary:hover {
-  background-color: #1d4ed8 !important;
-}
-
-.btn-success {
-  background-color: #059669 !important;
-  border-color: #047857 !important;
-  color: #ffffff !important;
-  font-weight: 600;
-}
-
-.btn-success:hover {
-  background-color: #047857 !important;
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
 }
 

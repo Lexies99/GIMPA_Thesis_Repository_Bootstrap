@@ -39,7 +39,7 @@ import type {
 } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentCommentViewer } from './DocumentCommentViewer'
-import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download, FileEdit, GraduationCap, Award, TrendingUp, BarChart3, Users, CheckCircle, Sparkles } from 'lucide-react'
+import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download, FileEdit } from 'lucide-react'
 
 interface StudentPaperWorkflowProps {
   paper: ApiPaper
@@ -779,7 +779,7 @@ export function Dashboard({ userRole }: DashboardProps) {
   const handleLoadAnnotations = async (paperId: number) => {
     const accessToken = localStorage.getItem('murrs_access_token')
     if (!accessToken) return
-setActiveViewerPaperId((prev) => (prev === paperId ? null : paperId))
+    setActiveViewerPaperId((prev) => (prev === paperId ? null : paperId))
     try {
       const rows = await apiGetPaperAnnotations(paperId, accessToken)
       setAnnotationsByPaper((prev) => ({ ...prev, [paperId]: rows }))
@@ -789,455 +789,411 @@ setActiveViewerPaperId((prev) => (prev === paperId ? null : paperId))
   }
 
   return (
-    <div className="container-fluid px-0 space-y-6">
-      {/* 1. GIMPA Academic Hero Banner */}
-      <div className="gimpa-hero-banner rounded-4 p-4 p-md-5 text-white position-relative overflow-hidden">
-        <div className="row align-items-center position-relative z-1">
-          <div className="col-lg-8 space-y-2">
-            <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
-              <span className="badge gimpa-gold-badge px-3 py-1.5 rounded-pill text-uppercase">
-                <GraduationCap className="size-3.5 inline mr-1" />
-                GIMPA Academic Repository Portal
-              </span>
-              <span className="badge bg-primary/20 text-blue-200 border border-blue-400/30 px-3 py-1.5 rounded-pill capitalize">
-                {userRole.replace('_', ' ')}
-              </span>
-            </div>
-            <h1 className="h2 font-extrabold text-white tracking-tight mb-1">
-              Welcome, {user?.full_name || 'Academic Member'}
-            </h1>
-            <p className="text-slate-300 text-sm mb-0 max-w-2xl">
-              Track project milestones, conduct online ONLYOFFICE thesis reviews, manage examiner feedback, and oversee department sign-offs.
-            </p>
-          </div>
-          <div className="col-lg-4 text-lg-end mt-3 mt-lg-0">
-            <button
-              type="button"
-              onClick={() => navigate('/submit-proposal')}
-              className="btn btn-warning fw-bold px-4 py-2.5 rounded-3 shadow-lg hover:shadow-xl text-slate-900 border-0 transition-all inline-flex items-center gap-2"
-            >
-              <Sparkles className="size-4" />
-              Submit New Proposal
-            </button>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Total Papers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl">{stats?.total_papers ?? 0}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Total Views</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl">{stats?.total_views?.toLocaleString() ?? 0}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Total Downloads</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl">{stats?.total_downloads?.toLocaleString() ?? 0}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Pending Reviews</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl">{stats?.pending_reviews ?? 0}</div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* 2. Bootstrap Stat Cards Grid */}
-      <div className="row g-3">
-        <div className="col-12 col-sm-6 col-lg-3">
-          <div className="gimpa-stat-card gimpa-stat-blue h-100">
-            <div className="d-flex align-items-center justify-content-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Submissions</p>
-                <h3 className="h2 font-extrabold text-white mb-0">{stats?.total_papers ?? 0}</h3>
-              </div>
-              <div className="p-3 rounded-3 bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                <FileText className="size-6" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-12 col-sm-6 col-lg-3">
-          <div className="gimpa-stat-card gimpa-stat-violet h-100">
-            <div className="d-flex align-items-center justify-content-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Views</p>
-                <h3 className="h2 font-extrabold text-white mb-0">{stats?.total_views?.toLocaleString() ?? 0}</h3>
-              </div>
-              <div className="p-3 rounded-3 bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                <Eye className="size-6" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-12 col-sm-6 col-lg-3">
-          <div className="gimpa-stat-card gimpa-stat-emerald h-100">
-            <div className="d-flex align-items-center justify-content-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Downloads</p>
-                <h3 className="h2 font-extrabold text-white mb-0">{stats?.total_downloads?.toLocaleString() ?? 0}</h3>
-              </div>
-              <div className="p-3 rounded-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <Download className="size-6" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-12 col-sm-6 col-lg-3">
-          <div className="gimpa-stat-card gimpa-stat-amber h-100">
-            <div className="d-flex align-items-center justify-content-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Pending Reviews</p>
-                <h3 className="h2 font-extrabold text-white mb-0">{stats?.pending_reviews ?? 0}</h3>
-              </div>
-              <div className="p-3 rounded-3 bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                <Clock className="size-6 animate-pulse" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Department Student Pipeline (Phases 1 to 5) */}
       {showPipeline && (
-        <div className="card border-0 gimpa-card p-4 space-y-4">
-          <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 border-bottom border-slate-700/50 pb-3">
-            <div>
-              <h3 className="h5 font-bold text-white mb-1 flex items-center gap-2">
-                <BarChart3 className="size-5 text-blue-400" />
-                Department Student Pipeline (Phases 1 to 5)
-              </h3>
-              <p className="text-xs text-slate-400 mb-0">
-                Click any phase summary card to filter and inspect active student records in that milestone phase.
-              </p>
-            </div>
-            <span className="badge bg-blue-500/20 text-blue-300 border border-blue-500/30 px-3 py-1.5 rounded-pill text-xs font-semibold">
-              Live Department Metrics
-            </span>
-          </div>
-
-          {/* Pipeline Metric Cards */}
-          <div className="row g-3">
-            {[
-              { key: 'phase1_proposals', label: 'Phase 1: Proposals' },
-              { key: 'phase2_allocation', label: 'Phase 2: Allocation' },
-              { key: 'phase3_chapters', label: 'Phase 3: Chapters' },
-              { key: 'phase4_examination', label: 'Phase 4: Examination' },
-              { key: 'phase5_signoff', label: 'Phase 5: Sign-off' },
-            ].map((phase) => {
-              const phaseData = pipelineMetrics?.[phase.key as keyof ApiPipelineMetrics]
-              const count = phaseData?.count ?? 0
-              const isSelected = selectedPhaseKey === phase.key
-              return (
-                <div key={phase.key} className="col">
+        <Card className="border-primary/20 bg-card">
+          <CardHeader>
+            <CardTitle>Department Student Pipeline (Phases 1 to 5)</CardTitle>
+            <CardDescription>
+              Click any phase summary card to view and filter active student records in that phase.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* 4.1 Pipeline Metric Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+              {[
+                { key: 'phase1_proposals', label: 'Phase 1: Proposals' },
+                { key: 'phase2_allocation', label: 'Phase 2: Allocation' },
+                { key: 'phase3_chapters', label: 'Phase 3: Chapters' },
+                { key: 'phase4_examination', label: 'Phase 4: Examination' },
+                { key: 'phase5_signoff', label: 'Phase 5: Sign-off' },
+              ].map((phase) => {
+                const phaseData = pipelineMetrics?.[phase.key as keyof ApiPipelineMetrics]
+                const count = phaseData?.count ?? 0
+                const isSelected = selectedPhaseKey === phase.key
+                return (
                   <button
+                    key={phase.key}
                     type="button"
                     onClick={() => setSelectedPhaseKey(phase.key as keyof ApiPipelineMetrics)}
-                    className={`w-100 p-3 rounded-3 text-start transition-all cursor-pointer border ${
+                    className={`p-4 rounded-lg border text-left transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-blue-600/20 border-blue-500 shadow-md ring-1 ring-blue-400'
-                        : 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800 hover:border-slate-600'
+                        ? 'border-primary bg-primary/10 ring-2 ring-primary'
+                        : 'border-border bg-background hover:bg-muted'
                     }`}
                   >
-                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       {phase.label}
                     </p>
-                    <div className="d-flex align-items-center justify-content-between">
-                      <span className="h4 font-extrabold text-white mb-0">{count}</span>
-                      <span className={`badge ${count > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'}`}>
-                        {count > 0 ? `${count} Active` : 'Empty'}
-                      </span>
-                    </div>
+                    <p className="text-2xl font-bold mt-1">{count} Students</p>
                   </button>
+                )
+              })}
+            </div>
+
+            {/* 4.2 Drilled-Down Student Data Table */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-base font-semibold">
+                  Students in {
+                    selectedPhaseKey === 'phase1_proposals' ? 'Phase 1 — Proposals' :
+                    selectedPhaseKey === 'phase2_allocation' ? 'Phase 2 — Allocation' :
+                    selectedPhaseKey === 'phase3_chapters' ? 'Phase 3 — Chapter Review' :
+                    selectedPhaseKey === 'phase4_examination' ? 'Phase 4 — Examination' : 'Phase 5 — Final Sign-off'
+                  }
+                </h4>
+                <Badge variant="outline">
+                  {pipelineMetrics?.[selectedPhaseKey]?.students.length ?? 0} Active
+                </Badge>
+              </div>
+
+              {(!pipelineMetrics?.[selectedPhaseKey]?.students || pipelineMetrics[selectedPhaseKey].students.length === 0) ? (
+                <div className="p-8 border rounded-lg text-center text-muted-foreground bg-muted/20">
+                  No active students currently in this phase.
                 </div>
-              )
-            })}
-          </div>
-
-          {/* Drilled-Down Student Data Table */}
-          <div className="pt-2 space-y-3">
-            <div className="d-flex align-items-center justify-content-between">
-              <h4 className="text-sm font-bold text-slate-200 mb-0 flex items-center gap-2">
-                <Users className="size-4 text-blue-400" />
-                Active Students in {
-                  selectedPhaseKey === 'phase1_proposals' ? 'Phase 1 — Proposals' :
-                  selectedPhaseKey === 'phase2_allocation' ? 'Phase 2 — Allocation' :
-                  selectedPhaseKey === 'phase3_chapters' ? 'Phase 3 — Chapter Review' :
-                  selectedPhaseKey === 'phase4_examination' ? 'Phase 4 — Examination' : 'Phase 5 — Final Sign-off'
-                }
-              </h4>
-              <Badge variant="outline" className="text-xs font-semibold px-2.5 py-1">
-                {pipelineMetrics?.[selectedPhaseKey]?.students.length ?? 0} Students Found
-              </Badge>
-            </div>
-
-            {(!pipelineMetrics?.[selectedPhaseKey]?.students || pipelineMetrics[selectedPhaseKey].students.length === 0) ? (
-              <div className="p-4 border border-dashed border-slate-700 rounded-3 text-center text-slate-400 bg-slate-800/30 text-xs">
-                No active student records currently in this phase.
-              </div>
-            ) : (
-              <div className="table-responsive rounded-3 border border-slate-700/60 overflow-hidden">
-                <table className="table table-dark table-hover mb-0 text-xs align-middle">
-                  <thead className="table-dark border-bottom border-slate-700 text-slate-400 text-uppercase tracking-wider">
-                    <tr>
-                      <th className="px-3 py-2.5">Index Number</th>
-                      <th className="px-3 py-2.5">Student Full Name</th>
-                      <th className="px-3 py-2.5">Program / Discipline</th>
-                      <th className="px-3 py-2.5">Assigned Supervisor</th>
-                      <th className="px-3 py-2.5">Milestone Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-700/50">
-                    {pipelineMetrics[selectedPhaseKey].students.map((st) => (
-                      <tr key={st.paper_id} className="transition-colors">
-                        <td className="px-3 py-2.5 font-mono font-semibold text-blue-400">{st.index_number}</td>
-                        <td className="px-3 py-2.5 font-semibold text-white">{st.student_name}</td>
-                        <td className="px-3 py-2.5 text-slate-300">{st.program}</td>
-                        <td className="px-3 py-2.5 text-slate-300">{st.supervisor_name}</td>
-                        <td className="px-3 py-2.5">
-                          <span className="badge bg-blue-500/20 text-blue-300 border border-blue-500/30 font-semibold px-2.5 py-1 rounded-pill">
-                            {st.milestone_status}
-                          </span>
-                        </td>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-muted text-muted-foreground text-xs uppercase">
+                      <tr>
+                        <th className="px-4 py-3">Index Number</th>
+                        <th className="px-4 py-3">Student Full Name</th>
+                        <th className="px-4 py-3">Program / Class</th>
+                        <th className="px-4 py-3">Assigned Supervisor</th>
+                        <th className="px-4 py-3">Current Milestone Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
+                    </thead>
+                    <tbody className="divide-y">
+                      {pipelineMetrics[selectedPhaseKey].students.map((st) => (
+                        <tr key={st.paper_id} className="hover:bg-muted/40 transition-colors">
+                          <td className="px-4 py-3 font-mono font-medium">{st.index_number}</td>
+                          <td className="px-4 py-3 font-medium">{st.student_name}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{st.program}</td>
+                          <td className="px-4 py-3">{st.supervisor_name}</td>
+                          <td className="px-4 py-3">
+                            <Badge variant="secondary">{st.milestone_status}</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      {/* 4. Admin Account Overview Cards */}
       {isAdmin && (
-        <div className="row g-3">
-          <div className="col">
-            <div className="card gimpa-card p-3 text-center">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Students</p>
-              <h4 className="h3 font-extrabold text-white mb-0">{students.length}</h4>
-            </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Students (Imported)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl">{students.length}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Lecturers</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl">{roleCount('lecturer')}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">HODs</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl">{roleCount('hod')}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Project Supervisors</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl">{roleCount('project_supervisor')}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Project Coordinators</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl">{roleCount('project_coordinator')}</p>
+              </CardContent>
+            </Card>
           </div>
-          <div className="col">
-            <div className="card gimpa-card p-3 text-center">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Lecturers</p>
-              <h4 className="h3 font-extrabold text-white mb-0">{roleCount('lecturer')}</h4>
-            </div>
-          </div>
-          <div className="col">
-            <div className="card gimpa-card p-3 text-center">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">HODs</p>
-              <h4 className="h3 font-extrabold text-white mb-0">{roleCount('hod')}</h4>
-            </div>
-          </div>
-          <div className="col">
-            <div className="card gimpa-card p-3 text-center">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Coordinators</p>
-              <h4 className="h3 font-extrabold text-white mb-0">{roleCount('project_coordinator')}</h4>
-            </div>
-          </div>
-          <div className="col">
-            <div className="card gimpa-card p-3 text-center">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">System Admins</p>
-              <h4 className="h3 font-extrabold text-white mb-0">{roleCount('system_admin')}</h4>
-            </div>
-          </div>
-        </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>People Overview</CardTitle>
+              <CardDescription>Recent students and staff in the system</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <p className="text-sm font-medium mb-2">Recent Students</p>
+                {students.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No student records uploaded yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {students.slice(0, 8).map((s) => (
+                      <div key={s.student_id} className="text-sm border rounded px-3 py-2 flex items-center justify-between gap-2">
+                        <span>{s.full_name} ({s.student_id})</span>
+                        <span className="text-muted-foreground">{s.department || '-'} / {s.year || '-'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <p className="text-sm font-medium mb-2">Recent Staff Accounts</p>
+                {users.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No staff accounts found.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {users.slice(0, 8).map((u) => (
+                      <div key={u.id} className="text-sm border rounded px-3 py-2 flex items-center justify-between gap-2">
+                        <span>{u.full_name || u.email}</span>
+                        <span className="text-muted-foreground">{(u.roles && u.roles.length ? u.roles : [u.role]).join(', ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </>
       )}
 
-      {/* 5. Submissions List & Workflow Cards */}
-      <div className="card border-0 gimpa-card p-4 space-y-4">
-        <div className="d-flex align-items-center justify-content-between border-bottom border-slate-700/50 pb-3">
-          <div>
-            <h3 className="h5 font-bold text-white mb-1 flex items-center gap-2">
-              <FileText className="size-5 text-blue-400" />
-              My Submissions & Thesis Workflows
-            </h3>
-            <p className="text-xs text-slate-400 mb-0">
-              Supervisor decisions, ONLYOFFICE Word tools, and active progress tracking on your submissions.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/submit-proposal')}
-            className="btn btn-sm btn-outline-light rounded-pill px-3 text-xs font-semibold"
-          >
-            + Submit New Proposal
-          </button>
-        </div>
-
-        {myPapers.length === 0 ? (
-          <div className="p-5 border border-dashed border-slate-700 rounded-3 text-center bg-slate-800/30">
-            <FileText className="size-10 text-slate-500 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-300 mb-1">No Submissions Found</p>
-            <p className="text-xs text-slate-500 mb-3">You have not submitted any project proposal or thesis yet.</p>
-            <button
-              type="button"
-              onClick={() => navigate('/submit-proposal')}
-              className="btn btn-sm btn-primary rounded-3 text-xs font-bold px-4"
-            >
-              Submit New Proposal
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {myPapers.map((paper) => (
-              <div key={paper.id} className="border border-slate-700/70 rounded-3 p-3 p-md-4 bg-slate-800/50 space-y-3 shadow-sm hover:border-blue-500/40 transition-all">
-                <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 border-bottom border-slate-700/40 pb-3">
-                  <div>
-                    <h4 className="h6 font-bold text-white mb-1">{paper.title}</h4>
-                    <p className="text-xs text-slate-400 mb-0">
-                      Submitted: {paper.created_at ? new Date(paper.created_at).toLocaleString() : '-'} | Discipline: {paper.discipline || 'Computer Science'}
+      {(userRole === 'member' || userRole === 'student') && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <div>
+              <CardTitle>My Submissions</CardTitle>
+              <CardDescription>Supervisor decisions and feedback on your work</CardDescription>
+            </div>
+            {myPapers.length > 0 && (
+              <Button size="sm" onClick={() => navigate('/submit-proposal')}>
+                Submit New Proposal
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {myPapers.length === 0 ? (
+                <div className="text-center py-10 px-4 border border-dashed rounded-lg bg-muted/20 space-y-4">
+                  <div className="size-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                    <Upload className="size-6 text-primary" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Phase 1: Submit Your Thesis Topic</p>
+                    <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                      Submit your proposed thesis topic title and short description to receive HOD approval and get assigned your supervisor.
                     </p>
                   </div>
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="badge bg-blue-500/20 text-blue-300 border border-blue-500/30 px-3 py-1.5 rounded-pill text-xs font-semibold">
-                      {paper.status === 'phase1_proposal_submitted' ? 'Phase 1 — Awaiting HOD Review' :
-                       paper.status === 'phase1_topic_accepted' ? 'Phase 2 — Proposal Required' :
-                       paper.status === 'phase1_topic_rejected' || paper.status === 'phase1_topic_rejected' ? 'Phase 1 — Topic Rejected' :
-                       paper.status === 'phase2_proposal_submitted' ? 'Phase 2 — Proposal Submitted' :
-                       paper.status === 'phase2_proposal_accepted' ? 'Phase 2 — Proposal Accepted' :
-                       paper.status === 'phase3_chapters' || paper.status === 'phase3_steps_in_progress' ? 'Phase 2 — Steps in Progress' :
-                       paper.status === 'phase4_pending_examiners' ? 'Phase 3 — Awaiting Examiners' :
-                       paper.status === 'phase4_marking' ? 'Phase 3 — Under Examination' :
-                       paper.status === 'phase5_corrections' ? 'Phase 4 — Corrections Required' :
-                       paper.status === 'phase5_pending_supervisor' ? 'Phase 4 — Awaiting Supervisor' :
-                       paper.status === 'phase5_pending_coordinator' ? 'Phase 4 — Awaiting Coordinator' :
-                       paper.status === 'phase5_pending_hod' ? 'Phase 4 — Awaiting HOD' :
-                       paper.status === 'phase5_pending_hod_and_coordinator' ? 'Phase 4 — Awaiting Coord & HOD' :
-                       paper.status === 'phase5_approved_for_library' ? 'Phase 5 — Ready for Publication' :
-                       paper.status === 'phase5_published' || paper.status === 'approved' ? '✓ Published' :
-                       paper.status}
-                    </span>
-                    {(paper.status === 'phase1_proposal_submitted' || paper.status === 'phase1_topic_rejected') && (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-danger py-1 px-2 text-xs"
-                        title="Delete submission"
-                        onClick={async () => {
-                          if (!window.confirm('Are you sure you want to delete this thesis submission?')) return
-                          const tok = localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || ''
-                          try {
-                            await apiDeleteThesis(paper.id, tok)
-                            loadData()
-                          } catch (err) {
-                            window.alert(err instanceof Error ? err.message : 'Failed to delete submission')
-                          }
-                        }}
-                      >
-                        <Trash2 className="size-3.5 inline mr-1" />
-                        Delete
-                      </button>
+                  <Button onClick={() => navigate('/submit-proposal')} className="flex items-center gap-2 mx-auto">
+                    <Upload className="size-4" />
+                    Submit Thesis Topic (Phase 1)
+                  </Button>
+                </div>
+              ) : (
+                myPapers.map((paper) => (
+                  <div key={paper.id} className="p-3 border rounded-md space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium">{paper.title}</p>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={
+                          paper.status === 'approved' || paper.status === 'phase5_published' ? 'default' :
+                          paper.status === 'revision' || paper.status === 'phase1_topic_rejected' || paper.status === 'phase1_proposal_rejected' ? 'destructive' :
+                          paper.status === 'phase5_approved_for_library' || paper.status === 'phase5_published' ? 'default' :
+                          paper.status.startsWith('phase5') ? 'secondary' : 'outline'
+                        } className="text-[10px] whitespace-nowrap">
+                          {paper.status === 'phase1_proposal_submitted' ? 'Phase 1 — Awaiting HOD Review' :
+                           paper.status === 'phase1_topic_accepted' ? 'Phase 2 — Proposal Required' :
+                           paper.status === 'phase1_topic_rejected' || paper.status === 'phase1_proposal_rejected' ? 'Phase 1 — Topic Rejected' :
+                           paper.status === 'phase2_proposal_submitted' ? 'Phase 2 — Proposal Submitted' :
+                           paper.status === 'phase2_proposal_accepted' ? 'Phase 2 — Proposal Accepted' :
+                           paper.status === 'phase3_chapters' || paper.status === 'phase3_steps_in_progress' ? 'Phase 2 — Steps in Progress' :
+                           paper.status === 'phase4_pending_examiners' ? 'Phase 3 — Awaiting Examiners' :
+                           paper.status === 'phase4_marking' ? 'Phase 3 — Under Examination' :
+                           paper.status === 'phase5_corrections' ? 'Phase 4 — Corrections Required' :
+                           paper.status === 'phase5_pending_supervisor' ? 'Phase 4 — Awaiting Supervisor' :
+                           paper.status === 'phase5_pending_coordinator' ? 'Phase 4 — Awaiting Coordinator' :
+                           paper.status === 'phase5_pending_hod' ? 'Phase 4 — Awaiting HOD' :
+                           paper.status === 'phase5_pending_hod_and_coordinator' ? 'Phase 4 — Awaiting Coord & HOD' :
+                           paper.status === 'phase5_approved_for_library' ? 'Phase 5 — Ready for Publication' :
+                           paper.status === 'phase5_published' || paper.status === 'approved' ? '✓ Published' :
+                           paper.status}
+                        </Badge>
+                        {(paper.status === 'phase1_proposal_submitted' || paper.status === 'phase1_topic_rejected') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            title="Delete this submission"
+                            onClick={async () => {
+                              if (!window.confirm('Are you sure you want to delete this thesis submission? This action cannot be undone.')) return
+                              const tok = localStorage.getItem('murrs_access_token') || ''
+                              try {
+                                await apiDeleteThesis(paper.id, tok)
+                                loadData()
+                              } catch (err) {
+                                window.alert(err instanceof Error ? err.message : 'Failed to delete submission')
+                              }
+                            }}
+                          >
+                            <Trash2 className="size-3.5 mr-1" />
+                            Delete
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Submitted: {paper.created_at ? new Date(paper.created_at).toLocaleString() : '-'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Reviewed file uploaded: {hasReviewedByPaper[paper.id] ? 'Yes' : 'No'}
+                    </p>
+                    {paper.review_comments && (
+                      <p className="text-xs bg-muted rounded p-2">
+                        Feedback: {paper.review_comments}
+                      </p>
                     )}
-                  </div>
-                </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Button size="sm" variant="outline" onClick={() => void handleDownloadPaper(paper.id)}>
+                        Download Reviewed File
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={activeViewerPaperId === paper.id ? 'default' : 'secondary'}
+                        onClick={() => void handleLoadAnnotations(paper.id)}
+                      >
+                        {activeViewerPaperId === paper.id ? 'Hide Visual Comments' : 'View Supervisor Comments & Abstract'}
+                      </Button>
+                    </div>
 
-                {paper.review_comments && (
-                  <div className="p-3 bg-slate-900/60 border border-slate-700/60 rounded-3 text-xs text-slate-300">
-                    <strong className="text-amber-400">Supervisor Feedback:</strong> {paper.review_comments}
-                  </div>
-                )}
+                    {activeViewerPaperId === paper.id && (
+                      <div className="pt-2">
+                        <DocumentCommentViewer
+                          paper={paper}
+                          annotations={annotationsByPaper[paper.id] || []}
+                          isSupervisor={false}
+                        />
+                      </div>
+                    )}
 
-                <div className="d-flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => void handleDownloadPaper(paper.id)}
-                    className="btn btn-sm btn-outline-light text-xs font-semibold inline-flex items-center gap-1.5"
-                  >
-                    <Download className="size-3.5" />
-                    Download Reviewed File
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleLoadAnnotations(paper.id)}
-                    className={`btn btn-sm text-xs font-semibold inline-flex items-center gap-1.5 ${
-                      activeViewerPaperId === paper.id ? 'btn-primary' : 'btn-secondary'
-                    }`}
-                  >
-                    <Eye className="size-3.5" />
-                    {activeViewerPaperId === paper.id ? 'Hide Visual Comments' : 'View Supervisor Comments & Abstract'}
-                  </button>
-                </div>
-
-                {activeViewerPaperId === paper.id && (
-                  <div className="pt-2">
-                    <DocumentCommentViewer
+                    <StudentPaperWorkflow
                       paper={paper}
-                      annotations={annotationsByPaper[paper.id] || []}
-                      isSupervisor={false}
+                      token={localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || ''}
+                      onUpdate={loadData}
                     />
                   </div>
-                )}
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-                <StudentPaperWorkflow
-                  paper={paper}
-                  token={localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || ''}
-                  onUpdate={loadData}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 6. Project Supervisor Performance Leaderboard */}
       {isHodOrCoordinator && (
-        <div className="card border-0 gimpa-card p-4 space-y-4">
-          <div className="d-flex align-items-center justify-content-between border-bottom border-slate-700/50 pb-3">
-            <div>
-              <h3 className="h5 font-bold text-white mb-1 flex items-center gap-2">
-                <Award className="size-5 text-amber-400" />
-                Project Supervisor Performance Leaderboard
-              </h3>
-              <p className="text-xs text-slate-400 mb-0">
-                Department supervisors with total active reviews and sign-off completions.
+        <Card>
+          <CardHeader>
+            <CardTitle>Project Supervisor Performance</CardTitle>
+            <CardDescription>
+              All project supervisors in your department with review and approval totals
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Total Project Supervisors</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl">{supervisorReviewSummary.length}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Total Reviews Done</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl">
+                    {supervisorReviewSummary.reduce((sum, row) => sum + row.reviews_done, 0)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Total Approvals</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl">{supervisorReviewSummary.reduce((sum, row) => sum + row.approvals_done, 0)}</p>
+                </CardContent>
+              </Card>
+            </div>
+            {supervisorReviewSummary.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No project supervisors were found for your department yet.
               </p>
-            </div>
-            <span className="badge bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-pill text-xs font-semibold">
-              Department Overview
-            </span>
-          </div>
-
-          <div className="row g-3">
-            <div className="col-12 col-md-4">
-              <div className="p-3 rounded-3 bg-slate-800/70 border border-slate-700/60 text-center">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Supervisors</p>
-                <h3 className="h2 font-extrabold text-white mb-0">{supervisorReviewSummary.length}</h3>
-              </div>
-            </div>
-            <div className="col-12 col-md-4">
-              <div className="p-3 rounded-3 bg-slate-800/70 border border-slate-700/60 text-center">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Reviews Done</p>
-                <h3 className="h2 font-extrabold text-blue-400 mb-0">
-                  {supervisorReviewSummary.reduce((sum, row) => sum + row.reviews_done, 0)}
-                </h3>
-              </div>
-            </div>
-            <div className="col-12 col-md-4">
-              <div className="p-3 rounded-3 bg-slate-800/70 border border-slate-700/60 text-center">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Approvals</p>
-                <h3 className="h2 font-extrabold text-emerald-400 mb-0">
-                  {supervisorReviewSummary.reduce((sum, row) => sum + row.approvals_done, 0)}
-                </h3>
-              </div>
-            </div>
-          </div>
-
-          {supervisorReviewSummary.length === 0 ? (
-            <p className="text-xs text-slate-400 mb-0">
-              No project supervisors were found for your department yet.
-            </p>
-          ) : (
-            <div className="row g-2 pt-2">
-              {supervisorReviewSummary.map((row) => (
-                <div key={row.supervisor_user_id} className="col-12 col-md-6">
-                  <div className="p-3 rounded-3 bg-slate-800/50 border border-slate-700/60 d-flex align-items-center justify-content-between gap-2 hover:border-blue-500/40 transition-all">
-                    <div className="truncate">
-                      <p className="text-xs font-bold text-white mb-0 truncate">
-                        {row.supervisor_name || row.supervisor_email}
-                      </p>
-                      <p className="text-[11px] text-slate-400 mb-0 truncate">
-                        {row.department || 'Computer Science & Information Systems'}
-                      </p>
-                    </div>
-                    <div className="d-flex align-items-center gap-1.5 flex-shrink-0">
-                      <span className="badge bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2.5 py-1 text-[11px] font-semibold">
-                        Reviews: {row.reviews_done}
-                      </span>
-                      <span className="badge bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-semibold">
-                        Approved: {row.approvals_done}
-                      </span>
+            ) : (
+              <div className="space-y-2">
+                {supervisorReviewSummary.map((row) => (
+                  <div key={row.supervisor_user_id} className="text-sm border rounded px-3 py-2 flex items-center justify-between gap-2">
+                    <span className="truncate">{row.supervisor_name || row.supervisor_email}</span>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">Reviews: {row.reviews_done}</Badge>
+                      <Badge variant="secondary">Approved: {row.approvals_done}</Badge>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   )
