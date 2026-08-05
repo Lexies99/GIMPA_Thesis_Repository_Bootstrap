@@ -266,6 +266,7 @@ export interface ApiSupervisorReviewSummary {
   department: string | null
   reviews_done: number
   approvals_done: number
+  students_count?: number
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -1531,11 +1532,37 @@ export interface ApiAdminMarkSheetResponse {
   thesis_id: number
   topic_title: string
   status: string
+  degree_level: string
+  requires_third_examiner: boolean
+  score_difference: number | null
   internal_score: number | null
   external_score: number | null
+  third_examiner_score: number | null
   average_score: number | null
+  calculation_note: string | null
   final_recommendation: string | null
   examiner_results: ApiExaminerMarkDetail[]
+}
+
+export async function apiAssignThirdExaminer(
+  thesisId: number,
+  thirdExaminerId: number,
+  accessToken: string,
+): Promise<{ message: string }> {
+  const form = new FormData()
+  form.set("third_examiner_id", String(thirdExaminerId))
+  const response = await fetch(`${apiBase}/theses/${thesisId}/assign-third-examiner`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: form,
+  })
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.detail || "Failed to assign 3rd examiner")
+  }
+  return response.json()
 }
 
 export async function apiBulkAssignExaminers(

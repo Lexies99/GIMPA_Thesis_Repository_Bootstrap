@@ -1108,6 +1108,7 @@ def read_department_supervisor_review_summary(
                 department=supervisor.department,
                 reviews_done=total_reviews,
                 approvals_done=total_approvals,
+                students_count=ass_total,
             )
         )
 

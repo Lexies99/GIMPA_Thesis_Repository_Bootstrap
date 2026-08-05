@@ -713,6 +713,66 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   }, [isAdmin, isHodOrCoordinator, showPipeline, userRole, refreshTrigger])
 
+  const handleDownloadDepartmentReport = () => {
+    if (!pipelineMetrics) return
+
+    const rows: string[][] = [
+      ['GIMPA THESIS SYSTEM - DEPARTMENT PIPELINE REPORT'],
+      ['Generated Date', new Date().toLocaleString()],
+      ['Department', user?.department || 'Departmental Overview'],
+      [''],
+      ['STUDENT THESIS RECORDS (PHASES 1-5)'],
+      ['Index Number', 'Student Name', 'Program', 'Supervisor', 'Thesis Title', 'Phase Milestone', 'Current Status']
+    ]
+
+    const phaseKeys: (keyof ApiPipelineMetrics)[] = [
+      'phase1_proposals',
+      'phase2_allocation',
+      'phase3_chapters',
+      'phase4_examination',
+      'phase5_signoff'
+    ]
+
+    phaseKeys.forEach((key) => {
+      const phase = pipelineMetrics[key]
+      if (phase && phase.students) {
+        phase.students.forEach((st) => {
+          rows.push([
+            st.index_number || '',
+            st.student_name || '',
+            st.program || '',
+            st.supervisor_name || 'Unassigned',
+            `"${(st.title || '').replace(/"/g, '""')}"`,
+            st.milestone_status || '',
+            st.status || ''
+          ])
+        })
+      }
+    })
+
+    rows.push([''])
+    rows.push(['PROJECT SUPERVISOR PERFORMANCE SUMMARY'])
+    rows.push(['Supervisor Name / Email', 'Assigned Students', 'Reviews Done', 'Approvals Done'])
+
+    supervisorReviewSummary.forEach((sup) => {
+      rows.push([
+        sup.supervisor_name || sup.supervisor_email || '',
+        String(sup.students_count || 0),
+        String(sup.reviews_done || 0),
+        String(sup.approvals_done || 0)
+      ])
+    })
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n')
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `Department_Thesis_Report_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   useEffect(() => {
     if (!(userRole === 'member' || userRole === 'student')) return
     const accessToken = localStorage.getItem('murrs_access_token')
@@ -899,6 +959,16 @@ export function Dashboard({ userRole }: DashboardProps) {
                     Click any phase card to inspect active student records in that milestone.
                   </p>
                 </div>
+                {isHodOrCoordinator && (
+                  <Button
+                    type="button"
+                    onClick={handleDownloadDepartmentReport}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white transition-all shadow-sm cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download Department Report
+                  </Button>
+                )}
               </div>
 
               {/* 5 Phase Summary Buttons */}
@@ -1145,11 +1215,21 @@ export function Dashboard({ userRole }: DashboardProps) {
           {/* Supervisor Performance (for HOD / Coordinator) */}
           {isHodOrCoordinator && (
             <div className="ta-card p-5 space-y-4">
-              <div className="border-b pb-3" style={{borderColor:'var(--border-color)'}}>
-                <h3 className="text-base font-bold m-0" style={{color:'var(--text-main)'}}>Project Supervisor Performance</h3>
-                <p className="text-xs m-0 mt-0.5" style={{color:'var(--text-muted)'}}>
-                  Review and approval metrics across department supervisors.
-                </p>
+              <div className="flex items-center justify-between border-b pb-3" style={{borderColor:'var(--border-color)'}}>
+                <div>
+                  <h3 className="text-base font-bold m-0" style={{color:'var(--text-main)'}}>Project Supervisor Performance</h3>
+                  <p className="text-xs m-0 mt-0.5" style={{color:'var(--text-muted)'}}>
+                    Review and approval metrics across department supervisors.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleDownloadDepartmentReport}
+                  className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-all shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export Report
+                </Button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1176,6 +1256,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                   <div key={row.supervisor_user_id} className="p-3 rounded-xl border flex items-center justify-between text-xs" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
                     <span className="font-semibold" style={{color:'var(--text-sub)'}}>{row.supervisor_name || row.supervisor_email}</span>
                     <div className="flex items-center gap-2">
+                      <span className="badge-ta-blue text-[10px] px-2 py-0.5 rounded-full font-bold">Students: {row.students_count ?? 0}</span>
                       <span className="badge-ta-purple text-[10px] px-2 py-0.5 rounded-full">Reviews: {row.reviews_done}</span>
                       <span className="badge-ta-green text-[10px] px-2 py-0.5 rounded-full">Approved: {row.approvals_done}</span>
                     </div>

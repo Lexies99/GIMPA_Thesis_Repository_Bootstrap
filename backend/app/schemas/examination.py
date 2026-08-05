@@ -60,9 +60,14 @@ class AdminMarkSheetResponse(BaseModel):
     thesis_id: int
     topic_title: str
     status: str
+    degree_level: str = "Masters"
+    requires_third_examiner: bool = False
+    score_difference: float | None = None
     internal_score: float | None = None
     external_score: float | None = None
+    third_examiner_score: float | None = None
     average_score: float | None = None
+    calculation_note: str | None = None
     final_recommendation: str | None = None
     examiner_results: list[ExaminerMarkDetail] = []
 

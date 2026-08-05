@@ -227,6 +227,7 @@ class SupervisorReviewSummary(BaseModel):
     department: str | None
     reviews_done: int
     approvals_done: int
+    students_count: int = 0
 
     class Config:
         from_attributes = True

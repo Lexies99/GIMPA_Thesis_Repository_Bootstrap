@@ -36,6 +36,7 @@ from app.models.thesis_system import (
 )
 from app.models.user import User
 from app.models.user_role import UserRole
+from app.services.grading_service import calculate_thesis_examination_score, classify_degree_level
 from app.schemas.examination import (
     AdminMarkSheetResponse,
     BulkAssignSummary,
@@ -2277,22 +2278,20 @@ def get_examination_marks(
     topic_title = thesis.topic_title if thesis else paper.title if paper else "Thesis"
     current_status = thesis.topic_status if thesis else paper.status if paper else "pending"
 
+    student_user = db.query(User).filter(User.id == thesis.student_id).first() if thesis and thesis.student_id else None
+    degree_level = classify_degree_level(thesis=thesis, paper=paper, student_user=student_user, db=db)
+
     exam_results = db.query(ExaminationResult).filter(ExaminationResult.thesis_id == thesis_id).all()
     results_list = []
-    scores = []
     recommendations = []
-
-    internal_score = paper.internal_score if paper else None
-    external_score = paper.external_score if paper else None
+    raw_examiner_items = []
 
     for res in exam_results:
         exam_user = db.query(User).filter(User.id == res.examiner_id).first()
-        if res.score is not None:
-            scores.append(res.score)
-            if res.examiner_type == "internal":
-                internal_score = res.score
-            elif res.examiner_type == "external":
-                external_score = res.score
+        raw_examiner_items.append({
+            "score": res.score,
+            "examiner_type": res.examiner_type,
+        })
         if res.recommendation:
             recommendations.append(res.recommendation)
 
@@ -2311,21 +2310,28 @@ def get_examination_marks(
             )
         )
 
-    avg_score = None
-    if internal_score is not None and external_score is not None:
-        avg_score = round((internal_score + external_score) / 2.0, 2)
-    elif scores:
-        avg_score = round(sum(scores) / len(scores), 2)
+    # Fallback to paper scores if no ExaminationResult objects exist yet
+    if not raw_examiner_items and paper:
+        if paper.internal_score is not None:
+            raw_examiner_items.append({"score": paper.internal_score, "examiner_type": "internal"})
+        if paper.external_score is not None:
+            raw_examiner_items.append({"score": paper.external_score, "examiner_type": "external"})
 
+    score_calc = calculate_thesis_examination_score(degree_level, raw_examiner_items)
     final_rec = recommendations[0] if recommendations else None
 
     return AdminMarkSheetResponse(
         thesis_id=thesis_id,
         topic_title=topic_title,
         status=current_status,
-        internal_score=internal_score,
-        external_score=external_score,
-        average_score=avg_score,
+        degree_level=score_calc["degree_level"],
+        requires_third_examiner=score_calc["requires_third_examiner"],
+        score_difference=score_calc["score_difference"],
+        internal_score=score_calc["internal_score"],
+        external_score=score_calc["external_score"],
+        third_examiner_score=score_calc["third_examiner_score"],
+        average_score=score_calc["average_score"],
+        calculation_note=score_calc["calculation_note"],
         final_recommendation=final_rec,
         examiner_results=results_list,
     )

@@ -40,6 +40,7 @@ import {
   apiSubmitExaminerGrading,
   apiGetStudentFeedback,
   apiGetAdminExaminationMarks,
+  apiAssignThirdExaminer,
 } from '../../lib/api'
 import { DocxViewer } from './DocxViewer'
 import type { ApiPaper, ApiUser, ApiBulkAssignSummary, ApiStudentFeedbackResponse, ApiAdminMarkSheetResponse } from '../../lib/api'
@@ -197,6 +198,8 @@ export function ApprovalWorkflow() {
   // Role-gated feedback and mark sheet data
   const [studentFeedbackData, setStudentFeedbackData] = useState<ApiStudentFeedbackResponse | null>(null)
   const [adminMarksData, setAdminMarksData] = useState<ApiAdminMarkSheetResponse | null>(null)
+  const [selectedThirdId, setSelectedThirdId] = useState<string>('')
+  const [assigningThird, setAssigningThird] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -1802,13 +1805,117 @@ export function ApprovalWorkflow() {
                     </div>
                   </div>
 
-                  {canViewScores && selectedPaper.internal_score !== null && (
-                    <div className="border rounded p-3 text-xs bg-background/50 space-y-1">
-                      <p className="font-semibold text-muted-foreground">Examiner Score Summary (Visible Only to Coordinator, HOD, Dean, Admin):</p>
-                      <div className="flex gap-4 text-muted-foreground">
-                        <span>Internal Score: <strong className="text-foreground">{selectedPaper.internal_score}%</strong></span>
-                        <span>External Score: <strong className="text-foreground">{selectedPaper.external_score}%</strong></span>
+                  {canViewScores && (
+                    <div className="border rounded-lg p-3 text-xs bg-background/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-muted-foreground flex items-center gap-1.5">
+                          <Award className="size-4 text-primary" />
+                          Examiner Score Breakdown & Degree Rules:
+                        </p>
+                        {adminMarksData?.degree_level && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                            {adminMarksData.degree_level}
+                          </span>
+                        )}
                       </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground pt-1">
+                        <div className="border rounded p-1.5 bg-background text-center">
+                          <span className="block text-[10px] uppercase font-medium">Internal Examiner</span>
+                          <strong className="text-foreground text-sm">
+                            {adminMarksData?.internal_score !== null && adminMarksData?.internal_score !== undefined
+                              ? `${adminMarksData.internal_score}%`
+                              : selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined
+                              ? `${selectedPaper.internal_score}%`
+                              : 'Pending'}
+                          </strong>
+                        </div>
+                        <div className="border rounded p-1.5 bg-background text-center">
+                          <span className="block text-[10px] uppercase font-medium">External Examiner</span>
+                          <strong className="text-foreground text-sm">
+                            {adminMarksData?.external_score !== null && adminMarksData?.external_score !== undefined
+                              ? `${adminMarksData.external_score}%`
+                              : selectedPaper.external_score !== null && selectedPaper.external_score !== undefined
+                              ? `${selectedPaper.external_score}%`
+                              : 'Pending'}
+                          </strong>
+                        </div>
+                        <div className="border rounded p-1.5 bg-background text-center">
+                          <span className="block text-[10px] uppercase font-medium">3rd Examiner</span>
+                          <strong className="text-foreground text-sm">
+                            {adminMarksData?.third_examiner_score !== null && adminMarksData?.third_examiner_score !== undefined
+                              ? `${adminMarksData.third_examiner_score}%`
+                              : 'N/A'}
+                          </strong>
+                        </div>
+                        <div className="border rounded p-1.5 bg-primary/10 border-primary/20 text-center">
+                          <span className="block text-[10px] uppercase font-bold text-primary">Final Average Score</span>
+                          <strong className="text-primary text-sm font-black">
+                            {adminMarksData?.average_score !== null && adminMarksData?.average_score !== undefined
+                              ? `${adminMarksData.average_score}%`
+                              : 'Pending'}
+                          </strong>
+                        </div>
+                      </div>
+
+                      {adminMarksData?.calculation_note && (
+                        <p className="text-[11px] text-muted-foreground italic bg-muted/30 p-2 rounded border">
+                          ℹ️ {adminMarksData.calculation_note}
+                        </p>
+                      )}
+
+                      {adminMarksData?.requires_third_examiner && (
+                        <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded-md space-y-2">
+                          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold">
+                            <AlertTriangle className="size-4" />
+                            <span>Score Difference exceeds 20 Marks ({adminMarksData.score_difference} marks)! 3rd Examiner Required.</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Per regulation rules, when the difference between examiner scores exceeds 20 marks, a 3rd examiner must evaluate the work. The final score will be the average of all 3 scores.
+                          </p>
+                          {(isHOD || isCoordinator || isAdmin) && (
+                            <div className="flex items-center gap-2 pt-1">
+                              <Select value={selectedThirdId} onValueChange={setSelectedThirdId}>
+                                <SelectTrigger className="h-8 text-xs bg-background">
+                                  <SelectValue placeholder="Select 3rd Examiner" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {supervisorsList.map((u) => (
+                                    <SelectItem key={u.id} value={String(u.id)}>
+                                      {u.full_name || u.email} ({u.role})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="h-8 text-xs shrink-0"
+                                disabled={!selectedThirdId || assigningThird}
+                                onClick={async () => {
+                                  if (!selectedPaper || !selectedThirdId) return
+                                  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                  if (!token) return
+                                  setAssigningThird(true)
+                                  try {
+                                    await apiAssignThirdExaminer(selectedPaper.id, Number(selectedThirdId), token)
+                                    const updated = await apiGetAdminExaminationMarks(selectedPaper.id, token)
+                                    setAdminMarksData(updated)
+                                    setSelectedThirdId('')
+                                    await loadAll()
+                                  } catch (err) {
+                                    setReviewError(err instanceof Error ? err.message : 'Failed to assign 3rd examiner')
+                                  } finally {
+                                    setAssigningThird(false)
+                                  }
+                                }}
+                              >
+                                {assigningThird ? 'Assigning...' : 'Assign 3rd Examiner'}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
