@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import case, func
 from sqlalchemy.exc import SQLAlchemyError
@@ -1952,8 +1952,8 @@ def get_editor_config(
 @router.post("/papers/{paper_id}/editor-callback")
 async def handle_editor_callback(
     paper_id: int,
+    request: Request,
     token: str = Query(..., min_length=20),
-    payload: dict | None = None,
     db: Session = Depends(get_db),
 ):
     if not _verify_editor_token(token=token, paper_id=paper_id, action="callback"):
@@ -1965,23 +1965,49 @@ async def handle_editor_callback(
     if not paper.file_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
 
-    data = payload or {}
-    # OnlyOffice status: 2/6 mean document is ready to be saved (or force-saved).
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
     status_code = int(data.get("status", 0) or 0)
     download_url = data.get("url")
     if status_code in {2, 6} and isinstance(download_url, str) and download_url.strip():
         target = Path(paper.file_path)
+        content = None
+
+        # 1. Try fetching from internal ONLYOFFICE container port 8082
         try:
-            with urllib.request.urlopen(download_url, timeout=30) as response:
+            parsed = urllib.parse.urlparse(download_url)
+            internal_url = f"http://127.0.0.1:8082{parsed.path}"
+            if parsed.query:
+                internal_url += f"?{parsed.query}"
+            req = urllib.request.Request(internal_url, headers={"User-Agent": "GIMPA-Thesis-Backend"})
+            with urllib.request.urlopen(req, timeout=30) as response:
                 content = response.read()
-            if not content:
+        except Exception:
+            pass
+
+        # 2. Fallback to original download_url if direct container fetch failed
+        if not content:
+            try:
+                req = urllib.request.Request(download_url, headers={"User-Agent": "GIMPA-Thesis-Backend"})
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    content = response.read()
+            except Exception:
                 return {"error": 1}
+
+        if not content:
+            return {"error": 1}
+
+        try:
             target.write_bytes(content)
             paper.file_size = len(content)
             db.add(paper)
             db.commit()
         except Exception:
             return {"error": 1}
+
     return {"error": 0}
 
 
