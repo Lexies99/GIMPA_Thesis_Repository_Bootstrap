@@ -283,8 +283,8 @@ def _can_submit_paper(db: Session, user: User) -> bool:
 
 
 def _doi_prefix() -> str:
-    prefix = (settings.doi_prefix or "10.99999").strip().rstrip("/")
-    return prefix or "10.99999"
+    prefix = getattr(settings, "doi_prefix", None) or "10.99999"
+    return str(prefix).strip().rstrip("/") or "10.99999"
 
 
 def _slug_doi_part(value: str | None, fallback: str) -> str:
