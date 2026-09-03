@@ -3720,7 +3720,6 @@ async def upload_draft(
             ntype="workflow_update",
             message=f"Student uploaded a new draft of their thesis: {file.filename}"
         )
-    
     return _to_paper_read(paper, db, current_user)
 
 

@@ -1194,6 +1194,39 @@ export async function apiSupervisorRejectCorrections(
   return handleResponse<ApiPaper>(response)
 }
 
+export async function apiExportAcademicReport(
+  params: {
+    degree_level?: string
+    department?: string
+    lecturer_id?: number
+    student_id?: number
+    status_filter?: string
+    format?: 'xlsx' | 'csv' | 'json'
+  },
+  accessToken: string,
+): Promise<{ blob: Blob; filename: string }> {
+  const q = new URLSearchParams()
+  if (params.degree_level && params.degree_level !== 'all') q.set('degree_level', params.degree_level)
+  if (params.department && params.department !== 'all') q.set('department', params.department)
+  if (params.lecturer_id && params.lecturer_id > 0) q.set('lecturer_id', String(params.lecturer_id))
+  if (params.student_id && params.student_id > 0) q.set('student_id', String(params.student_id))
+  if (params.status_filter && params.status_filter !== 'all') q.set('status_filter', params.status_filter)
+  if (params.format) q.set('format', params.format)
+
+  const response = await fetch(`${apiBase}/papers/reports/export?${q.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '')
+    throw new Error(txt || 'Failed to generate report')
+  }
+  const blob = await response.blob()
+  const header = response.headers.get('content-disposition') || ''
+  const filenameMatch = header.match(/filename="?([^";]+)"?/)
+  const filename = filenameMatch?.[1] || `GIMPA_Report.${params.format || 'xlsx'}`
+  return { blob, filename }
+}
+
 export async function apiCoordinatorApproveCorrections(
   paperId: number,
   decision: "approved" | "revise",

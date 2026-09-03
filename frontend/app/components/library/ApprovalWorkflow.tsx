@@ -46,6 +46,7 @@ import {
 import { DocxViewer } from './DocxViewer'
 import { convertTextOrTopicToPdf } from '../../lib/pdfGenerator'
 import { ProjectAssessmentReportDialog } from './ProjectAssessmentReportDialog'
+import { ReportExportModal } from './ReportExportModal'
 import type { ApiPaper, ApiUser, ApiBulkAssignSummary, ApiStudentFeedbackResponse, ApiAdminMarkSheetResponse } from '../../lib/api'
 
 const ACCESS_TOKEN_KEY = 'murrs_access_token'
@@ -148,6 +149,8 @@ export function ApprovalWorkflow() {
   const [reviewDecision, setReviewDecision] = useState('')
   const [reviewComments, setReviewComments] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [bulkAssignError, setBulkAssignError] = useState('')
+  const [reportExportOpen, setReportExportOpen] = useState(false)
   const [reviewError, setReviewError] = useState('')
   const [submittingReview, setSubmittingReview] = useState(false)
   const [correctedFile, setCorrectedFile] = useState<File | null>(null)
@@ -582,6 +585,13 @@ export function ApprovalWorkflow() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  className="btn-ta-purple text-xs font-semibold flex items-center gap-1.5"
+                  onClick={() => setReportExportOpen(true)}
+                >
+                  📊 Export Filtered Reports (Excel / CSV)
+                </Button>
                 {(isHOD || isCoordinator || isAdmin) && (
                   <Button
                     size="sm"
@@ -2207,6 +2217,12 @@ export function ApprovalWorkflow() {
           }}
         />
       )}
+
+      <ReportExportModal
+        open={reportExportOpen}
+        onOpenChange={setReportExportOpen}
+        userDepartment={user?.department}
+      />
     </div>
   )
 }

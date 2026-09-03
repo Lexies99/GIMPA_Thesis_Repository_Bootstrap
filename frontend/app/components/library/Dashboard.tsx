@@ -39,7 +39,8 @@ import type {
 } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentCommentViewer } from './DocumentCommentViewer'
-import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download, FileEdit, MessageSquare } from 'lucide-react'
+import { ReportExportModal } from './ReportExportModal'
+import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download, FileEdit, MessageSquare, FileSpreadsheet } from 'lucide-react'
 
 interface StudentPaperWorkflowProps {
   paper: ApiPaper
@@ -847,6 +848,7 @@ export function Dashboard({ userRole }: DashboardProps) {
   }
 
   const [activeViewerPaperId, setActiveViewerPaperId] = useState<number | null>(null)
+  const [exportModalOpen, setExportModalOpen] = useState(false)
 
   const handleLoadAnnotations = async (paperId: number) => {
     const accessToken = localStorage.getItem('murrs_access_token')
@@ -971,16 +973,26 @@ export function Dashboard({ userRole }: DashboardProps) {
                     Click any phase card to inspect active student records in that milestone.
                   </p>
                 </div>
-                {isHodOrCoordinator && (
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
-                    onClick={handleDownloadDepartmentReport}
+                    onClick={() => setExportModalOpen(true)}
                     className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white transition-all shadow-sm cursor-pointer"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    Download Department Report
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    Filter & Export Reports (Excel/CSV)
                   </Button>
-                )}
+                  {isHodOrCoordinator && (
+                    <Button
+                      type="button"
+                      onClick={handleDownloadDepartmentReport}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 transition-all shadow-sm cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Quick Dept Report
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {/* 5 Phase Summary Buttons */}
@@ -1339,6 +1351,12 @@ export function Dashboard({ userRole }: DashboardProps) {
 
         </div>
       </div>
+
+      <ReportExportModal
+        open={exportModalOpen}
+        onOpenChange={setExportModalOpen}
+        userDepartment={user?.department}
+      />
     </div>
   )
 }

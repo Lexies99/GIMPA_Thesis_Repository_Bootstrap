@@ -1,5 +1,5 @@
-from __future__ import annotations
-
+import io
+import csv
 import json
 import hashlib
 import hmac
@@ -13,7 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import case, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -4363,6 +4363,269 @@ def dean_dashboard_alias(
 ):
     """Canonical spec alias: Dean school-wide dashboard rollup overview."""
     return read_paper_stats(db=db)
+
+
+@router.get("/papers/reports/export")
+def export_academic_report(
+    degree_level: str | None = Query(None),
+    department: str | None = Query(None),
+    lecturer_id: int | None = Query(None),
+    student_id: int | None = Query(None),
+    status_filter: str | None = Query(None),
+    format: str = Query("xlsx"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    is_admin_or_dean = current_user.is_admin or has_role(db, current_user, "system_admin") or has_role(db, current_user, "dean") or has_role(db, current_user, "head_library") or has_role(db, current_user, "librarian")
+    is_hod_or_coord = has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+    is_lecturer = has_role(db, current_user, "lecturer") or current_user.role == "lecturer"
+    
+    if not (is_admin_or_dean or is_hod_or_coord or is_lecturer):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Only academic staff and administrators can generate reports.")
+        
+    query = db.query(Paper)
+    
+    if not is_admin_or_dean:
+        if is_hod_or_coord:
+            u_dept = (current_user.department or "").strip().lower()
+            if u_dept:
+                query = query.filter(
+                    (func.lower(func.coalesce(Paper.discipline, "")) == u_dept)
+                    | (Paper.department_id != None)
+                )
+        elif is_lecturer:
+            query = query.filter(
+                (Paper.supervisor_id == current_user.id)
+                | (Paper.internal_examiner_id == current_user.id)
+                | (Paper.external_examiner_id == current_user.id)
+            )
+            
+    if department and department.strip().lower() not in {"all", ""}:
+        d_val = department.strip().lower()
+        query = query.filter(
+            (func.lower(func.coalesce(Paper.discipline, "")).contains(d_val))
+            | (func.lower(func.coalesce(Paper.university, "")).contains(d_val))
+        )
+        
+    if lecturer_id and lecturer_id > 0:
+        query = query.filter(
+            (Paper.supervisor_id == lecturer_id)
+            | (Paper.internal_examiner_id == lecturer_id)
+            | (Paper.external_examiner_id == lecturer_id)
+        )
+        
+    if student_id and student_id > 0:
+        query = query.filter(Paper.created_by_id == student_id)
+        
+    if status_filter and status_filter.strip().lower() not in {"all", ""}:
+        query = query.filter(Paper.status == status_filter.strip())
+        
+    papers = query.order_by(Paper.id.desc()).all()
+    
+    if degree_level and degree_level.strip().lower() not in {"all", ""}:
+        target_deg = degree_level.strip().lower()
+        filtered_papers = []
+        for p in papers:
+            stu = db.query(User).filter(User.id == p.created_by_id).first() if p.created_by_id else None
+            p_deg = classify_degree_level(paper=p, student_user=stu, db=db).lower()
+            if target_deg in p_deg or p_deg in target_deg:
+                filtered_papers.append(p)
+        papers = filtered_papers
+
+    report_rows = []
+    for idx, p in enumerate(papers, start=1):
+        stu = db.query(User).filter(User.id == p.created_by_id).first() if p.created_by_id else None
+        deg = classify_degree_level(paper=p, student_user=stu, db=db)
+        
+        sup_user = db.query(User).filter(User.id == p.supervisor_id).first() if p.supervisor_id else None
+        int_user = db.query(User).filter(User.id == p.internal_examiner_id).first() if p.internal_examiner_id else None
+        ext_user = db.query(User).filter(User.id == p.external_examiner_id).first() if p.external_examiner_id else None
+        
+        int_m = p.internal_score
+        ext_m = p.external_score
+        avg_m = None
+        if int_m is not None and ext_m is not None:
+            avg_m = round((int_m + ext_m) / 2.0, 1)
+        elif int_m is not None:
+            avg_m = int_m
+        elif ext_m is not None:
+            avg_m = ext_m
+            
+        grade = "N/A"
+        if avg_m is not None:
+            if avg_m >= 80: grade = "A (Distinction)"
+            elif avg_m >= 75: grade = "B+ (Very Good)"
+            elif avg_m >= 70: grade = "B (Good)"
+            elif avg_m >= 65: grade = "C+ (Credit)"
+            elif avg_m >= 60: grade = "C (Pass)"
+            elif avg_m >= 55: grade = "D+ (Marginal Pass)"
+            elif avg_m >= 50: grade = "D (Pass)"
+            else: grade = "F (Fail)"
+            
+        report_rows.append({
+            "num": idx,
+            "id": f"PAPER-{p.id}",
+            "student_id": stu.school_id if (stu and getattr(stu, 'school_id', None)) else (f"STU-{stu.id}" if stu else "-"),
+            "student_name": stu.full_name if stu else (p.authors[0].name if p.authors else "Unknown"),
+            "degree_level": deg,
+            "discipline": p.discipline or (stu.program if stu else "-") or "Computer Science",
+            "title": p.title,
+            "supervisor": sup_user.full_name if sup_user else "Unassigned",
+            "internal_examiner": int_user.full_name if int_user else "-",
+            "external_examiner": ext_user.full_name if ext_user else "-",
+            "internal_mark": int_m if int_m is not None else "-",
+            "external_mark": ext_m if ext_m is not None else "-",
+            "final_mark": avg_m if avg_m is not None else "-",
+            "grade": grade,
+            "status": p.status.replace("_", " ").title(),
+            "created_at": p.created_at.strftime("%Y-%m-%d") if p.created_at else "-",
+        })
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "#", "Paper ID", "Student Index / ID", "Student Name", "Degree Level", 
+            "Program / Discipline", "Thesis Title", "Supervisor", "Internal Examiner", 
+            "External Examiner", "Internal Mark", "External Mark", "Final Average Mark", 
+            "Letter Grade", "Status", "Date Submitted"
+        ])
+        for r in report_rows:
+            writer.writerow([
+                r["num"], r["id"], r["student_id"], r["student_name"], r["degree_level"],
+                r["discipline"], r["title"], r["supervisor"], r["internal_examiner"],
+                r["external_examiner"], r["internal_mark"], r["external_mark"], r["final_mark"],
+                r["grade"], r["status"], r["created_at"]
+            ])
+        output.seek(0)
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode("utf-8-sig")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="GIMPA_Academic_Report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'}
+        )
+        
+    elif format == "json":
+        return report_rows
+        
+    else:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Academic Evaluation Report"
+        ws.views.sheetView[0].showGridLines = True
+        
+        title_font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+        title_fill = PatternFill(start_color="1E1B4B", end_color="1E1B4B", fill_type="solid")
+        meta_font = Font(name="Calibri", size=10, italic=True, color="475569")
+        header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="3B82F6", end_color="3B82F6", fill_type="solid")
+        data_font = Font(name="Calibri", size=10)
+        bold_font = Font(name="Calibri", size=10, bold=True)
+        thin_border = Border(
+            left=Side(style='thin', color='CBD5E1'),
+            right=Side(style='thin', color='CBD5E1'),
+            top=Side(style='thin', color='CBD5E1'),
+            bottom=Side(style='thin', color='CBD5E1')
+        )
+        
+        ws.merge_cells("A1:P1")
+        top_cell = ws["A1"]
+        top_cell.value = "GHANA INSTITUTE OF MANAGEMENT AND PUBLIC ADMINISTRATION (GIMPA)"
+        top_cell.font = title_font
+        top_cell.fill = title_fill
+        top_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 30
+        
+        ws.merge_cells("A2:P2")
+        sub_cell = ws["A2"]
+        sub_cell.value = "Thesis & Academic Project Evaluation Master Report"
+        sub_cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        sub_cell.fill = PatternFill(start_color="312E81", end_color="312E81", fill_type="solid")
+        sub_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[2].height = 22
+        
+        ws.cell(row=3, column=1, value=f"Generated By: {current_user.full_name or current_user.email} | Export Date: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')} | Total Candidates: {len(report_rows)}").font = meta_font
+        ws.row_dimensions[3].height = 18
+        
+        headers = [
+            "#", "Paper ID", "Student ID", "Candidate Name", "Degree Level", 
+            "Program / Discipline", "Thesis Title", "Supervisor", "Internal Examiner", 
+            "External Examiner", "Internal (/100)", "External (/100)", "Final Score (/100)", 
+            "Grade", "Workflow Status", "Submitted Date"
+        ]
+        
+        header_row = 4
+        ws.row_dimensions[header_row].height = 24
+        for col_idx, h_text in enumerate(headers, start=1):
+            c = ws.cell(row=header_row, column=col_idx, value=h_text)
+            c.font = header_font
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            c.border = thin_border
+            
+        cur_row = 5
+        for r in report_rows:
+            ws.cell(row=cur_row, column=1, value=r["num"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=2, value=r["id"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=3, value=r["student_id"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=4, value=r["student_name"]).font = bold_font
+            ws.cell(row=cur_row, column=5, value=r["degree_level"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=6, value=r["discipline"])
+            ws.cell(row=cur_row, column=7, value=r["title"])
+            ws.cell(row=cur_row, column=8, value=r["supervisor"])
+            ws.cell(row=cur_row, column=9, value=r["internal_examiner"])
+            ws.cell(row=cur_row, column=10, value=r["external_examiner"])
+            
+            c_int = ws.cell(row=cur_row, column=11, value=r["internal_mark"])
+            c_int.alignment = Alignment(horizontal="center")
+            c_ext = ws.cell(row=cur_row, column=12, value=r["external_mark"])
+            c_ext.alignment = Alignment(horizontal="center")
+            c_fin = ws.cell(row=cur_row, column=13, value=r["final_mark"])
+            c_fin.alignment = Alignment(horizontal="center")
+            c_fin.font = bold_font
+            
+            c_grd = ws.cell(row=cur_row, column=14, value=r["grade"])
+            c_grd.alignment = Alignment(horizontal="center")
+            c_grd.font = bold_font
+            
+            ws.cell(row=cur_row, column=15, value=r["status"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=16, value=r["created_at"]).alignment = Alignment(horizontal="center")
+            
+            for col_i in range(1, 17):
+                cell = ws.cell(row=cur_row, column=col_i)
+                cell.border = thin_border
+                if not cell.font.bold:
+                    cell.font = data_font
+            ws.row_dimensions[cur_row].height = 20
+            cur_row += 1
+            
+        ws.row_dimensions[cur_row].height = 22
+        ws.cell(row=cur_row, column=1, value="TOTALS").font = bold_font
+        ws.cell(row=cur_row, column=2, value=f"{len(report_rows)} Submissions").font = bold_font
+        for col_i in range(1, 17):
+            ws.cell(row=cur_row, column=col_i).border = thin_border
+            ws.cell(row=cur_row, column=col_i).fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+            
+        widths = {
+            "A": 6, "B": 14, "C": 16, "D": 24, "E": 18, 
+            "F": 28, "G": 42, "H": 22, "I": 22, "J": 22, 
+            "K": 14, "L": 14, "M": 16, "N": 18, "O": 20, "P": 14
+        }
+        for col_letter, w in widths.items():
+            ws.column_dimensions[col_letter].width = w
+            
+        stream = io.BytesIO()
+        wb.save(stream)
+        stream.seek(0)
+        
+        filename = f"GIMPA_Academic_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return StreamingResponse(
+            stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
 
 
 
