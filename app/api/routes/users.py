@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status, Response
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user, get_db
@@ -328,6 +330,38 @@ def admin_create_user(
         )
 
     return AdminUserCreateResult(user=_to_user_read(db, created), email_sent=email_sent)
+
+
+@router.get("/users/students-template")
+def download_students_template(
+    format: str = Query("csv"),
+):
+    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
+    if format == "xlsx":
+        file_path = templates_dir / "students_template.xlsx"
+        if file_path.exists():
+            return FileResponse(file_path, filename="students_template.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    file_path = templates_dir / "students_template.csv"
+    if file_path.exists():
+        return FileResponse(file_path, filename="students_template.csv", media_type="text/csv")
+    csv_content = "Student Name,Student ID,School Email,School,Department,Certification Type,Block Code,Year\nKwame Mensah,2210045678,kwame.mensah@st.gimpa.edu.gh,School of Technology and Social Sciences,Computer Science,Degree,A1,2026\n"
+    return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=students_template.csv"})
+
+
+@router.get("/users/lecturers-template")
+def download_lecturers_template(
+    format: str = Query("csv"),
+):
+    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
+    if format == "xlsx":
+        file_path = templates_dir / "lecturers_template.xlsx"
+        if file_path.exists():
+            return FileResponse(file_path, filename="lecturers_template.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    file_path = templates_dir / "lecturers_template.csv"
+    if file_path.exists():
+        return FileResponse(file_path, filename="lecturers_template.csv", media_type="text/csv")
+    csv_content = "Lecturer Name,Lecturer ID,Lecturer Email,Adjunct Email,School,Department,Year\nDr. Abena Osei,STF-9021,abena.osei@gimpa.edu.gh,,School of Technology and Social Sciences,Computer Science,2026\n"
+    return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=lecturers_template.csv"})
 
 
 @router.post("/users/external-examiner", response_model=AdminUserCreateResult, status_code=status.HTTP_201_CREATED)

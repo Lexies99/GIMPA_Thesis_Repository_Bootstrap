@@ -2742,6 +2742,150 @@ def assign_examiners(
     return _to_paper_read(paper, db, current_user)
 
 
+@router.get("/papers/bulk-examiner-template")
+def download_bulk_examiner_template(
+    format: str = Query("csv"),
+):
+    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
+    if format == "xlsx":
+        file_path = templates_dir / "examiner_batch_mapping_template.xlsx"
+        if file_path.exists():
+            return FileResponse(file_path, filename="examiner_batch_mapping_template.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    
+    file_path = templates_dir / "examiner_batch_mapping_template.csv"
+    if file_path.exists():
+        return FileResponse(file_path, filename="examiner_batch_mapping_template.csv", media_type="text/csv")
+        
+    csv_content = "Student_ID,Thesis_ID,Student_Name,Thesis_Title,Internal_Examiner_ID,Internal_Examiner_Email,External_Examiner_ID,External_Examiner_Email\n2210045678,7,John Smith,GIMPA Library Management System,STF-9021,abena.osei@gimpa.edu.gh,EXT-4011,nana.assyne@ug.edu.gh\n"
+    return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=examiner_batch_mapping_template.csv"})
+
+
+@router.post("/papers/bulk-assign-examiners")
+async def bulk_assign_examiners(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    is_hod = has_role(db, current_user, "hod")
+    is_coord = has_role(db, current_user, "project_coordinator")
+    if not (is_hod or is_coord or current_user.is_admin):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only HOD, Project Coordinator, or Admin can perform batch examiner mapping")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+
+    rows: list[dict[str, str]] = []
+    filename = (file.filename or "").lower()
+    if filename.endswith(".xlsx") or filename.endswith(".xlsm") or filename.endswith(".xls"):
+        from app.services.import_service import _rows_from_xlsx_bytes
+        rows = _rows_from_xlsx_bytes(raw)
+    else:
+        from app.services.import_service import _rows_from_csv_bytes
+        rows = _rows_from_csv_bytes(raw)
+
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No readable rows found in the uploaded file")
+
+    total = len(rows)
+    success = 0
+    errors: list[str] = []
+
+    for idx, row in enumerate(rows, 1):
+        normalized = {"".join(c for c in k.lower() if c.isalnum()): str(v).strip() for k, v in row.items() if k}
+        
+        thesis_id_val = normalized.get("thesisid") or normalized.get("paperid") or ""
+        student_id_val = normalized.get("studentid") or normalized.get("indexnumber") or normalized.get("schoolid") or ""
+        student_email_val = normalized.get("studentemail") or normalized.get("email") or ""
+        thesis_title_val = normalized.get("thesistitle") or normalized.get("title") or ""
+        
+        int_id_val = normalized.get("internalexaminerid") or normalized.get("internalid") or normalized.get("internalexaminerstaffid") or ""
+        int_email_val = normalized.get("internalexamineremail") or normalized.get("internalemail") or ""
+        
+        ext_id_val = normalized.get("externalexaminerid") or normalized.get("externalid") or ""
+        ext_email_val = normalized.get("externalexamineremail") or normalized.get("externalemail") or ""
+
+        # 1. Find Paper
+        paper = None
+        if thesis_id_val and thesis_id_val.isdigit():
+            paper = get_paper(db, int(thesis_id_val))
+        
+        if not paper and student_id_val:
+            student_user = db.query(User).filter((User.school_id == student_id_val) | (User.email.ilike(f"{student_id_val}%"))).first()
+            if student_user:
+                paper = db.query(Paper).filter(Paper.created_by_id == student_user.id).order_by(Paper.id.desc()).first()
+
+        if not paper and student_email_val:
+            student_user = db.query(User).filter(User.email.ilike(student_email_val)).first()
+            if student_user:
+                paper = db.query(Paper).filter(Paper.created_by_id == student_user.id).order_by(Paper.id.desc()).first()
+
+        if not paper and thesis_title_val:
+            paper = db.query(Paper).filter(Paper.title.ilike(f"%{thesis_title_val}%")).first()
+
+        if not paper:
+            errors.append(f"Row {idx}: Could not locate thesis for Student ID '{student_id_val}' / Thesis ID '{thesis_id_val}'")
+            continue
+
+        # 2. Find Internal Examiner
+        int_exam = None
+        if int_id_val:
+            if int_id_val.isdigit():
+                int_exam = db.query(User).filter(User.id == int(int_id_val)).first()
+            if not int_exam:
+                int_exam = db.query(User).filter(User.school_id == int_id_val).first()
+        if not int_exam and int_email_val:
+            int_exam = db.query(User).filter(User.email.ilike(int_email_val)).first()
+
+        if not int_exam:
+            errors.append(f"Row {idx} (Thesis #{paper.id}): Internal examiner '{int_id_val or int_email_val}' not found")
+            continue
+
+        # 3. Find External Examiner
+        ext_exam = None
+        if ext_id_val:
+            if ext_id_val.isdigit():
+                ext_exam = db.query(User).filter(User.id == int(ext_id_val)).first()
+            if not ext_exam:
+                ext_exam = db.query(User).filter(User.school_id == ext_id_val).first()
+        if not ext_exam and ext_email_val:
+            ext_exam = db.query(User).filter(User.email.ilike(ext_email_val)).first()
+
+        if not ext_exam:
+            errors.append(f"Row {idx} (Thesis #{paper.id}): External examiner '{ext_id_val or ext_email_val}' not found")
+            continue
+
+        # 4. Assign Examiners
+        paper.internal_examiner_id = int_exam.id
+        paper.external_examiner_id = ext_exam.id
+        paper.status = "phase4_marking"
+        db.add(paper)
+
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="assign_examiners",
+            actor_id=current_user.id,
+            actor_role="project_coordinator" if is_coord else "hod",
+            from_status=paper.status,
+            to_status="phase4_marking",
+            message=f"Batch assigned examiners: Internal={int_exam.full_name or int_exam.email}, External={ext_exam.full_name or ext_exam.email}",
+        )
+
+        create_notification(db, user_id=int_exam.id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as Internal Examiner for '{paper.title}'. Please mark and submit results.")
+        create_notification(db, user_id=ext_exam.id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as External Examiner for '{paper.title}'. Please mark and submit results.")
+        _notify_student(db, paper, "Internal and external examiners have been assigned. They will now review and mark your thesis.")
+
+        success += 1
+
+    db.commit()
+    return {
+        "total_processed": total,
+        "successful": success,
+        "errors": errors,
+    }
+
+
 @router.post("/papers/{paper_id}/upload-results", response_model=PaperRead)
 async def upload_results(
     paper_id: int,

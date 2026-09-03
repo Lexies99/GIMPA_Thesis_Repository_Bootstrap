@@ -1,0 +1,4 @@
+﻿Student_ID,Thesis_ID,Student_Name,Thesis_Title,Internal_Examiner_ID,Internal_Examiner_Email,External_Examiner_ID,External_Examiner_Email
+2210045678,7,John Smith,GIMPA Library Management System,STF-9021,abena.osei@gimpa.edu.gh,EXT-4011,nana.assyne@ug.edu.gh
+2210045679,8,Ama Osei,Financial Technology Adoption in Ghana,STF-9022,emmanuel.quaye@gimpa.edu.gh,EXT-4012,k.ansah@knust.edu.gh
+2210045680,9,Kofi Boateng,Constitutional Review and Public Governance,STF-9023,grace.addo@gimpa.edu.gh,EXT-4013,yaw.donkor@upsa.edu.gh

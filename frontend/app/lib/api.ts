@@ -1565,29 +1565,6 @@ export async function apiAssignThirdExaminer(
   return response.json()
 }
 
-export async function apiBulkAssignExaminers(
-  file: File,
-  accessToken: string,
-): Promise<ApiBulkAssignSummary> {
-  const form = new FormData()
-  form.append("file", file)
-  const response = await fetch(`${apiBase}/theses/examiners/bulk-assign`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: form,
-  })
-  return handleResponse<ApiBulkAssignSummary>(response)
-}
-
-export async function apiDownloadBulkExaminerTemplate(accessToken: string): Promise<Blob> {
-  const response = await fetch(`${apiBase}/theses/examiners/bulk-assign-template`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  if (!response.ok) {
-    throw new Error("Failed to download template")
-  }
-  return response.blob()
-}
 
 export async function apiGetStudentFeedback(
   thesisId: number,
@@ -1665,5 +1642,55 @@ export async function apiNotifyFeedbackSaved(
   })
   return handleResponse<{ message: string; paper_id: number }>(response)
 }
+
+export interface ApiBulkAssignSummary {
+  total_processed: number
+  successful: number
+  errors: string[]
+}
+
+export async function apiDownloadStudentsTemplate(format: "csv" | "xlsx" = "csv"): Promise<Blob> {
+  const response = await fetch(`${apiBase}/users/students-template?format=${format}`)
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || "Failed to download student template")
+  }
+  return response.blob()
+}
+
+export async function apiDownloadLecturersTemplate(format: "csv" | "xlsx" = "csv"): Promise<Blob> {
+  const response = await fetch(`${apiBase}/users/lecturers-template?format=${format}`)
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || "Failed to download lecturer template")
+  }
+  return response.blob()
+}
+
+export async function apiDownloadBulkExaminerTemplate(accessToken: string, format: "csv" | "xlsx" = "csv"): Promise<Blob> {
+  const response = await fetch(`${apiBase}/papers/bulk-examiner-template?format=${format}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || "Failed to download examiner batch template")
+  }
+  return response.blob()
+}
+
+export async function apiBulkAssignExaminers(
+  file: File,
+  accessToken: string,
+): Promise<ApiBulkAssignSummary> {
+  const form = new FormData()
+  form.append("file", file)
+  const response = await fetch(`${apiBase}/papers/bulk-assign-examiners`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  })
+  return handleResponse<ApiBulkAssignSummary>(response)
+}
+
 
 
