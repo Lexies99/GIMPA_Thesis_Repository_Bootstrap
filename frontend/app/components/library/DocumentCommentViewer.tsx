@@ -62,6 +62,26 @@ export function DocumentCommentViewer({
 
   return (
     <div className="space-y-4">
+      {/* ONLYOFFICE Live Comments Callout Banner */}
+      <div className="border border-purple-500/30 bg-purple-500/10 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h4 className="text-xs font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1.5 m-0">
+            <MessageSquare className="size-4" />
+            Supervisor In-Document Comments & Annotations (ONLYOFFICE Word)
+          </h4>
+          <p className="text-xs text-muted-foreground m-0">
+            Your supervisor adds sticky comments, highlights, and annotations directly inside the document.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          className="btn-ta-purple text-xs shrink-0 flex items-center gap-1.5 font-bold shadow-sm"
+          onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
+        >
+          📝 Open Live Document in ONLYOFFICE
+        </Button>
+      </div>
+
       {/* Abstract Project Summary Banner at top */}
       <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
         <CardHeader className="pb-2">
@@ -110,92 +130,67 @@ export function DocumentCommentViewer({
 
             <CardContent className="p-6 space-y-4 text-sm leading-relaxed" onMouseUp={handleTextSelection}>
               {defaultParagraphs.map((para, pIdx) => {
-                const matchingAnnotations = annotations.filter(
-                  (a) => a.location && para.toLowerCase().includes(a.location.toLowerCase())
-                )
-
-                if (matchingAnnotations.length === 0) {
-                  return (
-                    <p key={pIdx} className="text-foreground/90 font-serif text-base leading-7">
-                      {para}
-                    </p>
-                  )
-                }
-
                 return (
-                  <div key={pIdx} className="relative group">
-                    <p className="text-foreground/90 font-serif text-base leading-7">
-                      {matchingAnnotations.map((anno) => {
-                        const loc = anno.location || ''
-                        const parts = para.split(loc)
-                        if (parts.length > 1) {
-                          return (
-                            <span key={anno.id}>
-                              {parts[0]}
-                              <span
-                                className={`px-1 py-0.5 rounded cursor-pointer transition-colors ${
-                                  activeAnnotationId === anno.id
-                                    ? 'bg-rose-300 dark:bg-rose-900 ring-2 ring-rose-500'
-                                    : 'bg-rose-100 dark:bg-rose-950/60 border-b-2 border-rose-400'
-                                }`}
-                                onClick={() => setActiveAnnotationId(anno.id)}
-                              >
-                                {loc}
-                              </span>
-                              {parts.slice(1).join(loc)}
-                            </span>
-                          )
-                        }
-                        return para
-                      })}
-                    </p>
-                  </div>
+                  <p key={pIdx} className="text-foreground/90 font-serif text-base leading-7">
+                    {para}
+                  </p>
                 )
               })}
             </CardContent>
           </Card>
         </div>
 
-        {/* Right Side: MS Word-Style Supervisor Comments Sidebar */}
+        {/* Right Side: Supervisor Comments Panel */}
         <div className="lg:col-span-4 space-y-4">
-          <Card className="border shadow-sm h-full">
-            <CardHeader className="py-3 border-b bg-muted/40">
-              <CardTitle className="text-sm font-semibold flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <MessageSquare className="size-4 text-rose-600" />
+          <Card className="shadow-sm border">
+            <CardHeader className="border-b bg-muted/30 py-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <MessageSquare className="size-4 text-rose-500" />
                   Supervisor Comments
-                </span>
-                <Badge variant="secondary" className="text-xs">
-                  {annotations.length}
+                </CardTitle>
+                <Badge variant="secondary" className="text-[10px] font-mono">
+                  {annotations.length + (paper.review_comments ? 1 : 0)} Total
                 </Badge>
-              </CardTitle>
+              </div>
             </CardHeader>
 
-            <CardContent className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
-              {/* Form to add comment */}
-              {isSupervisor && isAdding && (
-                <div className="p-3 border-2 border-rose-300 dark:border-rose-800 rounded-lg bg-rose-50/50 dark:bg-rose-950/30 space-y-2">
-                  <p className="text-xs font-semibold text-rose-900 dark:text-rose-200">
-                    New Correction Comment
+            <CardContent className="p-3 space-y-3">
+              {/* If general supervisor remark exists */}
+              {paper.review_comments && (
+                <div className="p-3 rounded-lg border border-purple-500/30 bg-purple-50 dark:bg-purple-950/30 space-y-1">
+                  <span className="text-xs font-bold text-purple-700 dark:text-purple-300">
+                    Supervisor General Remark:
+                  </span>
+                  <p className="text-xs text-purple-900 dark:text-purple-200 m-0">
+                    {paper.review_comments}
                   </p>
-                  {selectedText && (
-                    <div className="text-xs bg-white dark:bg-card p-1.5 rounded border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 italic truncate">
-                      "{selectedText}"
-                    </div>
-                  )}
+                </div>
+              )}
+
+              {/* Add Comment Input Form */}
+              {isAdding && isSupervisor && (
+                <div className="p-3 rounded-lg border border-rose-300 bg-rose-50/50 dark:bg-rose-950/30 space-y-2">
+                  <p className="text-xs font-medium text-rose-800 dark:text-rose-200">
+                    Add comment to: {selectedText ? `"${selectedText.slice(0, 30)}..."` : 'document'}
+                  </p>
                   <Textarea
-                    placeholder="Enter supervisor comment or correction note..."
+                    placeholder="Type supervisor feedback or corrections..."
                     value={commentInput}
                     onChange={(e) => setCommentInput(e.target.value)}
-                    rows={3}
-                    className="text-xs bg-white dark:bg-card"
+                    className="text-xs min-h-[60px]"
+                    autoFocus
                   />
-                  <div className="flex justify-end gap-1.5 pt-1">
+                  <div className="flex justify-end gap-1.5">
                     <Button
                       size="sm"
                       variant="ghost"
                       className="h-7 text-xs"
-                      onClick={() => setIsAdding(false)}
+                      onClick={() => {
+                        setIsAdding(false)
+                        setCommentInput('')
+                        setSelectedText('')
+                      }}
                     >
                       Cancel
                     </Button>
@@ -212,10 +207,18 @@ export function DocumentCommentViewer({
               )}
 
               {/* List of Supervisor Comments (Word Sidebar visual format) */}
-              {annotations.length === 0 && !isAdding && (
-                <div className="text-center py-8 text-muted-foreground text-xs">
-                  <MessageSquare className="size-8 mx-auto mb-2 opacity-40" />
-                  No supervisor comments attached yet.
+              {annotations.length === 0 && !paper.review_comments && !isAdding && (
+                <div className="text-center py-6 text-muted-foreground text-xs space-y-2">
+                  <MessageSquare className="size-8 mx-auto opacity-40" />
+                  <p className="m-0">No legacy database text comments attached.</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs text-purple-600 dark:text-purple-400 border-purple-300"
+                    onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
+                  >
+                    📝 Open in ONLYOFFICE to View In-Doc Comments
+                  </Button>
                 </div>
               )}
 

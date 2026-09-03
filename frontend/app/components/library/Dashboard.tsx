@@ -1173,6 +1173,15 @@ export function Dashboard({ userRole }: DashboardProps) {
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         <Button
                           size="sm"
+                          className="btn-ta-purple text-xs font-semibold flex items-center gap-1.5"
+                          onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
+                        >
+                          <FileEdit className="size-3.5" />
+                          📝 Open in ONLYOFFICE (View Comments & Feedback)
+                        </Button>
+
+                        <Button
+                          size="sm"
                           className="btn-ta-glass text-xs"
                           onClick={() => void handleDownloadPaper(paper.id)}
                         >
@@ -1185,7 +1194,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                           className="btn-ta-glass text-xs"
                           onClick={() => void handleLoadAnnotations(paper.id)}
                         >
-                          {activeViewerPaperId === paper.id ? 'Hide Comments' : '💬 View Comments & Abstract'}
+                          {activeViewerPaperId === paper.id ? 'Hide Comments & Abstract' : '💬 View Comments & Abstract'}
                         </Button>
                       </div>
 
