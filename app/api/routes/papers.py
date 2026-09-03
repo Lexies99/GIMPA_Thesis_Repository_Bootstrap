@@ -3801,3 +3801,169 @@ def download_examiner_assigned_zip(
     }
     return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
 
+
+@router.post("/papers/{paper_id}/supervisor-approve-corrections", response_model=PaperRead)
+def supervisor_approve_corrections(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    
+    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+    if not is_supervisor:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor, HOD, or coordinator can approve corrections")
+    
+    # Check degree level: If Undergraduate, can pass directly to HOD/final approval
+    paper.status = "phase5_pending_coordinator"
+    db.add(paper)
+    db.commit()
+    db.refresh(paper)
+    
+    _notify_roles(
+        db,
+        roles={"project_coordinator", "hod", "system_admin"},
+        paper_id=paper.id,
+        message=f"Supervisor confirmed and approved corrections for '{paper.title}'. Awaiting final coordinator/HOD sign-off.",
+        department=paper.discipline,
+    )
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/supervisor-reject-corrections", response_model=PaperRead)
+def supervisor_reject_corrections(
+    paper_id: int,
+    feedback: str = Form("Corrections not satisfactorily addressed. Please review examiner comments and make required revisions."),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    
+    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+    if not is_supervisor:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor or HOD can request revisions")
+    
+    paper.status = "phase5_corrections"
+    if feedback.strip():
+        paper.review_comments = feedback.strip()
+    db.add(paper)
+    db.commit()
+    db.refresh(paper)
+    
+    # Notify student
+    if paper.created_by_id:
+        from app.models.thesis_system import Notification
+        notif = Notification(
+            user_id=paper.created_by_id,
+            title="Further Corrections Required",
+            message=f"Supervisor reviewed your resubmitted work for '{paper.title}' and requested further corrections: {feedback.strip()}",
+            ntype="workflow_update",
+        )
+        db.add(notif)
+        db.commit()
+        
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/coordinator-approve-corrections", response_model=PaperRead)
+def coordinator_approve_corrections(
+    paper_id: int,
+    decision: str = Form("approved"),
+    comment: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    allowed = (
+        current_user.is_admin
+        or has_role(db, current_user, "project_coordinator")
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "system_admin")
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Project Coordinator or Admin can approve corrections")
+
+    if decision == "approved":
+        paper.project_coordinator_approved_by_id = current_user.id
+        paper.project_coordinator_approved_at = datetime.now(timezone.utc)
+        
+        if paper.hod_approved_at is not None or has_role(db, current_user, "hod") or current_user.is_admin:
+            paper.status = "phase5_approved_for_library"
+        else:
+            paper.status = "phase5_pending_hod"
+        
+        db.add(paper)
+        db.commit()
+        db.refresh(paper)
+        
+        _notify_roles(
+            db,
+            roles={"hod", "system_admin", "librarian"},
+            paper_id=paper.id,
+            message=f"Project Coordinator approved final corrections for '{paper.title}'.",
+            department=paper.discipline,
+        )
+    else:
+        paper.status = "phase5_corrections"
+        if comment:
+            paper.review_comments = comment
+        db.add(paper)
+        db.commit()
+        db.refresh(paper)
+        
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/hod-approve-corrections", response_model=PaperRead)
+def hod_approve_corrections(
+    paper_id: int,
+    decision: str = Form("approved"),
+    comment: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    allowed = (
+        current_user.is_admin
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "system_admin")
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only HOD or Admin can sign off on thesis")
+
+    if decision == "approved":
+        paper.hod_approved_by_id = current_user.id
+        paper.hod_approved_at = datetime.now(timezone.utc)
+        paper.status = "phase5_approved_for_library"
+        
+        db.add(paper)
+        db.commit()
+        db.refresh(paper)
+        
+        _notify_roles(
+            db,
+            roles={"librarian", "head_library", "system_admin"},
+            paper_id=paper.id,
+            message=f"HOD signed off on '{paper.title}'. Ready for Library catalog publication.",
+            department=paper.discipline,
+        )
+    else:
+        paper.status = "phase5_corrections"
+        if comment:
+            paper.review_comments = comment
+        db.add(paper)
+        db.commit()
+        db.refresh(paper)
+        
+    return _to_paper_read(paper, db, current_user)
+

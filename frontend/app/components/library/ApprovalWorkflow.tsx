@@ -25,6 +25,7 @@ import {
   apiAssignExaminers,
   apiUploadResults,
   apiSupervisorApproveCorrections,
+  apiSupervisorRejectCorrections,
   apiCoordinatorApproveCorrections,
   apiHodApproveCorrections,
   apiStepDecision,
@@ -1720,20 +1721,20 @@ export function ApprovalWorkflow() {
                 </div>
               )}
 
-              {selectedPaper.status === 'phase5_pending_supervisor' && (isSupervisor || isAdmin) && (
-                <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
+              {(selectedPaper.status === 'phase5_pending_supervisor' || selectedPaper.status === 'phase5_corrections') && (isSupervisor || isAdmin || isHOD || isCoordinator) && (
+                <div className="border border-primary/20 rounded-xl p-5 bg-primary/5 space-y-4">
                   <h4 className="font-bold text-sm text-primary flex items-center gap-2">
                     <CheckCircle className="size-4" />
-                    Phase 4: Supervisor — Review Corrections
+                    Phase 4: Supervisor — Confirm or Deny Corrected Work
                   </h4>
                   <p className="text-xs text-muted-foreground">
-                    The student has uploaded their corrected thesis file. Review the changes and approve them to pass to HOD/Coordinator.
+                    Review the student's corrected thesis against the examiner's evaluation remarks. Confirm the student has properly addressed all corrections to forward for final sign-off, or deny to request further revisions.
                   </p>
 
                   {selectedPaper.examiner_corrections && (
-                    <div className="bg-background/80 border rounded p-3 text-xs space-y-1">
-                      <p className="font-semibold text-muted-foreground">Original Corrections Specified:</p>
-                      <p className="text-muted-foreground whitespace-pre-line">{selectedPaper.examiner_corrections}</p>
+                    <div className="bg-background border border-amber-300 dark:border-amber-900/60 rounded-lg p-3 text-xs space-y-1">
+                      <p className="font-bold text-amber-700 dark:text-amber-400">Examiner Feedback & Required Corrections to Verify:</p>
+                      <p className="text-foreground whitespace-pre-line">{selectedPaper.examiner_corrections}</p>
                     </div>
                   )}
 
@@ -1747,38 +1748,85 @@ export function ApprovalWorkflow() {
                       Inspect the student's corrected thesis in ONLYOFFICE Word to verify their edits, or review the compiled examiner feedback document:
                     </p>
                     <div className="flex flex-wrap gap-2 pt-1">
-                      <button
+                      <Button
                         type="button"
+                        size="sm"
                         onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=paper`, '_blank')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow transition-colors cursor-pointer border border-emerald-500"
+                        className="btn-ta-purple text-xs font-bold"
                       >
-                        <FileEdit className="size-3.5 text-white" />
+                        <FileEdit className="size-3.5 mr-1" />
                         📝 View Student's Corrected Thesis (ONLYOFFICE Word)
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
+                        size="sm"
+                        variant="outline"
                         onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=comments`, '_blank')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                        className="text-xs font-semibold"
                       >
-                        <MessageSquare className="size-3.5 text-slate-200" />
-                        💬 View Examiners' Comments Document (ONLYOFFICE Word)
-                      </button>
+                        <MessageSquare className="size-3.5 mr-1" />
+                        💬 View Examiners' Comments (ONLYOFFICE Word)
+                      </Button>
                       {(selectedPaper as any).file_path && (
-                        <button
+                        <Button
                           type="button"
+                          size="sm"
+                          variant="outline"
                           onClick={() => void handleDownloadPaper(selectedPaper.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                          className="text-xs font-semibold"
                         >
-                          <Download className="size-3.5 text-slate-200" />
+                          <Download className="size-3.5 mr-1" />
                           📥 Download Corrected File
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>
+
+                  {/* Supervisor Denial Notes / Feedback Input */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Supervisor Feedback / Revision Instructions (Required if denying):</Label>
+                    <Textarea
+                      placeholder="Enter specific guidance or feedback for the student if denying or requesting further changes..."
+                      value={reviewComments}
+                      onChange={(e) => setReviewComments(e.target.value)}
+                      rows={3}
+                      className="text-xs"
+                    />
+                  </div>
+
                   {reviewError && (
                     <p className="text-xs text-destructive">{reviewError}</p>
                   )}
-                  <div className="flex gap-2 justify-end">
+
+                  <div className="flex gap-2 justify-end pt-2">
+                    <Button 
+                      variant="outline"
+                      onClick={async () => {
+                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                        if (!token) return
+                        if (!reviewComments.trim()) {
+                          setReviewError('Please provide revision notes explaining what the student still needs to fix.')
+                          return
+                        }
+                        setSubmittingReview(true)
+                        try {
+                          await apiSupervisorRejectCorrections(selectedPaper.id, reviewComments.trim(), token)
+                          setDialogOpen(false)
+                          setSelectedPaper(null)
+                          setReviewComments('')
+                          await loadAll()
+                        } catch (err) {
+                          setReviewError(err instanceof Error ? err.message : 'Denial action failed')
+                        } finally {
+                          setSubmittingReview(false)
+                        }
+                      }}
+                      disabled={submittingReview}
+                      className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                    >
+                      {submittingReview ? 'Processing...' : '✕ Deny & Request Further Revisions'}
+                    </Button>
+
                     <Button 
                       onClick={async () => {
                         const token = localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -1788,6 +1836,7 @@ export function ApprovalWorkflow() {
                           await apiSupervisorApproveCorrections(selectedPaper.id, token)
                           setDialogOpen(false)
                           setSelectedPaper(null)
+                          setReviewComments('')
                           await loadAll()
                         } catch (err) {
                           setReviewError(err instanceof Error ? err.message : 'Approval failed')
@@ -1796,8 +1845,9 @@ export function ApprovalWorkflow() {
                         }
                       }} 
                       disabled={submittingReview}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                     >
-                      {submittingReview ? 'Approving...' : 'Approve Corrections & Forward to HOD/Coordinator'}
+                      {submittingReview ? 'Approving...' : '✓ Confirm & Approve Corrections (Forward to Sign-off)'}
                     </Button>
                   </div>
                 </div>

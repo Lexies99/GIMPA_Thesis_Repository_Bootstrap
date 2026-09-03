@@ -1179,6 +1179,21 @@ export async function apiSupervisorApproveCorrections(
   return handleResponse<ApiPaper>(response)
 }
 
+export async function apiSupervisorRejectCorrections(
+  paperId: number,
+  feedback: string,
+  accessToken: string,
+): Promise<ApiPaper> {
+  const form = new FormData()
+  form.set("feedback", feedback)
+  const response = await fetch(`${apiBase}/papers/${paperId}/supervisor-reject-corrections`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  })
+  return handleResponse<ApiPaper>(response)
+}
+
 export async function apiCoordinatorApproveCorrections(
   paperId: number,
   decision: "approved" | "revise",
