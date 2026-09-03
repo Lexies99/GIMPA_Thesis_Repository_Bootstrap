@@ -2649,20 +2649,17 @@ def complete_phase3(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
     
-    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin
+    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
     if not is_supervisor:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor can complete Phase 3")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor can complete Phase 2 and advance to Examination")
     
-    all_approved = (
-        paper.ch1_supervisor_approved and
-        paper.ch2_supervisor_approved and
-        paper.ch3_supervisor_approved and
-        paper.ch4_supervisor_approved and
-        paper.ch5_supervisor_approved and
-        paper.combined_thesis_supervisor_approved
-    )
-    if not all_approved:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot complete Phase 3: All 5 chapters and the combined thesis must be approved by the supervisor first")
+    # Mark all chapters/steps as approved by supervisor
+    paper.ch1_supervisor_approved = True
+    paper.ch2_supervisor_approved = True
+    paper.ch3_supervisor_approved = True
+    paper.ch4_supervisor_approved = True
+    paper.ch5_supervisor_approved = True
+    paper.combined_thesis_supervisor_approved = True
         
     paper.status = "phase4_pending_examiners"
     db.add(paper)
@@ -2675,7 +2672,7 @@ def complete_phase3(
         actor_role="project_supervisor",
         from_status="phase3_chapters",
         to_status=paper.status,
-        message=f"Phase 3 Complete: All 5 chapters approved by supervisor for '{paper.title}'. Examiners need to be assigned.",
+        message=f"Phase 2 Steps Complete: Approved by supervisor for '{paper.title}'. Advanced to Examination. Examiners need to be assigned.",
     )
     db.commit()
     db.refresh(paper)
@@ -2683,9 +2680,9 @@ def complete_phase3(
     _notify_hod_and_coordinators(
         db,
         paper,
-        f"Phase 3 Complete: All 5 chapters approved by supervisor for '{paper.title}'. Examiners need to be assigned."
+        f"Phase 2 Complete: Steps approved by supervisor for '{paper.title}'. Internal & External Examiners need to be assigned for Examination."
     )
-    _notify_student(db, paper, "Congratulations! Your supervisor approved all 5 chapters. The HOD or Project Coordinator will now assign internal and external examiners.")
+    _notify_student(db, paper, f"Congratulations! Your supervisor ({current_user.full_name or current_user.email}) approved your thesis steps. The HOD or Project Coordinator will now assign internal and external examiners.")
     
     return _to_paper_read(paper, db, current_user)
 
