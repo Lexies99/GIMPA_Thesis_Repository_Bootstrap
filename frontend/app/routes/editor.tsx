@@ -40,16 +40,26 @@ function OnlyOfficeEditor({
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
 
+  let isStudent = false
+  try {
+    const rawUser = localStorage.getItem('murrs_user')
+    if (rawUser) {
+      const u = JSON.parse(rawUser)
+      const role = String(u.role || '').toLowerCase()
+      isStudent = role === 'student' || role === 'member'
+    }
+  } catch {}
+
   const handleDone = async () => {
     setIsSaving(true)
     try {
       const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-      if (token && paperId && Number.isFinite(paperId) && paperId > 0) {
+      if (!isStudent && token && paperId && Number.isFinite(paperId) && paperId > 0) {
         await apiNotifyFeedbackSaved(paperId, docType || 'comments', token)
-        setSaveSuccess(true)
       }
+      setSaveSuccess(true)
     } catch (err) {
-      console.error('Failed to notify student:', err)
+      console.error('Save action error:', err)
     } finally {
       setIsSaving(false)
       window.onbeforeunload = null
@@ -57,9 +67,9 @@ function OnlyOfficeEditor({
         if (window.opener) {
           window.close()
         } else {
-          window.location.href = '/approval-workflow'
+          window.location.href = isStudent ? '/dashboard' : '/approval-workflow'
         }
-      }, 600)
+      }, 500)
     }
   }
 
@@ -123,12 +133,12 @@ function OnlyOfficeEditor({
           {isSaving ? (
             <>
               <span className="inline-block animate-spin">⏳</span>
-              Saving & Notifying Student...
+              {isStudent ? 'Saving...' : 'Saving & Notifying Student...'}
             </>
           ) : saveSuccess ? (
-            <>✓ Saved & Student Notified!</>
+            <>{isStudent ? '✓ Saved!' : '✓ Saved & Student Notified!'}</>
           ) : (
-            <>✓ Done (Save & Notify Student)</>
+            <>{isStudent ? '✓ Done (Save)' : '✓ Done (Save & Notify Student)'}</>
           )}
         </button>
       </header>
