@@ -44,6 +44,7 @@ import {
 } from '../../lib/api'
 import { DocxViewer } from './DocxViewer'
 import { convertTextOrTopicToPdf } from '../../lib/pdfGenerator'
+import { ProjectAssessmentReportDialog } from './ProjectAssessmentReportDialog'
 import type { ApiPaper, ApiUser, ApiBulkAssignSummary, ApiStudentFeedbackResponse, ApiAdminMarkSheetResponse } from '../../lib/api'
 
 const ACCESS_TOKEN_KEY = 'murrs_access_token'
@@ -190,6 +191,8 @@ export function ApprovalWorkflow() {
   const [examinerCorrections, setExaminerCorrections] = useState<string>('')
   const [examinerRecommendation, setExaminerRecommendation] = useState<string>('Pass')
   const [resultsFile, setResultsFile] = useState<File | null>(null)
+  const [assessmentModalOpen, setAssessmentModalOpen] = useState(false)
+  const [activeExaminerRole, setActiveExaminerRole] = useState<'Internal Examiner' | 'External Examiner' | 'Third Examiner' | 'Coordinator / HOD'>('Internal Examiner')
 
   // Bulk Examiner Assignment states
   const [bulkFile, setBulkFile] = useState<File | null>(null)
@@ -1490,37 +1493,115 @@ export function ApprovalWorkflow() {
                 </div>
               )}
 
-              {/* Phase 4: Examiner Marking & Evaluation Panel */}
+              {/* Phase 4: Official GIMPA Examiner Project Assessment & Marking Panel */}
               {selectedPaper.status === 'phase4_marking' && (isSupervisor || isAdmin || isHOD || isCoordinator || selectedPaper.internal_examiner_id === user?.id || selectedPaper.external_examiner_id === user?.id) && (
                 <div className="border rounded-xl p-5 space-y-4" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                    <h4 className="font-bold text-sm text-purple-500 flex items-center gap-2 m-0">
-                      <Award className="size-4 text-purple-500" />
-                      Phase 4: Examiner In-System Grading & Feedback
-                    </h4>
+                    <div>
+                      <h4 className="font-bold text-sm text-purple-500 flex items-center gap-2 m-0">
+                        <Award className="size-4 text-purple-500" />
+                        Phase 4: Official Project Assessment Report & Examiner Evaluation
+                      </h4>
+                      <p className="text-xs text-muted-foreground m-0 mt-0.5">
+                        GHANA INSTITUTE OF MANAGEMENT & PUBLIC ADMINISTRATION (GIMPA) Official Marking & Assessment
+                      </p>
+                    </div>
                     <Button
                       size="sm"
-                      className="btn-ta-purple text-xs flex items-center gap-1.5"
+                      className="btn-ta-purple text-xs flex items-center gap-1.5 shrink-0"
                       onClick={() => void handleDownloadDocument(selectedPaper.id)}
                       disabled={documentLoading}
                     >
                       <Download className="size-3.5" />
-                      {documentLoading ? 'Downloading...' : 'Download Thesis File'}
+                      {documentLoading ? 'Downloading...' : 'Download Student Thesis File'}
                     </Button>
                   </div>
-                  <p className="text-xs leading-relaxed m-0" style={{ color: 'var(--text-sub)' }}>
-                    <strong style={{ color: 'var(--text-main)' }}>Step 1:</strong> Use the ONLYOFFICE tools below to view the student's work, author comments in ONLYOFFICE Word, or enter scores in ONLYOFFICE Excel.<br />
-                    <strong style={{ color: 'var(--text-main)' }}>Step 2:</strong> Once finished in ONLYOFFICE, click <strong className="text-purple-500">"Submit In-System Evaluation"</strong> below to finalize.
-                  </p>
 
-                  {/* ONLYOFFICE Evaluation Tools Panel */}
+                  {/* Summary of Examiner Scores */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Internal Examiner Score</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                          {selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined
+                            ? `${selectedPaper.internal_score} / 100`
+                            : 'Pending Evaluation'}
+                        </span>
+                        {selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined && (
+                          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                            Evaluated
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">External Examiner Score</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                          {selectedPaper.external_score !== null && selectedPaper.external_score !== undefined
+                            ? `${selectedPaper.external_score} / 100`
+                            : 'Pending Evaluation'}
+                        </span>
+                        {selectedPaper.external_score !== null && selectedPaper.external_score !== undefined && (
+                          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                            Evaluated
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-lg border bg-muted/20 space-y-1 sm:col-span-2 lg:col-span-1" style={{ borderColor: 'var(--border-color)' }}>
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Overall Status</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold">
+                          {selectedPaper.internal_score !== null && selectedPaper.external_score !== null
+                            ? `Average: ${((Number(selectedPaper.internal_score) + Number(selectedPaper.external_score)) / 2).toFixed(1)}%`
+                            : 'Awaiting Examiner Submissions'}
+                        </span>
+                        <Badge variant="outline" className="text-[10px] border-purple-500/30 text-purple-600">
+                          Phase 4
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Primary Action: Open Project Assessment Report Dialog */}
+                  <div className="p-4 rounded-xl border border-purple-500/30 bg-purple-500/5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h5 className="font-bold text-xs text-purple-600 dark:text-purple-400 m-0 flex items-center gap-1.5">
+                          <FileText className="size-4" />
+                          Official Project Assessment Report Form
+                        </h5>
+                        <p className="text-xs text-muted-foreground m-0 mt-0.5">
+                          Fill out the 8-part assessment rubric, enter qualitative feedback for research areas, auto-calculate grade, and generate the official Word (.docx) report.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        className="btn-ta-purple text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-sm"
+                        onClick={() => {
+                          const isInternal = selectedPaper.internal_examiner_id === user?.id;
+                          const isExternal = selectedPaper.external_examiner_id === user?.id;
+                          setActiveExaminerRole(isInternal ? 'Internal Examiner' : (isExternal ? 'External Examiner' : (isHOD || isCoordinator ? 'Coordinator / HOD' : 'Internal Examiner')));
+                          setAssessmentModalOpen(true);
+                        }}
+                      >
+                        <FileEdit className="size-4 mr-1" />
+                        Fill Project Assessment Report
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* ONLYOFFICE & Auxiliary Tools Panel */}
                   <div className="border rounded-xl p-4 space-y-3" style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-color)' }}>
                     <h5 className="font-semibold text-xs text-purple-500 flex items-center gap-1.5 m-0">
                       <FileEdit className="size-4 text-purple-500" />
-                      ONLYOFFICE In-App Marking & Feedback Tools
+                      ONLYOFFICE In-App Marking & Evaluation Tools
                     </h5>
                     <p className="text-xs m-0" style={{ color: 'var(--text-muted)' }}>
-                      Click below to view the student's submitted thesis, write qualitative feedback in ONLYOFFICE Word, or edit marks in ONLYOFFICE Excel:
+                      You can also view the student's submitted thesis directly in the browser or edit comments in ONLYOFFICE:
                     </p>
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <Button
@@ -1550,121 +1631,24 @@ export function ApprovalWorkflow() {
                       >
                         📊 Open Marks Sheet (ONLYOFFICE Excel)
                       </Button>
+                      {selectedPaper.examiner_result_file_name && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
+                          onClick={() => void handleDownloadPaper(selectedPaper.id)}
+                        >
+                          <Download className="size-3.5 mr-1" />
+                          Download Assessment Report ({selectedPaper.examiner_result_file_name})
+                        </Button>
+                      )}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="examiner-score-input" className="text-xs font-semibold">
-                        Numerical Score (0 – 100%)
-                      </Label>
-                      <Input
-                        id="examiner-score-input"
-                        type="number"
-                        min={0}
-                        max={100}
-                        placeholder="e.g. 85"
-                        value={selectedPaper.internal_examiner_id === user?.id ? internalScore : (selectedPaper.external_examiner_id === user?.id ? externalScore : (internalScore || externalScore))}
-                        onChange={(e) => {
-                          setInternalScore(e.target.value)
-                          setExternalScore(e.target.value)
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="examiner-recommendation-select" className="text-xs font-semibold">
-                        Recommendation
-                      </Label>
-                      <Select value={examinerRecommendation} onValueChange={setExaminerRecommendation}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select recommendation" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Pass">Pass</SelectItem>
-                          <SelectItem value="Pass with Revisions">Pass with Revisions</SelectItem>
-                          <SelectItem value="Fail">Fail</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="examiner-comments-input" className="text-xs font-semibold">
-                      Qualitative Remarks & Corrections
-                    </Label>
-                    <Textarea
-                      id="examiner-comments-input"
-                      rows={3}
-                      placeholder="Enter specific feedback, corrections, or instructions for the student..."
-                      value={examinerCorrections}
-                      onChange={(e) => setExaminerCorrections(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="results-file-input">Annotated Script / Mark Sheet (Optional File Upload)</Label>
-                    <Input 
-                      id="results-file-input"
-                      type="file" 
-                      accept=".pdf,.doc,.docx,.xlsx"
-                      onChange={(e) => setResultsFile(e.target.files?.[0] || null)}
-                    />
-                  </div>
                   {reviewError && (
                     <p className="text-xs text-destructive">{reviewError}</p>
                   )}
-                  <div className="flex justify-end">
-                    <Button 
-                      onClick={async () => {
-                        const isUserInternal = isAdmin || isHOD || isCoordinator || selectedPaper.internal_examiner_id === user?.id
-                        const isUserExternal = isAdmin || isHOD || isCoordinator || selectedPaper.external_examiner_id === user?.id
-
-                        const enteredScoreStr = isUserInternal ? internalScore : externalScore
-                        const parsedScore = enteredScoreStr.trim() !== '' ? parseFloat(enteredScoreStr) : NaN
-
-                        let scoreVal: number | undefined = !isNaN(parsedScore) ? parsedScore : undefined
-                        if (scoreVal === undefined) {
-                          if (isUserInternal && selectedPaper.internal_score !== undefined && selectedPaper.internal_score !== null) {
-                            scoreVal = selectedPaper.internal_score
-                          } else if (isUserExternal && selectedPaper.external_score !== undefined && selectedPaper.external_score !== null) {
-                            scoreVal = selectedPaper.external_score
-                          }
-                        }
-                        
-                        const commentsVal = examinerCorrections.trim() || 'Qualitative feedback and evaluation completed in ONLYOFFICE Document & Excel Editors'
-                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                        if (!token) return
-                        setSubmittingReview(true)
-                        try {
-                          await apiSubmitExaminerGrading(selectedPaper.id, {
-                            score: scoreVal,
-                            recommendation: examinerRecommendation || 'Pass',
-                            general_comments: commentsVal,
-                            file: resultsFile || undefined,
-                          }, token)
-                          
-                          // Also trigger upload results for paper compatibility
-                          await apiUploadResults(selectedPaper.id, {
-                            internalScore: isUserInternal ? (scoreVal ?? selectedPaper.internal_score ?? undefined) : (selectedPaper.internal_score ?? undefined),
-                            externalScore: isUserExternal ? (scoreVal ?? selectedPaper.external_score ?? undefined) : (selectedPaper.external_score ?? undefined),
-                            examinerCorrections: commentsVal,
-                            file: resultsFile || undefined
-                          }, token)
-
-                          setDialogOpen(false)
-                          setSelectedPaper(null)
-                          await loadAll()
-                        } catch (err) {
-                          setReviewError(err instanceof Error ? err.message : 'Submission failed')
-                        } finally {
-                          setSubmittingReview(false)
-                        }
-                      }}
-                      disabled={submittingReview}
-                    >
-                      {submittingReview ? 'Submitting...' : 'Submit In-System Evaluation'}
-                    </Button>
-                  </div>
                 </div>
               )}
 
@@ -2104,6 +2088,49 @@ export function ApprovalWorkflow() {
           )}
         </DialogContent>
       </Dialog>
+
+      {selectedPaper && (
+        <ProjectAssessmentReportDialog
+          open={assessmentModalOpen}
+          onOpenChange={setAssessmentModalOpen}
+          paper={selectedPaper}
+          examinerName={user?.name || user?.email || 'Nana Assyne'}
+          examinerRole={activeExaminerRole}
+          onSaveReport={async (totalScore, comments, docxFile) => {
+            const isUserInternal = activeExaminerRole === 'Internal Examiner' || (!roles.includes('external_examiner') && selectedPaper.internal_examiner_id === user?.id)
+            const isUserExternal = activeExaminerRole === 'External Examiner' || roles.includes('external_examiner') || selectedPaper.external_examiner_id === user?.id
+            const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+            if (!token) return
+
+            await apiUploadResults(selectedPaper.id, {
+              internalScore: isUserInternal ? totalScore : (selectedPaper.internal_score ?? undefined),
+              externalScore: isUserExternal ? totalScore : (selectedPaper.external_score ?? undefined),
+              examinerCorrections: comments,
+              file: docxFile,
+            }, token)
+
+            await apiSubmitExaminerGrading(selectedPaper.id, {
+              score: totalScore,
+              recommendation: 'Pass',
+              general_comments: comments,
+              file: docxFile,
+            }, token)
+
+            await loadAll()
+            setSelectedPaper((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    internal_score: isUserInternal ? totalScore : prev.internal_score,
+                    external_score: isUserExternal ? totalScore : prev.external_score,
+                    examiner_result_file_name: docxFile.name,
+                    examiner_corrections: comments,
+                  }
+                : null
+            )
+          }}
+        />
+      )}
     </div>
   )
 }
