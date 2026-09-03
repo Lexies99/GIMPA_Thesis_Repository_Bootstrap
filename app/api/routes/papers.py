@@ -1882,9 +1882,206 @@ def download_paper_file_public(
     )
 
 
+def _generate_excel_marks_sheet(target_path: Path, paper: Paper, student_user: User | None = None, db: Session | None = None):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Assessment Marks Sheet"
+    try:
+        ws.views.sheetView[0].showGridLines = True
+    except Exception:
+        pass
+
+    # Styling definitions
+    navy_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+    purple_fill = PatternFill(start_color="6366F1", end_color="6366F1", fill_type="solid")
+    header_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    total_fill = PatternFill(start_color="EEF2FF", end_color="EEF2FF", fill_type="solid")
+    
+    title_font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+    subtitle_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    bold_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
+    regular_font = Font(name="Calibri", size=10, color="334155")
+    total_font = Font(name="Calibri", size=11, bold=True, color="4338CA")
+
+    thin_border = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="thin", color="CBD5E1"),
+    )
+    double_bottom_border = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="double", color="1E293B"),
+    )
+
+    # Title Block
+    ws.merge_cells("A1:E1")
+    ws["A1"] = "GHANA INSTITUTE OF MANAGEMENT AND PUBLIC ADMINISTRATION (GIMPA)"
+    ws["A1"].font = title_font
+    ws["A1"].fill = navy_fill
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 28
+
+    ws.merge_cells("A2:E2")
+    ws["A2"] = "SCHOOL OF TECHNOLOGY AND SOCIAL SCIENCES — OFFICIAL THESIS / PROJECT MARKS SHEET"
+    ws["A2"].font = subtitle_font
+    ws["A2"].fill = purple_fill
+    ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 22
+
+    # Candidate & Thesis Metadata
+    student_name = "Candidate"
+    student_id = "N/A"
+    if student_user:
+        student_name = student_user.full_name or student_user.email
+    elif paper.authors:
+        student_name = paper.authors[0].name
+
+    program = getattr(student_user, "program", None) or paper.discipline or "BSc. Computer Science"
+    degree_level = classify_degree_level(paper=paper, student_user=student_user, db=db)
+    supervisor_name = "Assigned Supervisor"
+    if paper.supervisor_id and db:
+        sup = db.query(User).filter(User.id == paper.supervisor_id).first()
+        if sup:
+            supervisor_name = sup.full_name or sup.email
+
+    metadata = [
+        ("Candidate Name:", student_name, "Submission ID:", f"PAPER-{paper.id}"),
+        ("Program of Study:", program, "Degree Track:", degree_level),
+        ("Project / Thesis Title:", paper.title, "Supervisor / Examiner:", supervisor_name),
+    ]
+
+    row_idx = 4
+    for label1, val1, label2, val2 in metadata:
+        ws.cell(row=row_idx, column=1, value=label1).font = bold_font
+        ws.cell(row=row_idx, column=2, value=val1).font = regular_font
+        ws.cell(row=row_idx, column=4, value=label2).font = bold_font
+        ws.cell(row=row_idx, column=5, value=val2).font = regular_font
+        row_idx += 1
+
+    row_idx += 1
+    # Table Header
+    headers = ["Domain #", "Assessment Rubric / Evaluation Criteria", "Max Marks", "Marks Awarded", "Examiner Comments / Notes"]
+    for col_idx, h in enumerate(headers, start=1):
+        cell = ws.cell(row=row_idx, column=col_idx, value=h)
+        cell.font = bold_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center" if col_idx in {1, 3, 4} else "left", vertical="center")
+        cell.border = thin_border
+    ws.row_dimensions[row_idx].height = 24
+
+    start_rubric_row = row_idx + 1
+    rubric_domains = [
+        (1, "Problem Definition, Research Objectives & Scope", 10),
+        (2, "Literature Review, Theoretical Framework & Background", 15),
+        (3, "Research Methodology, System Design & Architecture", 20),
+        (4, "System Implementation, Code Quality & Deliverables", 25),
+        (5, "Testing, Validation, Results & Findings Analysis", 15),
+        (6, "Discussion, Conclusion & Practical Recommendations", 5),
+        (7, "Document Organization, Academic Writing & Formatting", 5),
+        (8, "Viva Voce, Oral Presentation & Defense", 5),
+    ]
+
+    for d_num, d_title, max_m in rubric_domains:
+        row_idx += 1
+        c1 = ws.cell(row=row_idx, column=1, value=f"Domain {d_num}")
+        c2 = ws.cell(row=row_idx, column=2, value=d_title)
+        c3 = ws.cell(row=row_idx, column=3, value=max_m)
+        c4 = ws.cell(row=row_idx, column=4, value=None)
+        c5 = ws.cell(row=row_idx, column=5, value="")
+
+        c1.alignment = Alignment(horizontal="center", vertical="center")
+        c2.alignment = Alignment(horizontal="left", vertical="center")
+        c3.alignment = Alignment(horizontal="center", vertical="center")
+        c4.alignment = Alignment(horizontal="center", vertical="center")
+
+        for c in [c1, c2, c3, c4, c5]:
+            c.font = regular_font
+            c.border = thin_border
+        ws.row_dimensions[row_idx].height = 20
+
+    end_rubric_row = row_idx
+
+    # Total Score Row
+    row_idx += 1
+    t1 = ws.cell(row=row_idx, column=1, value="TOTAL")
+    t2 = ws.cell(row=row_idx, column=2, value="Cumulative Examination Mark (out of 100)")
+    t3 = ws.cell(row=row_idx, column=3, value=100)
+    t4 = ws.cell(row=row_idx, column=4, value=f"=SUM(D{start_rubric_row}:D{end_rubric_row})")
+    t5 = ws.cell(row=row_idx, column=5, value=f'=IF(D{row_idx}>=80,"A (Distinction)",IF(D{row_idx}>=75,"B+ (Very Good)",IF(D{row_idx}>=70,"B (Good)",IF(D{row_idx}>=65,"C+ (Credit)",IF(D{row_idx}>=60,"C (Pass)",IF(D{row_idx}>=55,"D+ (Marginal Pass)",IF(D{row_idx}>=50,"D (Pass)","F (Fail)")))))))')
+
+    for c in [t1, t2, t3, t4, t5]:
+        c.font = total_font
+        c.fill = total_fill
+        c.border = double_bottom_border
+    t1.alignment = Alignment(horizontal="center", vertical="center")
+    t3.alignment = Alignment(horizontal="center", vertical="center")
+    t4.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[row_idx].height = 24
+
+    # Sign-off block
+    row_idx += 2
+    ws.cell(row=row_idx, column=1, value="Examiner / Supervisor Name:").font = bold_font
+    ws.cell(row=row_idx, column=2, value=supervisor_name).font = regular_font
+    ws.cell(row=row_idx, column=4, value="Date:").font = bold_font
+    ws.cell(row=row_idx, column=5, value=datetime.now().strftime("%d-%b-%Y")).font = regular_font
+
+    row_idx += 1
+    ws.cell(row=row_idx, column=1, value="Overall Recommendation:").font = bold_font
+    ws.cell(row=row_idx, column=2, value="[  ] Pass with Distinction   [  ] Pass without Revisions   [  ] Pass with Minor Revisions   [  ] Major Revisions / Resubmit   [  ] Fail").font = regular_font
+
+    # Column Widths
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 54
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 16
+    ws.column_dimensions["E"].width = 38
+
+    wb.save(target_path)
+
+
+def _get_paper_target_doc(paper, doc_type: str = "paper", user=None, db: Session | None = None) -> tuple[Path, str, str, str]:
+    base_dir = Path(paper.file_path).parent if paper and paper.file_path else Path("uploads/theses")
+    base_dir.mkdir(parents=True, exist_ok=True)
+    
+    if doc_type in {"excel", "marks_sheet", "examiner_results_excel"}:
+        target = base_dir / f"paper_{paper.id}_marks_sheet.xlsx"
+        if not target.exists():
+            student_user = db.query(User).filter(User.id == paper.created_by_id).first() if (db and paper.created_by_id) else None
+            _generate_excel_marks_sheet(target, paper, student_user=student_user, db=db)
+        return target, f"Paper_{paper.id}_Marks_Sheet.xlsx", "xlsx", "cell"
+        
+    elif doc_type in {"comments", "examiner_comments"}:
+        target = base_dir / f"paper_{paper.id}_comments.docx"
+        if not target.exists():
+            try:
+                import docx
+                doc = docx.Document()
+                doc.add_heading(f"Examiner Comments & Feedback — #{paper.id}", level=1)
+                doc.add_paragraph(f"Thesis Title: {paper.title}")
+                doc.save(target)
+            except Exception:
+                target.write_bytes(b"Examiner Comments Document\n")
+        return target, f"Paper_{paper.id}_Examiner_Comments.docx", "docx", "word"
+        
+    else:
+        file_path_obj = Path(paper.file_path) if paper.file_path else None
+        target = file_path_obj if (file_path_obj and file_path_obj.exists()) else (base_dir / f"paper_{paper.id}.docx")
+        file_name = paper.file_name or target.name
+        file_ext = (Path(file_name).suffix or "").lstrip(".").lower() or "docx"
+        doc_kind = "cell" if file_ext in {"xlsx", "xls", "csv"} else ("slide" if file_ext in {"pptx", "ppt"} else "word")
+        return target, file_name, file_ext, doc_kind
+
+
 @router.get("/papers/{paper_id}/editor-config")
 def get_editor_config(
     paper_id: int,
+    doc_type: str = Query("paper"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -1894,38 +2091,34 @@ def get_editor_config(
     paper = get_paper(db, paper_id)
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    if not paper.file_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
 
     # Basic access gate for editor config.
     if not current_user.is_admin and paper.created_by_id != current_user.id and paper.supervisor_id not in {None, current_user.id}:
-        if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "hod") and not has_role(db, current_user, "project_coordinator"):
+        if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "hod") and not has_role(db, current_user, "project_coordinator") and not has_role(db, current_user, "lecturer"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to access this document")
+
+    target_path, file_name, file_ext, doc_kind = _get_paper_target_doc(paper, doc_type, user=current_user, db=db)
 
     file_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="file"), safe="")
     callback_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="callback"), safe="")
     callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
     if settings.api_prefix and callback_base.endswith(settings.api_prefix):
         callback_base = callback_base[:-len(settings.api_prefix)].rstrip("/")
-    # OnlyOffice Document Server (running in Docker) downloads the file URL server-side.
-    # Use container-reachable base URL for both file and callback.
-    file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}"
-    callback_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/editor-callback?token={callback_token}"
-    file_name = paper.file_name or Path(paper.file_path).name
-    file_ext = (Path(file_name).suffix or "").lstrip(".").lower()
+    
+    file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}&doc_type={doc_type}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/editor-callback?token={callback_token}&doc_type={doc_type}"
 
-    file_path_obj = Path(paper.file_path) if paper.file_path else None
-    file_mtime = int(file_path_obj.stat().st_mtime) if (file_path_obj and file_path_obj.exists()) else 0
-    file_size = paper.file_size or (file_path_obj.stat().st_size if (file_path_obj and file_path_obj.exists()) else 0)
-    session_key = f"paper_{paper.id}_{file_size}_{file_mtime}"
+    file_mtime = int(target_path.stat().st_mtime) if (target_path and target_path.exists()) else 0
+    file_size = target_path.stat().st_size if (target_path and target_path.exists()) else 0
+    session_key = f"paper_{paper.id}_{doc_type}_{file_size}_{file_mtime}"
 
     config = {
-        "documentType": "word",
+        "documentType": doc_kind,
         "type": "desktop",
         "document": {
             "title": file_name,
             "url": file_url,
-            "fileType": file_ext or "docx",
+            "fileType": file_ext,
             "key": session_key,
         },
         "editorConfig": {
@@ -1953,11 +2146,40 @@ def get_editor_config(
     }
 
 
+@router.api_route("/papers/{paper_id}/file/public", methods=["GET", "HEAD"])
+def download_paper_file_public(
+    paper_id: int,
+    token: str = Query(..., min_length=20),
+    doc_type: str = Query("paper"),
+    db: Session = Depends(get_db),
+):
+    if not _verify_editor_token(token=token, paper_id=paper_id, action="file"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired file token")
+
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    target_path, file_name, file_ext, _ = _get_paper_target_doc(paper, doc_type, db=db)
+    if not target_path.exists() or not target_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
+
+    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if file_ext == "xlsx" else (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if file_ext == "docx" else "application/octet-stream"
+    )
+    return FileResponse(
+        path=target_path,
+        media_type=media_type,
+        filename=file_name,
+    )
+
+
 @router.post("/papers/{paper_id}/editor-callback")
 async def handle_editor_callback(
     paper_id: int,
     request: Request,
     token: str = Query(..., min_length=20),
+    doc_type: str = Query("paper"),
     db: Session = Depends(get_db),
 ):
     if not _verify_editor_token(token=token, paper_id=paper_id, action="callback"):
@@ -1966,8 +2188,6 @@ async def handle_editor_callback(
     paper = get_paper(db, paper_id)
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    if not paper.file_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
 
     try:
         data = await request.json()
@@ -1977,7 +2197,7 @@ async def handle_editor_callback(
     status_code = int(data.get("status", 0) or 0)
     download_url = data.get("url")
     if status_code in {2, 6} and isinstance(download_url, str) and download_url.strip():
-        target = Path(paper.file_path)
+        target, _, _, _ = _get_paper_target_doc(paper, doc_type, db=db)
         content = None
 
         # 1. Try fetching from internal ONLYOFFICE container port 8082
@@ -2006,9 +2226,10 @@ async def handle_editor_callback(
 
         try:
             target.write_bytes(content)
-            paper.file_size = len(content)
-            db.add(paper)
-            db.commit()
+            if doc_type == "paper":
+                paper.file_size = len(content)
+                db.add(paper)
+                db.commit()
         except Exception:
             return {"error": 1}
 
