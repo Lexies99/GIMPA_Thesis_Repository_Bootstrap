@@ -1654,3 +1654,16 @@ export async function apiGetDeanResultsExcelEditorConfig(accessToken: string): P
   return handleResponse<ApiEditorConfigResponse>(response)
 }
 
+export async function apiNotifyFeedbackSaved(
+  paperId: number,
+  docType: string,
+  accessToken: string,
+): Promise<{ message: string; paper_id: number }> {
+  const response = await fetch(`${apiBase}/papers/${paperId}/notify-feedback-saved?type=${encodeURIComponent(docType)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<{ message: string; paper_id: number }>(response)
+}
+
+

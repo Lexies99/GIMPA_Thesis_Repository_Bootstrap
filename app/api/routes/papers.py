@@ -246,6 +246,14 @@ def _notify_student(db: Session, paper: Paper, message: str) -> None:
             ntype="workflow_update",
             message=message,
         )
+        student_user = db.query(User).filter(User.id == paper.created_by_id).first()
+        if student_user and student_user.email:
+            send_notification_email(
+                to_email=student_user.email,
+                to_name=student_user.full_name or student_user.name,
+                subject=f"GIMPA Thesis Update: {paper.title}",
+                message=message,
+            )
         return
 
     # Fallback for imported/legacy records where created_by_id is missing:
@@ -259,7 +267,7 @@ def _notify_student(db: Session, paper: Paper, message: str) -> None:
         send_notification_email(
             to_email=email,
             to_name=(author.name if author else None),
-            subject="MURRS workflow update",
+            subject=f"GIMPA Thesis Update: {paper.title}",
             message=message,
         )
 
@@ -1965,6 +1973,37 @@ async def handle_editor_callback(
         except Exception:
             return {"error": 1}
     return {"error": 0}
+
+
+@router.post("/papers/{paper_id}/notify-feedback-saved")
+def notify_feedback_saved(
+    paper_id: int,
+    type: str = Query("comments"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    reviewer_name = current_user.full_name or current_user.email or "Your Supervisor / Reviewer"
+    type_label = "comments and annotations in ONLYOFFICE" if type == "comments" else ("marks and evaluation sheet" if "excel" in type else "qualitative feedback")
+
+    message = f"{reviewer_name} has reviewed and saved {type_label} on your thesis '{paper.title}'. Please log in to your student portal to review the feedback."
+    _notify_student(db, paper, message)
+
+    _record_workflow_event(
+        db,
+        paper_id=paper.id,
+        event_type="feedback_saved",
+        actor_id=current_user.id,
+        actor_role=current_user.role or "lecturer",
+        from_status=paper.status,
+        to_status=paper.status,
+        message=f"{reviewer_name} saved {type_label} via ONLYOFFICE Editor.",
+    )
+    db.commit()
+    return {"message": "Feedback saved and student notified successfully", "paper_id": paper.id}
 
 
 @router.post("/papers/{paper_id}/corrected-file", response_model=PaperRead)

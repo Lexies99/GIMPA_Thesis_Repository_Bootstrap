@@ -1,6 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { apiGetDeanResultsExcelEditorConfig, apiGetDepartmentResultsExcelEditorConfig, apiGetExaminerResultsExcelEditorConfig, apiGetPaperEditorConfig, apiGetStepEditorConfig } from '../lib/api'
+import {
+  apiGetDeanResultsExcelEditorConfig,
+  apiGetDepartmentResultsExcelEditorConfig,
+  apiGetExaminerResultsExcelEditorConfig,
+  apiGetPaperEditorConfig,
+  apiGetStepEditorConfig,
+  apiNotifyFeedbackSaved,
+} from '../lib/api'
 
 const ACCESS_TOKEN_KEY = 'murrs_access_token'
 
@@ -17,15 +24,44 @@ declare global {
 function OnlyOfficeEditor({
   documentServerUrl,
   config,
+  paperId,
+  docType,
   onError,
 }: {
   documentServerUrl: string
   config: Record<string, unknown>
+  paperId?: number
+  docType?: string
   onError: (msg: string) => void
 }) {
   const rid = useId()
   const containerId = `onlyoffice-editor-${rid.replace(/[:]/g, '')}`
   const editorRef = useRef<{ destroyEditor?: () => void } | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
+  const handleDone = async () => {
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+      if (token && paperId && Number.isFinite(paperId) && paperId > 0) {
+        await apiNotifyFeedbackSaved(paperId, docType || 'comments', token)
+        setSaveSuccess(true)
+      }
+    } catch (err) {
+      console.error('Failed to notify student:', err)
+    } finally {
+      setIsSaving(false)
+      window.onbeforeunload = null
+      setTimeout(() => {
+        if (window.opener) {
+          window.close()
+        } else {
+          window.location.href = '/approval-workflow'
+        }
+      }, 600)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -80,13 +116,20 @@ function OnlyOfficeEditor({
         </div>
         <button
           type="button"
-          onClick={() => {
-            window.onbeforeunload = null
-            window.close()
-          }}
-          className="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded transition flex items-center gap-1 shadow-sm cursor-pointer"
+          onClick={handleDone}
+          disabled={isSaving}
+          className="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white rounded transition flex items-center gap-1.5 shadow-sm cursor-pointer"
         >
-          ✓ Done (Close Window & Return)
+          {isSaving ? (
+            <>
+              <span className="inline-block animate-spin">⏳</span>
+              Saving & Notifying Student...
+            </>
+          ) : saveSuccess ? (
+            <>✓ Saved & Student Notified!</>
+          ) : (
+            <>✓ Done (Save & Notify Student)</>
+          )}
         </button>
       </header>
       <div className="flex-1 relative">
@@ -175,5 +218,16 @@ export default function EditorRoute() {
     )
   }
 
-  return <OnlyOfficeEditor documentServerUrl={documentServerUrl} config={config} onError={setError} />
+  const paperId = Number(searchParams.get('paperId') || '')
+  const docType = searchParams.get('type') || 'paper'
+
+  return (
+    <OnlyOfficeEditor
+      documentServerUrl={documentServerUrl}
+      config={config}
+      paperId={Number.isFinite(paperId) ? paperId : undefined}
+      docType={docType}
+      onError={setError}
+    />
+  )
 }
