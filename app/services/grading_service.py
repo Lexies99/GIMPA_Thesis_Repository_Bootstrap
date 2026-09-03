@@ -49,7 +49,7 @@ def classify_degree_level(
         return "MPhil"
     if any(k in combined for k in ["master", "msc", "mba", "ma ", "med", "mpa", "mph"]):
         return "Masters"
-    if any(k in combined for k in ["undergraduate", "bsc", "ba ", "llb", "bachelor", "degree", "diploma"]):
+    if any(k in combined for k in ["undergraduate", "bsc", "b.sc", "ba ", "b.a", "llb", "ll.b", "bachelor", "degree", "diploma", "beng", "b.eng"]):
         return "Undergraduate"
 
     return "Masters"

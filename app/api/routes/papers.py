@@ -102,6 +102,8 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user = None)
     internal_score = paper.internal_score if can_view_marks else None
     external_score = paper.external_score if can_view_marks else None
     examiner_result_file_name = paper.examiner_result_file_name if can_view_marks else None
+    internal_result_file_name = paper.internal_result_file_name if can_view_marks else None
+    external_result_file_name = paper.external_result_file_name if can_view_marks else None
     stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if (db and paper.created_by_id) else None
     degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
 
