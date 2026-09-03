@@ -203,6 +203,7 @@ class PaperRead(BaseModel):
     project_coordinator_approved_at: datetime | None = None
     hod_approved_at: datetime | None = None
     steps: list[StepRead] = Field(default_factory=list)
+    degree_level: str | None = None
 
     class Config:
         from_attributes = True

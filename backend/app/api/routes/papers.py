@@ -39,6 +39,7 @@ from app.services.paper_service import (
     review_paper,
 )
 from app.services.user_service import list_users, has_role, get_user_by_email, get_user_roles
+from app.services.grading_service import classify_degree_level
 
 router = APIRouter()
 UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "papers"
@@ -80,6 +81,42 @@ def _verify_editor_token(*, token: str, paper_id: int, action: str) -> bool:
     return hmac.compare_digest(token_sig, expected_sig)
 
 
+def _sanitize_examiner_feedback_for_student(text: str | None) -> str | None:
+    if not text:
+        return None
+    
+    lines = text.split("\n")
+    cleaned_lines = []
+    
+    for line in lines:
+        l_str = line.strip().replace("\r", "")
+        if not l_str:
+            continue
+        
+        # Strip examiner headers and brackets
+        l_clean = re.sub(r'\[[^\]]+\]\s*:?', '', l_str)
+        # Strip any score, mark, or grade patterns
+        l_clean = re.sub(r'-?\s*Final\s+Score:\s*[^•\n]+', '', l_clean, flags=re.IGNORECASE)
+        l_clean = re.sub(r'-?\s*Score:\s*[^•\n]+', '', l_clean, flags=re.IGNORECASE)
+        l_clean = re.sub(r'-?\s*Mark:\s*[^•\n]+', '', l_clean, flags=re.IGNORECASE)
+        l_clean = re.sub(r'\([A-Za-z\s+]+\)', '', l_clean)
+        
+        l_clean = l_clean.strip().lstrip("-").rstrip("-").rstrip(":").lstrip(":").strip()
+        if l_clean and l_clean not in {")", "(", "-", ":"}:
+            cleaned_lines.append(l_clean)
+            
+    dedup = []
+    seen = set()
+    for l in cleaned_lines:
+        if l not in seen:
+            seen.add(l)
+            dedup.append(l)
+            
+    if not dedup:
+        return None
+    return "[Examiner Evaluation & Required Corrections]\n" + "\n".join(dedup)
+
+
 def _clean_examiner_corrections(text: str | None) -> str | None:
     if not text:
         return text
@@ -97,7 +134,9 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user: User |
     # Check if user can view examiner marks/scores
     can_view_marks = False
     if current_user:
-        if getattr(current_user, "is_admin", False) or (db and has_role(db, current_user, "system_admin")):
+        if getattr(current_user, "is_admin", False) or (db and (has_role(db, current_user, "system_admin") or has_role(db, current_user, "dean") or has_role(db, current_user, "head_library"))):
+            can_view_marks = True
+        elif paper.internal_examiner_id == current_user.id or paper.external_examiner_id == current_user.id or paper.supervisor_id == current_user.id:
             can_view_marks = True
         elif db:
             user_dept = (current_user.department or "").strip().lower()
@@ -116,6 +155,17 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user: User |
     examiner_result_file_name = paper.examiner_result_file_name if can_view_marks else None
     internal_result_file_name = paper.internal_result_file_name if can_view_marks else None
     external_result_file_name = paper.external_result_file_name if can_view_marks else None
+
+    # Classify degree level
+    stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if (db and paper.created_by_id) else None
+    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
+
+    # Sanitize examiner corrections for student
+    raw_corrections = paper.examiner_corrections
+    if not can_view_marks and raw_corrections:
+        examiner_corrections = _sanitize_examiner_feedback_for_student(raw_corrections)
+    else:
+        examiner_corrections = raw_corrections
 
     steps_list = []
     from sqlalchemy.orm import object_session
@@ -167,9 +217,11 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user: User |
         ch3_supervisor_approved=paper.ch3_supervisor_approved,
         ch4_supervisor_approved=paper.ch4_supervisor_approved,
         ch5_supervisor_approved=paper.ch5_supervisor_approved,
+        combined_thesis_student_done=paper.combined_thesis_student_done,
+        combined_thesis_supervisor_approved=paper.combined_thesis_supervisor_approved,
         internal_score=internal_score,
         external_score=external_score,
-        examiner_corrections=_clean_examiner_corrections(paper.examiner_corrections),
+        examiner_corrections=examiner_corrections,
         examiner_result_file_name=examiner_result_file_name,
         internal_result_file_name=internal_result_file_name,
         external_result_file_name=external_result_file_name,
@@ -177,6 +229,7 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user: User |
         project_coordinator_approved_at=paper.project_coordinator_approved_at,
         hod_approved_at=paper.hod_approved_at,
         steps=steps_list,
+        degree_level=degree_level,
     )
 
 
@@ -3459,9 +3512,9 @@ def supervisor_approve_corrections(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
     
-    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin
+    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
     if not is_supervisor:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor can approve corrections")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor, HOD, or coordinator can approve corrections")
     
     paper.status = "phase5_pending_coordinator"
     db.add(paper)
@@ -3485,6 +3538,43 @@ def supervisor_approve_corrections(
         f"Supervisor approved corrections for '{paper.title}', awaiting final sign-off."
     )
     
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/supervisor-reject-corrections", response_model=PaperRead)
+def supervisor_reject_corrections(
+    paper_id: int,
+    feedback: str = Form("Corrections not satisfactorily addressed. Please review examiner comments and make required revisions."),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    
+    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+    if not is_supervisor:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor or HOD can request revisions")
+    
+    paper.status = "phase5_corrections"
+    if feedback.strip():
+        paper.review_comments = feedback.strip()
+    db.add(paper)
+    db.commit()
+    db.refresh(paper)
+    
+    # Notify student
+    if paper.created_by_id:
+        from app.models.thesis_system import Notification
+        notif = Notification(
+            user_id=paper.created_by_id,
+            title="Further Corrections Required",
+            message=f"Supervisor reviewed your resubmitted work for '{paper.title}' and requested further corrections: {feedback.strip()}",
+            ntype="workflow_update",
+        )
+        db.add(notif)
+        db.commit()
+        
     return _to_paper_read(paper, db, current_user)
 
 
