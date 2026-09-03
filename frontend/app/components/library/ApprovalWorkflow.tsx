@@ -458,7 +458,7 @@ export function ApprovalWorkflow() {
     setDialogOpen(true)
     setReviewError('')
     setReviewComments('')
-    setReviewDecision('')
+    setReviewDecision(isLibrarian ? 'publish' : '')
     setCorrectedFile(null)
     setCorrectedNote('')
 
@@ -552,15 +552,13 @@ export function ApprovalWorkflow() {
               {pendingSubmissions.length}
             </Badge>
           </TabsTrigger>
-          {!isLibrarian && (
-            <TabsTrigger value="approved" className="flex items-center gap-2">
-              <CheckCircle className="size-4" />
-              Approved
-              <Badge variant="secondary" className="ml-1">
-                {approvedPapers.length}
-              </Badge>
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="approved" className="flex items-center gap-2">
+            <CheckCircle className="size-4" />
+            {isLibrarian ? 'Published Repository Catalog' : 'Approved'}
+            <Badge variant="secondary" className="ml-1">
+              {approvedPapers.length}
+            </Badge>
+          </TabsTrigger>
           {!isLibrarian && (
             <TabsTrigger value="revision" className="flex items-center gap-2">
               <AlertCircle className="size-4" />
@@ -679,13 +677,10 @@ export function ApprovalWorkflow() {
                   <Button
                     size="sm"
                     className="btn-ta-purple text-xs flex items-center gap-1.5"
-                    onClick={() => {
-                      setSelectedPaper(paper)
-                      setDialogOpen(true)
-                    }}
+                    onClick={() => openReviewDialog(paper)}
                   >
                     <Eye className="size-3.5" />
-                    <span>Review Paper</span>
+                    <span>{isLibrarian ? 'Publish / Review Work' : 'Review Paper'}</span>
                   </Button>
                   <Button
                     size="sm"
@@ -709,8 +704,7 @@ export function ApprovalWorkflow() {
           ))}
         </TabsContent>
 
-        {!isLibrarian && (
-          <TabsContent value="approved" className="space-y-4">
+        <TabsContent value="approved" className="space-y-4">
             {(isHOD || isCoordinator || isAdmin) && (
               <Card className="border-primary/20 bg-primary/5">
                 <CardHeader className="pb-3">
@@ -784,7 +778,6 @@ export function ApprovalWorkflow() {
               ))
             )}
           </TabsContent>
-        )}
 
         {!isLibrarian && (
           <TabsContent value="revision" className="space-y-4">
@@ -2122,36 +2115,40 @@ export function ApprovalWorkflow() {
                 </div>
               )}
 
-              {!selectedPaper.status.startsWith('phase') && (
+              {(!selectedPaper.status.startsWith('phase') || isLibrarian || selectedPaper.status === 'phase5_approved_for_library') && (
                 <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="decision">{isLibrarian ? 'Publication Decision' : 'Review Decision'}</Label>
-                    <Select value={reviewDecision} onValueChange={setReviewDecision}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={isLibrarian ? 'Select publication action' : 'Select decision'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {isLibrarian ? (
-                          <>
-                            <SelectItem value="publish">Publish</SelectItem>
-                          </>
-                        ) : (
-                          <>
-                            <SelectItem value="approve">Approve</SelectItem>
-                            <SelectItem value="revision">Request Revisions</SelectItem>
-                            <SelectItem value="reject">Reject</SelectItem>
-                          </>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {isLibrarian ? (
+                    <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 space-y-2">
+                      <h4 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5 m-0">
+                        <CheckCircle className="size-4" />
+                        Final Publication to GIMPA Public Repository Catalog
+                      </h4>
+                      <p className="text-xs text-slate-300 m-0 leading-relaxed">
+                        This thesis has successfully completed all previous stages (Proposal Approval, Chapter Reviews, External & Internal Marking, Post-Exam Corrections, and Dual HOD / Coordinator Sign-off). Publishing will convert the submission to official PDF, assign a DOI, and make it publicly discoverable in the catalog.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <Label htmlFor="decision">Review Decision</Label>
+                      <Select value={reviewDecision} onValueChange={setReviewDecision}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select decision" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="approve">Approve</SelectItem>
+                          <SelectItem value="revision">Request Revisions</SelectItem>
+                          <SelectItem value="reject">Reject</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   <div>
-                    <Label htmlFor="comments">{isLibrarian ? 'Publication Notes' : 'Review Comments'}</Label>
+                    <Label htmlFor="comments">{isLibrarian ? 'Publication / Archival Notes (Optional)' : 'Review Comments'}</Label>
                     <Textarea
                       id="comments"
-                      placeholder={isLibrarian ? 'Optional notes for the author regarding publication...' : 'Provide detailed feedback for the author...'}
-                      rows={6}
+                      placeholder={isLibrarian ? 'Optional notes regarding publication or archiving...' : 'Provide detailed feedback for the author...'}
+                      rows={4}
                       value={reviewComments}
                       onChange={(e) => setReviewComments(e.target.value)}
                     />
@@ -2164,8 +2161,12 @@ export function ApprovalWorkflow() {
                     <Button variant="outline" onClick={handleCancel}>
                       Cancel
                     </Button>
-                    <Button onClick={() => void handleReview()} disabled={!reviewDecision || submittingReview}>
-                      {submittingReview ? 'Submitting...' : isLibrarian ? 'Publish Work' : 'Submit Review'}
+                    <Button
+                      onClick={() => void handleReview()}
+                      disabled={(!reviewDecision && !isLibrarian) || submittingReview}
+                      className={isLibrarian ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold' : ''}
+                    >
+                      {submittingReview ? 'Publishing...' : isLibrarian ? '🏛️ Publish Work to Public Catalog & Assign DOI' : 'Submit Review'}
                     </Button>
                   </div>
                 </div>

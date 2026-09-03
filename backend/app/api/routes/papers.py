@@ -267,7 +267,7 @@ def _notify_roles(
 
 
 def _resolve_reviewer_role(db: Session, user: User) -> str:
-    ordered_roles = ["librarian", "hod", "project_coordinator", "project_supervisor", "lecturer"]
+    ordered_roles = ["librarian", "head_library", "hod", "project_coordinator", "project_supervisor", "lecturer"]
     for role in ordered_roles:
         if has_role(db, user, role):
             return role
@@ -895,8 +895,14 @@ def read_pending_papers(
             .limit(200)
             .all()
         )
-    elif reviewer_role == "librarian":
-        papers = list_papers(db, status="approved_for_library", sort="newest", limit=200)
+    elif reviewer_role in {"librarian", "head_library"}:
+        papers = (
+            db.query(Paper)
+            .filter(Paper.status.in_(["approved_for_library", "phase5_approved_for_library"]))
+            .order_by(Paper.created_at.desc(), Paper.id.desc())
+            .limit(200)
+            .all()
+        )
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer role is not allowed")
     return [_to_paper_read(p, db) for p in papers]
@@ -906,7 +912,7 @@ def read_pending_papers(
 def read_reviewed_papers(
     db: Session = Depends(get_db),
     current_admin=Depends(get_current_reviewer),
-) -> list[PaperRead]:
+):
     reviewer_role = _resolve_reviewer_role(db, current_admin)
     reviewer_department = (current_admin.department or "").strip().lower()
     if reviewer_role in {"project_coordinator", "hod"} and not reviewer_department:
@@ -940,10 +946,10 @@ def read_reviewed_papers(
             .limit(200)
             .all()
         )
-    elif reviewer_role == "librarian":
+    elif reviewer_role in {"librarian", "head_library"}:
         papers = (
             db.query(Paper)
-            .filter(Paper.status == "approved", Paper.reviewed_by_id == current_admin.id)
+            .filter(Paper.status == "approved")
             .order_by(Paper.created_at.desc(), Paper.id.desc())
             .limit(200)
             .all()
@@ -1746,8 +1752,8 @@ def review_paper_endpoint(
             )
         return _to_paper_read(updated)
 
-    if reviewer_role == "librarian":
-        if paper.status != "approved_for_library":
+    if reviewer_role in {"librarian", "head_library"}:
+        if paper.status not in {"approved_for_library", "phase5_approved_for_library"}:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Paper is not awaiting librarian publishing")
         if payload.decision != "approve":
             raise HTTPException(
