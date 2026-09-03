@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useAuth } from '../../context/AuthContext'
 import { Bookmark, Download, Eye, Grid3x3, List, Search, Star, TrendingUp } from 'lucide-react'
 import { apiDownloadPaperFile, apiListPapers, apiTrackPaperView } from '../../lib/api'
+import { convertTextOrTopicToPdf } from '../../lib/pdfGenerator'
 import type { ApiPaper } from '../../lib/api'
 
 const ACCESS_TOKEN_KEY = 'murrs_access_token'
@@ -84,7 +85,18 @@ export function PublicCatalog() {
       return
     }
     try {
-      const { blob, filename } = await apiDownloadPaperFile(paperId, token)
+      const { blob: rawBlob, filename: rawFilename } = await apiDownloadPaperFile(paperId, token)
+      const currentPaper = papers.find((p) => p.id === paperId)
+      const { blob, filename } = await convertTextOrTopicToPdf(rawBlob, rawFilename, {
+        title: currentPaper?.title,
+        abstract: currentPaper?.abstract,
+        author: currentPaper?.authors?.map((a) => a.name).join(', ') || 'Student',
+        department: currentPaper?.discipline,
+        discipline: currentPaper?.discipline,
+        id: currentPaper?.id,
+        created_at: currentPaper?.created_at,
+        document_type: currentPaper?.document_type,
+      })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

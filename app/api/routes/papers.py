@@ -1884,6 +1884,8 @@ def get_editor_config(
     file_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="file"), safe="")
     callback_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="callback"), safe="")
     callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
+    if settings.api_prefix and callback_base.endswith(settings.api_prefix):
+        callback_base = callback_base[:-len(settings.api_prefix)].rstrip("/")
     # OnlyOffice Document Server (running in Docker) downloads the file URL server-side.
     # Use container-reachable base URL for both file and callback.
     file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}"

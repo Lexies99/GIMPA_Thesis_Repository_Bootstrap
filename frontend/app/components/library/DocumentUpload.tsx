@@ -9,6 +9,7 @@ import { Upload, FileText, X } from 'lucide-react';
 import { Progress } from '../ui/progress';
 import { Checkbox } from '../ui/checkbox';
 import { apiImportAccounts, apiListSupervisors, apiUploadPaper, type ApiImportAccountsSummary, type ApiUser } from '../../lib/api';
+import { createTopicPdfFile } from '../../lib/pdfGenerator';
 import { useAuth } from '../../context/AuthContext';
 
 const DISCIPLINES_BY_SCHOOL: Record<string, string[]> = {
@@ -252,7 +253,15 @@ export function DocumentUpload() {
     setIsUploading(true);
     setUploadProgress(25);
 
-    const fileToUpload = selectedFile || new File([`THESIS TOPIC SUBMISSION (PHASE 1)\nTitle: ${formData.title}\nDescription:\n${formData.abstract}`], `Topic_Submission_${Date.now()}.txt`, { type: 'text/plain' });
+    const fileToUpload = selectedFile || createTopicPdfFile({
+      title: formData.title,
+      abstract: formData.abstract,
+      authorName: authors.map((a) => a.name).filter(Boolean).join(', ') || user?.name || 'Student',
+      department: formData.discipline,
+      discipline: formData.discipline,
+      documentType: formData.documentType || 'thesis_topic',
+      workMode: workMode,
+    });
 
     try {
       const created = await apiUploadPaper(

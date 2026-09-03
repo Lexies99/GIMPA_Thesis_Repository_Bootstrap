@@ -25,7 +25,7 @@ const Select = ({ value, onValueChange, children, className, style, ...props }: 
   )
 }
 
-const SelectTrigger = ({ children }: { children: React.ReactNode }) => (
+const SelectTrigger = ({ children }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) => (
   <>{children}</>
 )
 

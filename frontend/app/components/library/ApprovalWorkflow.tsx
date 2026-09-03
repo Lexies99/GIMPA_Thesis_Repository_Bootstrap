@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Textarea } from '../ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
 import { useAuth } from '../../context/AuthContext'
-import { CheckCircle, Clock, FileText, Eye, MessageSquare, AlertCircle, ExternalLink, Shield, CheckSquare, Award, Download, Upload, FileSpreadsheet, FileCheck, FileEdit } from 'lucide-react'
+import { CheckCircle, Clock, FileText, Eye, MessageSquare, AlertCircle, AlertTriangle, ExternalLink, Shield, CheckSquare, Award, Download, Upload, FileSpreadsheet, FileCheck, FileEdit } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Label } from '../ui/label'
 import { Input } from '../ui/input'
@@ -43,6 +43,7 @@ import {
   apiAssignThirdExaminer,
 } from '../../lib/api'
 import { DocxViewer } from './DocxViewer'
+import { convertTextOrTopicToPdf } from '../../lib/pdfGenerator'
 import type { ApiPaper, ApiUser, ApiBulkAssignSummary, ApiStudentFeedbackResponse, ApiAdminMarkSheetResponse } from '../../lib/api'
 
 const ACCESS_TOKEN_KEY = 'murrs_access_token'
@@ -369,7 +370,23 @@ export function ApprovalWorkflow() {
 
     setDocumentLoading(true)
     try {
-      const { blob, filename } = await apiDownloadPaperFile(paperId, token)
+      const { blob: rawBlob, filename: rawFilename } = await apiDownloadPaperFile(paperId, token)
+
+      const authorDisplay =
+        selectedPaper?.authors?.map((a) => a.name).filter(Boolean).join(', ') || 'Student'
+
+      const { blob, filename } = await convertTextOrTopicToPdf(rawBlob, rawFilename, {
+        title: selectedPaper?.title,
+        abstract: selectedPaper?.abstract,
+        author: authorDisplay,
+        department: selectedPaper?.discipline,
+        discipline: selectedPaper?.discipline,
+        id: selectedPaper?.id,
+        created_at: selectedPaper?.created_at,
+        document_type: selectedPaper?.document_type,
+        status: selectedPaper?.status,
+      })
+
       const resolvedName =
         (filename && !/^paper-\d+$/i.test(filename) ? filename : '') ||
         selectedPaper?.file_name ||

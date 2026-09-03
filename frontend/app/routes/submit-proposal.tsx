@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../components/ui/checkbox';
 import { Progress } from '../components/ui/progress';
 import { apiUploadPaper } from '../lib/api';
+import { createTopicPdfFile } from '../lib/pdfGenerator';
 import { Library, ArrowLeft, Upload, FileText, X, AlertCircle, Sparkles } from 'lucide-react';
 
 const DISCIPLINES_BY_SCHOOL: Record<string, string[]> = {
@@ -208,8 +209,14 @@ export default function SubmitProposal() {
     }
     let fileToUpload = selectedFile;
     if (!fileToUpload) {
-      const topicContent = `THESIS TOPIC SUBMISSION (PHASE 1)\nTitle: ${formData.title}\nDescription:\n${formData.abstract}`;
-      fileToUpload = new File([topicContent], `Topic_Submission_${Date.now()}.txt`, { type: 'text/plain' });
+      fileToUpload = createTopicPdfFile({
+        title: formData.title,
+        abstract: formData.abstract,
+        authorName: user?.name || 'Student',
+        department: formData.discipline,
+        discipline: formData.discipline,
+        documentType: 'thesis_topic',
+      });
     }
     if (!formData.title.trim()) {
       setMessage('Project title is required.');
