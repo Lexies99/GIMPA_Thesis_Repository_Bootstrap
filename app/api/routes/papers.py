@@ -1910,9 +1910,10 @@ def get_editor_config(
     file_name = paper.file_name or Path(paper.file_path).name
     file_ext = (Path(file_name).suffix or "").lstrip(".").lower()
 
-    # Use a changing key per open session so OnlyOffice does not reuse stale
-    # cached document sessions/tokens from older attempts.
-    session_key = f"paper-{paper.id}-{paper.file_size or 0}-{int(datetime.now(timezone.utc).timestamp())}"
+    file_path_obj = Path(paper.file_path) if paper.file_path else None
+    file_mtime = int(file_path_obj.stat().st_mtime) if (file_path_obj and file_path_obj.exists()) else 0
+    file_size = paper.file_size or (file_path_obj.stat().st_size if (file_path_obj and file_path_obj.exists()) else 0)
+    session_key = f"paper_{paper.id}_{file_size}_{file_mtime}"
 
     config = {
         "documentType": "word",
@@ -1927,6 +1928,15 @@ def get_editor_config(
             "callbackUrl": callback_url,
             "mode": "edit",
             "lang": "en",
+            "coEditing": {
+                "mode": "fast",
+                "change": True,
+            },
+            "customization": {
+                "autosave": True,
+                "forcesave": True,
+                "comments": True,
+            },
             "user": {
                 "id": str(current_user.id),
                 "name": current_user.full_name or current_user.email,
@@ -1988,6 +1998,23 @@ def notify_feedback_saved(
 
     reviewer_name = current_user.full_name or current_user.email or "Your Supervisor / Reviewer"
     type_label = "comments and annotations in ONLYOFFICE" if type == "comments" else ("marks and evaluation sheet" if "excel" in type else "qualitative feedback")
+
+    # Trigger ONLYOFFICE forcesave to immediately flush all comments/edits to disk
+    file_path_obj = Path(paper.file_path) if paper.file_path else None
+    file_mtime = int(file_path_obj.stat().st_mtime) if (file_path_obj and file_path_obj.exists()) else 0
+    file_size = paper.file_size or (file_path_obj.stat().st_size if (file_path_obj and file_path_obj.exists()) else 0)
+    session_key = f"paper_{paper.id}_{file_size}_{file_mtime}"
+    try:
+        req_data = json.dumps({"c": "forcesave", "key": session_key}).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8082/coauthoring/CommandService.ashx",
+            data=req_data,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            pass
+    except Exception as e:
+        logger.warning(f"ONLYOFFICE forcesave trigger: {e}")
 
     message = f"{reviewer_name} has reviewed and saved {type_label} on your thesis '{paper.title}'. Please log in to your student portal to review the feedback."
     _notify_student(db, paper, message)
