@@ -727,7 +727,16 @@ def read_pending_papers(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer department is not configured")
     if reviewer_role in {"lecturer", "project_supervisor", "external_examiner"}:
         supervisor_cond = (
-            Paper.status.in_({"pending_lecturer", "phase3_chapters", "phase5_pending_supervisor"})
+            Paper.status.in_({
+                "pending_lecturer",
+                "phase1_proposal_submitted",
+                "phase2_proposal_submitted",
+                "phase2_pending_supervisor",
+                "phase3_chapters",
+                "phase3_steps_in_progress",
+                "phase5_pending_supervisor",
+                "phase5_corrections",
+            })
         )
         if reviewer_department:
             supervisor_cond = supervisor_cond & (
@@ -742,7 +751,7 @@ def read_pending_papers(
             supervisor_cond = supervisor_cond & (Paper.supervisor_id == current_admin.id)
             
         examiner_cond = (
-            (Paper.status == "phase4_marking")
+            (Paper.status.in_({"phase4_marking", "phase4_pending_examiners"}))
             & (
                 (Paper.internal_examiner_id == current_admin.id)
                 | (Paper.external_examiner_id == current_admin.id)
