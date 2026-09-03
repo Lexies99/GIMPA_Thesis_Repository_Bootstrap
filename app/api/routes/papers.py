@@ -1,5 +1,5 @@
-from __future__ import annotations
-
+import io
+import csv
 import json
 import hashlib
 import hmac
@@ -12,8 +12,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import case, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -39,7 +39,7 @@ from app.services.paper_service import (
     review_paper,
 )
 from app.services.user_service import list_users, has_role, get_user_by_email, get_user_roles
-from app.services.grading_service import classify_degree_level, calculate_thesis_examination_score
+from app.services.grading_service import classify_degree_level
 
 router = APIRouter()
 UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "papers"
@@ -117,15 +117,24 @@ def _sanitize_examiner_feedback_for_student(text: str | None) -> str | None:
     return "[Examiner Evaluation & Required Corrections]\n" + "\n".join(dedup)
 
 
-def _to_paper_read(
-    paper: Paper,
-    db: Session | None = None,
-    current_user: User | None = None,
-) -> PaperRead:
+def _clean_examiner_corrections(text: str | None) -> str | None:
+    if not text:
+        return text
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    seen = set()
+    deduped = []
+    for line in lines:
+        if line not in seen:
+            seen.add(line)
+            deduped.append(line)
+    return "\n\n".join(deduped)
+
+
+def _to_paper_read(paper: Paper, db: Session | None = None, current_user: User | None = None) -> PaperRead:
     # Check if user can view examiner marks/scores
     can_view_marks = False
     if current_user:
-        if current_user.is_admin or has_role(db, current_user, "dean") or has_role(db, current_user, "head_library"):
+        if getattr(current_user, "is_admin", False) or (db and (has_role(db, current_user, "system_admin") or has_role(db, current_user, "dean") or has_role(db, current_user, "head_library"))):
             can_view_marks = True
         elif paper.internal_examiner_id == current_user.id or paper.external_examiner_id == current_user.id or paper.supervisor_id == current_user.id:
             can_view_marks = True
@@ -146,15 +155,26 @@ def _to_paper_read(
     examiner_result_file_name = paper.examiner_result_file_name if can_view_marks else None
     internal_result_file_name = paper.internal_result_file_name if can_view_marks else None
     external_result_file_name = paper.external_result_file_name if can_view_marks else None
+
+    # Classify degree level
     stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if (db and paper.created_by_id) else None
     degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
 
-    # Sanitize examiner feedback for student
+    # Sanitize examiner corrections for student
     raw_corrections = paper.examiner_corrections
     if not can_view_marks and raw_corrections:
         examiner_corrections = _sanitize_examiner_feedback_for_student(raw_corrections)
     else:
         examiner_corrections = raw_corrections
+
+    steps_list = []
+    from sqlalchemy.orm import object_session
+    session = db or object_session(paper)
+    if session:
+        from app.models.thesis_system import Step
+        raw_steps = session.query(Step).filter(Step.thesis_id == paper.id).order_by(Step.step_number.asc()).all()
+        from app.schemas.paper import StepRead
+        steps_list = [StepRead.model_validate(s) for s in raw_steps]
 
     return PaperRead(
         id=paper.id,
@@ -208,6 +228,7 @@ def _to_paper_read(
         lecturer_approved_at=paper.lecturer_approved_at,
         project_coordinator_approved_at=paper.project_coordinator_approved_at,
         hod_approved_at=paper.hod_approved_at,
+        steps=steps_list,
         degree_level=degree_level,
     )
 
@@ -246,7 +267,7 @@ def _notify_roles(
 
 
 def _resolve_reviewer_role(db: Session, user: User) -> str:
-    ordered_roles = ["librarian", "hod", "project_coordinator", "project_supervisor", "lecturer"]
+    ordered_roles = ["librarian", "head_library", "hod", "project_coordinator", "project_supervisor", "lecturer"]
     for role in ordered_roles:
         if has_role(db, user, role):
             return role
@@ -262,8 +283,8 @@ def _can_submit_paper(db: Session, user: User) -> bool:
 
 
 def _doi_prefix() -> str:
-    prefix = (settings.doi_prefix or "10.99999").strip().rstrip("/")
-    return prefix or "10.99999"
+    prefix = getattr(settings, "doi_prefix", None) or "10.99999"
+    return str(prefix).strip().rstrip("/") or "10.99999"
 
 
 def _slug_doi_part(value: str | None, fallback: str) -> str:
@@ -299,14 +320,6 @@ def _notify_student(db: Session, paper: Paper, message: str) -> None:
             ntype="workflow_update",
             message=message,
         )
-        student_user = db.query(User).filter(User.id == paper.created_by_id).first()
-        if student_user and student_user.email:
-            send_notification_email(
-                to_email=student_user.email,
-                to_name=student_user.full_name or student_user.name,
-                subject=f"GIMPA Thesis Update: {paper.title}",
-                message=message,
-            )
         return
 
     # Fallback for imported/legacy records where created_by_id is missing:
@@ -320,7 +333,7 @@ def _notify_student(db: Session, paper: Paper, message: str) -> None:
         send_notification_email(
             to_email=email,
             to_name=(author.name if author else None),
-            subject=f"GIMPA Thesis Update: {paper.title}",
+            subject="MURRS workflow update",
             message=message,
         )
 
@@ -743,16 +756,16 @@ def get_pipeline_metrics(
             item["milestone_status"] = "Phase 1 — Proposal Submitted"
             phases["phase1_proposals"]["students"].append(item)
             phases["phase1_proposals"]["count"] += 1
-        elif status in {"pending_coordinator", "pending_hod_and_coordinator", "phase2_pending_coordinator", "phase2_pending_supervisor"}:
-            item["milestone_status"] = "Phase 2 — Pending Allocation"
+        elif status in {"phase1_topic_accepted", "phase2_proposal_submitted", "phase2_proposal_accepted", "pending_coordinator", "pending_hod_and_coordinator", "phase2_pending_coordinator", "phase2_pending_supervisor"}:
+            item["milestone_status"] = "Phase 2 — Proposal & Allocation"
             phases["phase2_allocation"]["students"].append(item)
             phases["phase2_allocation"]["count"] += 1
-        elif status in {"pending_lecturer", "revision", "phase3_chapters"}:
-            item["milestone_status"] = "Phase 3 — Chapter Review"
+        elif status in {"pending_lecturer", "revision", "phase3_chapters", "phase3_steps_in_progress"}:
+            item["milestone_status"] = "Phase 3 — Chapter Writing & Review"
             phases["phase3_chapters"]["students"].append(item)
             phases["phase3_chapters"]["count"] += 1
         elif status in {"pending_examiner", "phase4_pending_examiners", "phase4_marking"}:
-            item["milestone_status"] = "Phase 4 — Examination"
+            item["milestone_status"] = "Phase 4 — Examination & Marking"
             phases["phase4_examination"]["students"].append(item)
             phases["phase4_examination"]["count"] += 1
         elif status in {
@@ -764,12 +777,13 @@ def get_pipeline_metrics(
             "phase5_pending_hod",
             "phase5_pending_hod_and_coordinator",
             "phase5_approved_for_library",
+            "phase5_published",
         }:
-            item["milestone_status"] = "Phase 5 — Final Sign-off"
+            item["milestone_status"] = "Phase 5 — Corrections & Final Sign-off"
             phases["phase5_signoff"]["students"].append(item)
             phases["phase5_signoff"]["count"] += 1
         else:
-            item["milestone_status"] = f"Phase 3 — {p.status}"
+            item["milestone_status"] = f"In Progress ({p.status})"
             phases["phase3_chapters"]["students"].append(item)
             phases["phase3_chapters"]["count"] += 1
 
@@ -786,17 +800,23 @@ def read_pending_papers(
     reviewer_department = (current_admin.department or "").strip().lower()
     if reviewer_role in {"project_coordinator", "hod"} and not reviewer_department:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer department is not configured")
+    # Universal examiner condition: Any paper where current_admin is assigned as examiner during Phase 4 marking
+    assigned_as_examiner_cond = (
+        (Paper.status == "phase4_marking")
+        & (
+            (Paper.internal_examiner_id == current_admin.id)
+            | (Paper.external_examiner_id == current_admin.id)
+        )
+    )
+
     if reviewer_role in {"lecturer", "project_supervisor", "external_examiner"}:
         supervisor_cond = (
             Paper.status.in_({
                 "pending_lecturer",
-                "phase1_proposal_submitted",
                 "phase2_proposal_submitted",
-                "phase2_pending_supervisor",
                 "phase3_chapters",
-                "phase3_steps_in_progress",
+                "phase3_steps_in_progress",  # thesis visible after first step submitted
                 "phase5_pending_supervisor",
-                "phase5_corrections",
             })
         )
         if reviewer_department:
@@ -812,7 +832,7 @@ def read_pending_papers(
             supervisor_cond = supervisor_cond & (Paper.supervisor_id == current_admin.id)
             
         examiner_cond = (
-            (Paper.status.in_({"phase4_marking", "phase4_pending_examiners"}))
+            (Paper.status == "phase4_marking")
             & (
                 (Paper.internal_examiner_id == current_admin.id)
                 | (Paper.external_examiner_id == current_admin.id)
@@ -830,16 +850,22 @@ def read_pending_papers(
             db.query(Paper)
             .join(User, Paper.created_by_id == User.id, isouter=True)
             .filter(
-                ((Paper.status == "pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
-                | (Paper.status == "pending_coordinator")
-                | (Paper.status == "phase1_proposal_submitted")
-                | (Paper.status == "phase2_pending_coordinator")
-                | (Paper.status == "phase2_pending_supervisor")
-                | (Paper.status == "phase4_pending_examiners")
-                | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
-                | (Paper.status == "phase5_pending_coordinator")
+                assigned_as_examiner_cond
+                | (
+                    (
+                        ((Paper.status == "pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
+                        | (Paper.status == "pending_coordinator")
+                        | (Paper.status == "phase1_proposal_submitted")
+                        | (Paper.status == "phase2_pending_coordinator")
+                        | (Paper.status == "phase2_pending_supervisor")
+                        | (Paper.status == "phase4_pending_examiners")
+                        | (Paper.status == "phase4_marking")
+                        | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
+                        | (Paper.status == "phase5_pending_coordinator")
+                    )
+                    & (func.lower(func.coalesce(User.department, "")) == reviewer_department)
+                )
             )
-            .filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
             .order_by(Paper.created_at.desc(), Paper.id.desc())
             .limit(200)
             .all()
@@ -849,32 +875,44 @@ def read_pending_papers(
             db.query(Paper)
             .join(User, Paper.created_by_id == User.id, isouter=True)
             .filter(
-                ((Paper.status == "pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
-                | (Paper.status == "pending_hod")
-                | (Paper.status == "phase1_proposal_submitted")
-                | (Paper.status == "phase2_pending_coordinator")
-                | (Paper.status == "phase2_pending_supervisor")
-                | (Paper.status == "phase4_pending_examiners")
-                | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
-                | (Paper.status == "phase5_pending_hod")
+                assigned_as_examiner_cond
+                | (
+                    (
+                        ((Paper.status == "pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
+                        | (Paper.status == "pending_hod")
+                        | (Paper.status == "phase1_proposal_submitted")
+                        | (Paper.status == "phase2_pending_coordinator")
+                        | (Paper.status == "phase2_pending_supervisor")
+                        | (Paper.status == "phase4_pending_examiners")
+                        | (Paper.status == "phase4_marking")
+                        | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
+                        | (Paper.status == "phase5_pending_hod")
+                    )
+                    & (func.lower(func.coalesce(User.department, "")) == reviewer_department)
+                )
             )
-            .filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
             .order_by(Paper.created_at.desc(), Paper.id.desc())
             .limit(200)
             .all()
         )
-    elif reviewer_role == "librarian":
-        papers = list_papers(db, status="approved_for_library", sort="newest", limit=200)
+    elif reviewer_role in {"librarian", "head_library"}:
+        papers = (
+            db.query(Paper)
+            .filter(Paper.status.in_(["approved_for_library", "phase5_approved_for_library"]))
+            .order_by(Paper.created_at.desc(), Paper.id.desc())
+            .limit(200)
+            .all()
+        )
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer role is not allowed")
-    return [_to_paper_read(p) for p in papers]
+    return [_to_paper_read(p, db) for p in papers]
 
 
 @router.get("/papers/reviewed", response_model=list[PaperRead])
 def read_reviewed_papers(
     db: Session = Depends(get_db),
     current_admin=Depends(get_current_reviewer),
-) -> list[PaperRead]:
+):
     reviewer_role = _resolve_reviewer_role(db, current_admin)
     reviewer_department = (current_admin.department or "").strip().lower()
     if reviewer_role in {"project_coordinator", "hod"} and not reviewer_department:
@@ -908,10 +946,10 @@ def read_reviewed_papers(
             .limit(200)
             .all()
         )
-    elif reviewer_role == "librarian":
+    elif reviewer_role in {"librarian", "head_library"}:
         papers = (
             db.query(Paper)
-            .filter(Paper.status == "approved", Paper.reviewed_by_id == current_admin.id)
+            .filter(Paper.status == "approved")
             .order_by(Paper.created_at.desc(), Paper.id.desc())
             .limit(200)
             .all()
@@ -919,7 +957,7 @@ def read_reviewed_papers(
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer role is not allowed")
 
-    return [_to_paper_read(p) for p in papers]
+    return [_to_paper_read(p, db) for p in papers]
 
 
 @router.get("/papers/department/supervisor-reviewed", response_model=list[PaperRead])
@@ -988,7 +1026,7 @@ def read_department_supervisor_reviewed_papers(
         .limit(500)
         .all()
     )
-    return [_to_paper_read(p) for p in papers]
+    return [_to_paper_read(p, db) for p in papers]
 
 
 @router.get("/papers/department/supervisor-review-summary", response_model=list[SupervisorReviewSummary])
@@ -1018,29 +1056,37 @@ def read_department_supervisor_review_summary(
         )
     ]
 
-    supervisor_ids: set[int] = set(
-        int(row[0])
-        for row in (
+    supervisor_ids: set[int] = set()
+
+    # 1. Department Supervisors mapping table
+    if dept_ids:
+        dept_sup_rows = (
             db.query(DepartmentSupervisor.supervisor_user_id)
             .filter(
-                DepartmentSupervisor.department_id.in_(dept_ids) if dept_ids else False,
+                DepartmentSupervisor.department_id.in_(dept_ids),
                 DepartmentSupervisor.active.is_(True),
             )
             .all()
         )
-    )
+        supervisor_ids.update(int(row[0]) for row in dept_sup_rows)
 
-    fallback_project_supervisors = (
-        db.query(User.id)
-        .join(UserRole, UserRole.user_id == User.id)
-        .filter(
-            func.lower(func.coalesce(User.department, "")) == reviewer_department,
-            func.lower(UserRole.role) == "project_supervisor",
-            User.is_active.is_(True),
-        )
-        .all()
+    # 2. Users with supervisor/lecturer roles
+    query_users = db.query(User.id).filter(User.is_active.is_(True))
+    if not current_user.is_admin and reviewer_department:
+        query_users = query_users.filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
+    
+    query_users = query_users.filter(
+        func.lower(User.role).in_(["project_supervisor", "lecturer", "hod", "project_coordinator"])
     )
-    supervisor_ids.update(int(row[0]) for row in fallback_project_supervisors)
+    supervisor_ids.update(int(row[0]) for row in query_users.all())
+
+    # 3. Any user assigned as supervisor_id on papers in the department
+    paper_sups = db.query(Paper.supervisor_id).filter(Paper.supervisor_id.isnot(None))
+    if not current_user.is_admin and reviewer_department:
+        paper_sups = paper_sups.join(User, Paper.created_by_id == User.id).filter(
+            func.lower(func.coalesce(User.department, "")) == reviewer_department
+        )
+    supervisor_ids.update(int(row[0]) for row in paper_sups.all())
 
     if not supervisor_ids:
         return []
@@ -1062,8 +1108,6 @@ def read_department_supervisor_review_summary(
         .join(User, User.id == Paper.created_by_id)
         .filter(
             PaperReviewLog.reviewer_id.in_(list(supervisor_ids)),
-            func.lower(func.coalesce(PaperReviewLog.reviewer_role, "")).in_(["lecturer", "project_supervisor"]),
-            func.lower(func.coalesce(User.department, "")) == reviewer_department,
             func.lower(func.coalesce(User.role, "")).in_(["student", "member"]),
         )
         .group_by(PaperReviewLog.reviewer_id)
@@ -1074,17 +1118,56 @@ def read_department_supervisor_review_summary(
         int(row[0]): (int(row[1] or 0), int(row[2] or 0)) for row in review_rows
     }
 
+    # Also count assigned papers per supervisor for accurate reviews & approvals count
+    assigned_paper_counts = (
+        db.query(
+            Paper.supervisor_id,
+            func.count(Paper.id).label("assigned_total"),
+            func.sum(
+                case(
+                    (
+                        Paper.status.in_(
+                            [
+                                "phase5_pending_supervisor",
+                                "phase5_pending_coordinator",
+                                "phase5_pending_hod",
+                                "phase5_pending_hod_and_coordinator",
+                                "phase5_approved_for_library",
+                                "approved",
+                                "phase5_published",
+                            ]
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("approved_total"),
+        )
+        .filter(Paper.supervisor_id.in_(list(supervisor_ids)))
+        .group_by(Paper.supervisor_id)
+        .all()
+    )
+    assigned_dict = {
+        int(row[0]): (int(row[1] or 0), int(row[2] or 0)) for row in assigned_paper_counts if row[0] is not None
+    }
+
     summary: list[SupervisorReviewSummary] = []
     for supervisor in supervisors:
-        reviews_done, approvals_done = counts_by_supervisor.get(supervisor.id, (0, 0))
+        log_reviews, log_approvals = counts_by_supervisor.get(supervisor.id, (0, 0))
+        ass_total, ass_approved = assigned_dict.get(supervisor.id, (0, 0))
+        
+        total_reviews = max(log_reviews, ass_total)
+        total_approvals = max(log_approvals, ass_approved)
+
         summary.append(
             SupervisorReviewSummary(
                 supervisor_user_id=supervisor.id,
                 supervisor_name=supervisor.full_name,
                 supervisor_email=supervisor.email,
                 department=supervisor.department,
-                reviews_done=reviews_done,
-                approvals_done=approvals_done,
+                reviews_done=total_reviews,
+                approvals_done=total_approvals,
+                students_count=ass_total,
             )
         )
 
@@ -1669,8 +1752,8 @@ def review_paper_endpoint(
             )
         return _to_paper_read(updated)
 
-    if reviewer_role == "librarian":
-        if paper.status != "approved_for_library":
+    if reviewer_role in {"librarian", "head_library"}:
+        if paper.status not in {"approved_for_library", "phase5_approved_for_library"}:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Paper is not awaiting librarian publishing")
         if payload.decision != "approve":
             raise HTTPException(
@@ -1749,9 +1832,111 @@ def track_paper_download(
     return _to_paper_read(increment_download(db, paper))
 
 
-@router.api_route("/papers/{paper_id}/file", methods=["GET", "HEAD"])
 @router.api_route("/papers/{paper_id}/binary", methods=["GET", "HEAD"])
 def download_paper_file(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    if not paper.file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
+
+    # ---------------------------------------------------------------
+    # Phase-aware file selection:
+    # Phase 2+ means the student has submitted a Proposal — serve the
+    # latest accepted proposal file (or latest submitted if not yet accepted).
+    # Phase 1 (topic submission) always serves the original file_path.
+    # ---------------------------------------------------------------
+    PROPOSAL_PHASES = {
+        "phase2_proposal_submitted", "phase2_proposal_accepted",
+        "phase3_chapters", "phase3_steps_in_progress", "phase3_all_steps_approved",
+        "phase4_pending_examiners", "phase4_marking", "phase4_examination_completed",
+        "phase5_corrections", "phase5_pending_supervisor", "phase5_pending_coordinator",
+        "phase5_pending_hod", "phase5_pending_hod_and_coordinator",
+        "phase5_approved_for_library", "phase5_published",
+    }
+
+    resolved_file_path = paper.file_path
+    resolved_file_name = paper.file_name
+
+    if paper.status in PROPOSAL_PHASES:
+        from app.models.thesis_system import Proposal
+        # Prefer accepted proposal, fallback to latest submitted
+        accepted_proposal = (
+            db.query(Proposal)
+            .filter(Proposal.thesis_id == paper.id, Proposal.status == "accepted")
+            .order_by(Proposal.version.desc())
+            .first()
+        )
+        latest_proposal = accepted_proposal or (
+            db.query(Proposal)
+            .filter(Proposal.thesis_id == paper.id)
+            .order_by(Proposal.version.desc())
+            .first()
+        )
+        if latest_proposal and latest_proposal.file_url:
+            proposal_path = Path(latest_proposal.file_url)
+            if proposal_path.exists() and proposal_path.is_file():
+                resolved_file_path = str(proposal_path)
+                resolved_file_name = f"Proposal_v{latest_proposal.version}_{paper.title}.docx"
+
+    path = Path(resolved_file_path)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
+
+    # Compile any database annotations/comments into the downloaded docx document
+    from app.services.annotation_service import get_paper_annotations, compile_comments_to_docx
+    annotations = get_paper_annotations(db, paper_id)
+    download_path = Path(compile_comments_to_docx(resolved_file_path, annotations))
+
+    download_name = resolved_file_name or download_path.name
+
+    increment_download(db, paper)
+    return FileResponse(
+        path=download_path,
+        media_type=paper.mime_type or "application/octet-stream",
+        filename=download_name,
+    )
+
+
+@router.api_route("/papers/{paper_id}/proposal-file", methods=["GET", "HEAD"])
+def download_proposal_file(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Download the latest proposal file for a thesis (Phase 2+)."""
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    from app.models.thesis_system import Proposal
+    latest_proposal = (
+        db.query(Proposal)
+        .filter(Proposal.thesis_id == paper.id)
+        .order_by(Proposal.version.desc())
+        .first()
+    )
+    if not latest_proposal or not latest_proposal.file_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No proposal file found for this thesis")
+
+    path = Path(latest_proposal.file_url)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proposal file not found on disk")
+
+    download_name = f"Proposal_v{latest_proposal.version}_{paper.title}.docx"
+    return FileResponse(
+        path=path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=download_name,
+    )
+
+
+@router.api_route("/papers/{paper_id}/file", methods=["GET", "HEAD"])
+def download_paper_file_legacy(
     paper_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -1905,243 +2090,425 @@ def download_paper_feedback_file(
     )
 
 
+def _build_multi_cert_excel_workbook(target_path: Path, sheet_prefix: str, papers_list: list) -> None:
+    """Builds an ONLYOFFICE Excel workbook where each Certification Type has its own dedicated worksheet tab."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    
+    def classify_cert(p):
+        dt = (str(getattr(p, "document_type", "") or "") + " " + str(getattr(p, "publication_type", "") or "") + " " + str(getattr(p, "discipline", "") or "")).lower()
+        if "phd" in dt or "doctor" in dt:
+            return "PhD"
+        elif "mphil" in dt:
+            return "MPhil"
+        elif "master" in dt or "msc" in dt or "mba" in dt or "ma " in dt or "med" in dt:
+            return "Masters (MSc-MBA)"
+        else:
+            return "Undergraduate (BSc-BA)"
+
+    headers = [
+        "Paper ID", "Certification Type", "Student Name", "Thesis Title", "Discipline / Dept",
+        "Current Status", "Internal Score (0-100)", "External Score (0-100)",
+        "Overall Grade / Rec", "General Comments"
+    ]
+
+    categories = [
+        (f"All {sheet_prefix} Results", papers_list),
+        ("Undergraduate (BSc-BA)", [p for p in papers_list if classify_cert(p) == "Undergraduate (BSc-BA)"]),
+        ("Masters (MSc-MBA)", [p for p in papers_list if classify_cert(p) == "Masters (MSc-MBA)"]),
+        ("MPhil", [p for p in papers_list if classify_cert(p) == "MPhil"]),
+        ("PhD", [p for p in papers_list if classify_cert(p) == "PhD"]),
+    ]
+
+    first_sheet = True
+    for cat_name, cat_papers in categories:
+        if first_sheet:
+            ws = wb.active
+            ws.title = cat_name[:31]
+            first_sheet = False
+        else:
+            ws = wb.create_sheet(title=cat_name[:31])
+
+        ws.append(headers)
+        for p in cat_papers:
+            s_name = p.authors[0].name if p.authors else "Student"
+            c_type = classify_cert(p)
+            dept_name = p.discipline or (p.department.name if getattr(p, "department", None) else "")
+            ws.append([
+                p.id,
+                c_type,
+                s_name,
+                p.title,
+                dept_name,
+                p.status,
+                p.internal_score if p.internal_score is not None else "",
+                p.external_score if p.external_score is not None else "",
+                "Pass",
+                p.review_comments or ""
+            ])
+            
+    wb.save(target_path)
+
+
+def _get_target_doc_path(paper, doc_type: str, user=None, assigned_papers=None, db: Session | None = None) -> tuple[Path, str, str, str]:
+    """Returns (file_path, file_name, file_ext, document_type) for ONLYOFFICE."""
+    base_dir = Path(paper.file_path).parent if paper and paper.file_path else Path("uploads/examiners")
+    base_dir.mkdir(parents=True, exist_ok=True)
+    
+    student_name = "Student"
+    if paper and paper.authors:
+        student_name = paper.authors[0].name
+
+    if doc_type == "comments" and paper:
+        target = base_dir / f"paper_{paper.id}_comments.docx"
+        file_display_name = f"Paper_{paper.id}_Examiner_Comments.docx"
+
+        rebuild_needed = not target.exists()
+        if target.exists():
+            try:
+                import docx
+                existing_paragraphs = [p.text for p in docx.Document(target).paragraphs if p.text.strip()]
+                existing_fulltext = "\n".join(existing_paragraphs)
+                if "Examiner Evaluation Summary:" in existing_fulltext or "No detailed qualitative text notes entered yet" in existing_fulltext or (paper and paper.examiner_corrections and paper.examiner_corrections.strip() not in existing_fulltext):
+                    rebuild_needed = True
+            except Exception:
+                rebuild_needed = True
+
+        if rebuild_needed:
+            try:
+                import docx
+                doc = docx.Document()
+                doc.add_heading("Examiner Review & Qualitative Comments", level=1)
+                doc.add_paragraph(f"Paper ID: #{paper.id}")
+                doc.add_paragraph(f"Thesis Title: {paper.title}")
+                doc.add_paragraph(f"Student Author: {student_name}")
+                doc.add_paragraph("--------------------------------------------------------------------------------")
+                doc.add_heading("Qualitative Feedback & Required Revisions:", level=2)
+                
+                int_comments = ""
+                ext_comments = ""
+                if db:
+                    from app.models.thesis_system import ExaminationResult
+                    results = db.query(ExaminationResult).filter(ExaminationResult.thesis_id == paper.id).all()
+                    for r in results:
+                        if r.examiner_type == "internal" or r.examiner_id == paper.internal_examiner_id:
+                            if r.general_comments and r.general_comments.strip():
+                                int_comments = r.general_comments.strip()
+                        elif r.examiner_type == "external" or r.examiner_id == paper.external_examiner_id:
+                            if r.general_comments and r.general_comments.strip():
+                                ext_comments = r.general_comments.strip()
+
+                has_notes = False
+                if int_comments:
+                    doc.add_paragraph(f"Internal Examiner Remarks:\n{int_comments}")
+                    has_notes = True
+                if ext_comments and ext_comments != int_comments:
+                    doc.add_paragraph(f"External Examiner Remarks:\n{ext_comments}")
+                    has_notes = True
+                
+                raw_corrections = _clean_examiner_corrections(paper.examiner_corrections)
+                if raw_corrections and raw_corrections.strip() and raw_corrections.strip() != int_comments and raw_corrections.strip() != ext_comments:
+                    doc.add_paragraph(f"Compiled Remarks & Instructions:\n{raw_corrections.strip()}")
+                    has_notes = True
+
+                if not has_notes:
+                    doc.add_paragraph("")
+                    doc.add_paragraph("")
+                
+                doc.save(target)
+            except Exception:
+                target.write_bytes(b"Examiner Comments Document\n")
+        return target, file_display_name, "docx", "word"
+
+    elif doc_type == "excel" and paper:
+        is_internal = user and paper.internal_examiner_id == user.id
+        is_external = user and paper.external_examiner_id == user.id
+        role_label = "Internal Examiner" if is_internal else ("External Examiner" if is_external else "Examiner")
+        role_tag = "internal" if is_internal else ("external" if is_external else f"user_{user.id}" if user else "gen")
+        
+        target = base_dir / f"paper_{paper.id}_marks_sheet_{role_tag}.xlsx"
+        file_display_name = f"Paper_{paper.id}_{role_label.replace(' ', '_')}_Marks_Sheet.xlsx"
+
+        if not target.exists():
+            try:
+                import openpyxl
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "Paper Marks Sheet"
+                ws.append(["Paper ID", "Student Name", "Thesis Title", "Internal Score (0-100)", "External Score (0-100)", "Overall Recommendation", "Remarks"])
+                ws.append([
+                    paper.id,
+                    student_name,
+                    paper.title,
+                    paper.internal_score if paper.internal_score is not None else "",
+                    paper.external_score if paper.external_score is not None else "",
+                    "Pass",
+                    "Evaluation sheet ready"
+                ])
+                wb.save(target)
+            except Exception:
+                target.write_bytes(b"Paper Marks Sheet\n")
+        return target, file_display_name, "xlsx", "cell"
+
+    elif doc_type == "batch_excel" and user:
+        upload_dir = Path("uploads/examiners")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        target = upload_dir / f"assigned_results_user_{user.id}.xlsx"
+        try:
+            _build_multi_cert_excel_workbook(target, "Assigned", assigned_papers or [])
+        except Exception:
+            target.write_bytes(b"Assigned Results Sheet\n")
+        return target, f"Assigned_Thesis_Results_{user.id}.xlsx", "xlsx", "cell"
+
+    elif doc_type == "dept_excel" and user:
+        upload_dir = Path("uploads/examiners")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        target = upload_dir / f"department_results_user_{user.id}.xlsx"
+        try:
+            _build_multi_cert_excel_workbook(target, "Department", assigned_papers or [])
+        except Exception:
+            target.write_bytes(b"Department Results Sheet\n")
+        return target, f"Department_Thesis_Results_{user.id}.xlsx", "xlsx", "cell"
+
+    elif doc_type == "dean_excel" and user:
+        upload_dir = Path("uploads/examiners")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        target = upload_dir / f"dean_master_results_user_{user.id}.xlsx"
+        try:
+            _build_multi_cert_excel_workbook(target, "School Master", assigned_papers or [])
+        except Exception:
+            target.write_bytes(b"Dean School Master Results Sheet\n")
+        return target, f"Dean_School_Master_Results_{user.id}.xlsx", "xlsx", "cell"
+
+    # Default: student's supervisor-approved main thesis file
+    target = Path(paper.file_path) if (paper and paper.file_path and Path(paper.file_path).exists()) else None
+    if not target or not target.exists():
+        target_dir = Path("uploads/theses")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"paper_{paper.id}_approved_thesis.docx" if paper else Path("uploads/paper.docx")
+        if not target.exists() and paper:
+            try:
+                import docx
+                doc = docx.Document()
+                doc.add_heading(f"Approved Final Thesis: {paper.title}", level=1)
+                doc.add_paragraph(f"Student Author: {student_name}")
+                doc.add_paragraph(f"Paper ID: #{paper.id}")
+                doc.add_paragraph(f"Status: {paper.status} (Supervisor Signed Off)")
+                doc.add_paragraph("--------------------------------------------------------------------------------")
+                doc.add_heading("Abstract & Full Thesis Submission", level=2)
+                doc.add_paragraph(paper.abstract or "Full thesis work submitted by student and approved by supervisor for Phase 4 examination.")
+                doc.save(target)
+            except Exception:
+                target.write_bytes(b"Student Approved Thesis Document\n")
+
+    file_name = (paper.file_name if (paper and paper.file_name) else None) or target.name
+    file_ext = (target.suffix or "").lstrip(".").lower() or "docx"
+    doc_kind = "cell" if file_ext in {"xlsx", "xls", "csv"} else ("slide" if file_ext in {"pptx", "ppt"} else "word")
+    return target, file_name, file_ext, doc_kind
+
+
 @router.api_route("/papers/{paper_id}/file/public", methods=["GET", "HEAD"])
 def download_paper_file_public(
     paper_id: int,
     token: str = Query(..., min_length=20),
+    doc_type: str = Query("paper"),
+    uid: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
     if not _verify_editor_token(token=token, paper_id=paper_id, action="file"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired file token")
 
-    paper = get_paper(db, paper_id)
-    if not paper:
+    paper = get_paper(db, paper_id) if paper_id > 0 else None
+    if not paper and doc_type not in {"batch_excel", "dept_excel", "dean_excel"}:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    if not paper.file_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
 
-    path = Path(paper.file_path)
-    if not path.exists() or not path.is_file():
+    user = db.query(User).filter(User.id == uid).first() if uid else None
+    assigned_papers = []
+    if user:
+        if doc_type == "batch_excel":
+            assigned_papers = db.query(Paper).filter(
+                (Paper.internal_examiner_id == user.id) | (Paper.external_examiner_id == user.id) | (Paper.supervisor_id == user.id)
+            ).all()
+            if not assigned_papers:
+                assigned_papers = db.query(Paper).all()
+        elif doc_type == "dept_excel":
+            u_dept = (user.department or "").strip().lower()
+            if u_dept:
+                assigned_papers = (
+                    db.query(Paper)
+                    .join(User, Paper.created_by_id == User.id, isouter=True)
+                    .filter(
+                        (func.lower(func.coalesce(Paper.discipline, "")) == u_dept)
+                        | (func.lower(func.coalesce(User.department, "")) == u_dept)
+                    )
+                    .all()
+                )
+            else:
+                assigned_papers = db.query(Paper).all()
+        elif doc_type == "dean_excel":
+            assigned_papers = db.query(Paper).all()
+
+    target, file_name, file_ext, _ = _get_target_doc_path(paper, doc_type, user=user, assigned_papers=assigned_papers, db=db)
+    if not target.exists() or not target.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
 
+    mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if file_ext == "xlsx" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return FileResponse(
-        path=path,
-        media_type=paper.mime_type or "application/octet-stream",
-        filename=paper.file_name or path.name,
+        path=target,
+        media_type=mime_type,
+        filename=file_name,
     )
 
 
-def _generate_excel_marks_sheet(target_path: Path, paper: Paper, student_user: User | None = None, db: Session | None = None):
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+@router.get("/papers/examiner/results-excel-config")
+def get_examiner_results_excel_config(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if not settings.onlyoffice_doc_server_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OnlyOffice is not configured")
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Assessment Marks Sheet"
-    try:
-        ws.views.sheetView[0].showGridLines = True
-    except Exception:
-        pass
+    assigned_query = db.query(Paper).filter(
+        (Paper.internal_examiner_id == current_user.id) | (Paper.external_examiner_id == current_user.id) | (Paper.supervisor_id == current_user.id)
+    ).all()
+    if not assigned_query:
+        assigned_query = db.query(Paper).all()
 
-    # Styling definitions
-    navy_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
-    purple_fill = PatternFill(start_color="6366F1", end_color="6366F1", fill_type="solid")
-    header_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
-    total_fill = PatternFill(start_color="EEF2FF", end_color="EEF2FF", fill_type="solid")
-    
-    title_font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
-    subtitle_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    bold_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
-    regular_font = Font(name="Calibri", size=10, color="334155")
-    total_font = Font(name="Calibri", size=11, bold=True, color="4338CA")
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(None, "batch_excel", user=current_user, assigned_papers=assigned_query)
 
-    thin_border = Border(
-        left=Side(style="thin", color="CBD5E1"),
-        right=Side(style="thin", color="CBD5E1"),
-        top=Side(style="thin", color="CBD5E1"),
-        bottom=Side(style="thin", color="CBD5E1"),
-    )
-    double_bottom_border = Border(
-        left=Side(style="thin", color="CBD5E1"),
-        right=Side(style="thin", color="CBD5E1"),
-        top=Side(style="thin", color="CBD5E1"),
-        bottom=Side(style="double", color="1E293B"),
-    )
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="callback"), safe="")
+    callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
+    file_url = f"{callback_base}{settings.api_prefix}/papers/0/file/public?token={file_token}&doc_type=batch_excel&uid={current_user.id}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/0/editor-callback?token={callback_token}&doc_type=batch_excel&uid={current_user.id}"
 
-    # Title Block
-    ws.merge_cells("A1:E1")
-    ws["A1"] = "GHANA INSTITUTE OF MANAGEMENT AND PUBLIC ADMINISTRATION (GIMPA)"
-    ws["A1"].font = title_font
-    ws["A1"].fill = navy_fill
-    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 28
+    session_key = f"examiner-excel-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
 
-    ws.merge_cells("A2:E2")
-    ws["A2"] = "SCHOOL OF TECHNOLOGY AND SOCIAL SCIENCES — OFFICIAL THESIS / PROJECT MARKS SHEET"
-    ws["A2"].font = subtitle_font
-    ws["A2"].fill = purple_fill
-    ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[2].height = 22
-
-    # Candidate & Thesis Metadata
-    student_name = "Candidate"
-    student_id = "N/A"
-    if student_user:
-        student_name = student_user.full_name or student_user.email
-    elif paper.authors:
-        student_name = paper.authors[0].name
-
-    program = getattr(student_user, "program", None) or paper.discipline or "BSc. Computer Science"
-    degree_level = classify_degree_level(paper=paper, student_user=student_user, db=db)
-    supervisor_name = "Assigned Supervisor"
-    if paper.supervisor_id and db:
-        sup = db.query(User).filter(User.id == paper.supervisor_id).first()
-        if sup:
-            supervisor_name = sup.full_name or sup.email
-
-    metadata = [
-        ("Candidate Name:", student_name, "Submission ID:", f"PAPER-{paper.id}"),
-        ("Program of Study:", program, "Degree Track:", degree_level),
-        ("Project / Thesis Title:", paper.title, "Supervisor / Examiner:", supervisor_name),
-    ]
-
-    row_idx = 4
-    for label1, val1, label2, val2 in metadata:
-        ws.cell(row=row_idx, column=1, value=label1).font = bold_font
-        ws.cell(row=row_idx, column=2, value=val1).font = regular_font
-        ws.cell(row=row_idx, column=4, value=label2).font = bold_font
-        ws.cell(row=row_idx, column=5, value=val2).font = regular_font
-        row_idx += 1
-
-    row_idx += 1
-    # Table Header
-    headers = ["Domain #", "Assessment Rubric / Evaluation Criteria", "Max Marks", "Marks Awarded", "Examiner Comments / Notes"]
-    for col_idx, h in enumerate(headers, start=1):
-        cell = ws.cell(row=row_idx, column=col_idx, value=h)
-        cell.font = bold_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center" if col_idx in {1, 3, 4} else "left", vertical="center")
-        cell.border = thin_border
-    ws.row_dimensions[row_idx].height = 24
-
-    start_rubric_row = row_idx + 1
-    rubric_domains = [
-        (1, "Problem Definition, Research Objectives & Scope", 10),
-        (2, "Literature Review, Theoretical Framework & Background", 15),
-        (3, "Research Methodology, System Design & Architecture", 20),
-        (4, "System Implementation, Code Quality & Deliverables", 25),
-        (5, "Testing, Validation, Results & Findings Analysis", 15),
-        (6, "Discussion, Conclusion & Practical Recommendations", 5),
-        (7, "Document Organization, Academic Writing & Formatting", 5),
-        (8, "Viva Voce, Oral Presentation & Defense", 5),
-    ]
-
-    for d_num, d_title, max_m in rubric_domains:
-        row_idx += 1
-        c1 = ws.cell(row=row_idx, column=1, value=f"Domain {d_num}")
-        c2 = ws.cell(row=row_idx, column=2, value=d_title)
-        c3 = ws.cell(row=row_idx, column=3, value=max_m)
-        c4 = ws.cell(row=row_idx, column=4, value=None)
-        c5 = ws.cell(row=row_idx, column=5, value="")
-
-        c1.alignment = Alignment(horizontal="center", vertical="center")
-        c2.alignment = Alignment(horizontal="left", vertical="center")
-        c3.alignment = Alignment(horizontal="center", vertical="center")
-        c4.alignment = Alignment(horizontal="center", vertical="center")
-
-        for c in [c1, c2, c3, c4, c5]:
-            c.font = regular_font
-            c.border = thin_border
-        ws.row_dimensions[row_idx].height = 20
-
-    end_rubric_row = row_idx
-
-    # Total Score Row
-    row_idx += 1
-    t1 = ws.cell(row=row_idx, column=1, value="TOTAL")
-    t2 = ws.cell(row=row_idx, column=2, value="Cumulative Examination Mark (out of 100)")
-    t3 = ws.cell(row=row_idx, column=3, value=100)
-    t4 = ws.cell(row=row_idx, column=4, value=f"=SUM(D{start_rubric_row}:D{end_rubric_row})")
-    t5 = ws.cell(row=row_idx, column=5, value=f'=IF(D{row_idx}>=80,"A (Distinction)",IF(D{row_idx}>=75,"B+ (Very Good)",IF(D{row_idx}>=70,"B (Good)",IF(D{row_idx}>=65,"C+ (Credit)",IF(D{row_idx}>=60,"C (Pass)",IF(D{row_idx}>=55,"D+ (Marginal Pass)",IF(D{row_idx}>=50,"D (Pass)","F (Fail)")))))))')
-
-    for c in [t1, t2, t3, t4, t5]:
-        c.font = total_font
-        c.fill = total_fill
-        c.border = double_bottom_border
-    t1.alignment = Alignment(horizontal="center", vertical="center")
-    t3.alignment = Alignment(horizontal="center", vertical="center")
-    t4.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[row_idx].height = 24
-
-    # Sign-off block
-    row_idx += 2
-    ws.cell(row=row_idx, column=1, value="Examiner / Supervisor Name:").font = bold_font
-    ws.cell(row=row_idx, column=2, value=supervisor_name).font = regular_font
-    ws.cell(row=row_idx, column=4, value="Date:").font = bold_font
-    ws.cell(row=row_idx, column=5, value=datetime.now().strftime("%d-%b-%Y")).font = regular_font
-
-    row_idx += 1
-    ws.cell(row=row_idx, column=1, value="Overall Recommendation:").font = bold_font
-    ws.cell(row=row_idx, column=2, value="[  ] Pass with Distinction   [  ] Pass without Revisions   [  ] Pass with Minor Revisions   [  ] Major Revisions / Resubmit   [  ] Fail").font = regular_font
-
-    # Column Widths
-    ws.column_dimensions["A"].width = 14
-    ws.column_dimensions["B"].width = 54
-    ws.column_dimensions["C"].width = 14
-    ws.column_dimensions["D"].width = 16
-    ws.column_dimensions["E"].width = 38
-
-    wb.save(target_path)
+    config = {
+        "documentType": "cell",
+        "type": "desktop",
+        "document": {
+            "title": file_name,
+            "url": file_url,
+            "fileType": "xlsx",
+            "key": session_key,
+        },
+        "editorConfig": {
+            "callbackUrl": callback_url,
+            "mode": "edit",
+            "lang": "en",
+            "user": {
+                "id": str(current_user.id),
+                "name": current_user.full_name or current_user.email,
+            },
+        },
+    }
+    return {
+        "document_server_url": settings.onlyoffice_doc_server_url.rstrip("/"),
+        "config": config,
+    }
 
 
-def _get_paper_target_doc(paper, doc_type: str = "paper", user=None, db: Session | None = None) -> tuple[Path, str, str, str]:
-    base_dir = Path(paper.file_path).parent if paper and paper.file_path else Path("uploads/theses")
-    base_dir.mkdir(parents=True, exist_ok=True)
-    
-    if doc_type in {"excel", "marks_sheet", "examiner_results_excel"}:
-        target = base_dir / f"paper_{paper.id}_marks_sheet.xlsx"
-        if not target.exists():
-            student_user = db.query(User).filter(User.id == paper.created_by_id).first() if (db and paper.created_by_id) else None
-            _generate_excel_marks_sheet(target, paper, student_user=student_user, db=db)
-        return target, f"Paper_{paper.id}_Marks_Sheet.xlsx", "xlsx", "cell"
-        
-    elif doc_type in {"comments", "examiner_comments"}:
-        target = base_dir / f"paper_{paper.id}_comments.docx"
-        rebuild = not target.exists()
-        if target.exists() and paper.examiner_corrections and target.stat().st_size < 1000:
-            rebuild = True
-            
-        if rebuild:
-            try:
-                import docx
-                doc = docx.Document()
-                doc.add_heading("Examiner Review & Required Corrections", level=1)
-                doc.add_paragraph(f"Thesis Title: {paper.title}")
-                doc.add_paragraph(f"Submission ID: PAPER-{paper.id}")
-                doc.add_paragraph("--------------------------------------------------------------------------------")
-                doc.add_heading("Evaluation Feedback & Required Revisions:", level=2)
-                
-                clean_feedback = _sanitize_examiner_feedback_for_student(paper.examiner_corrections or paper.review_comments)
-                if clean_feedback:
-                    for line in clean_feedback.split("\n"):
-                        if line.startswith("•") or line.startswith("-"):
-                            doc.add_paragraph(line.lstrip("•- ").strip(), style='List Bullet')
-                        elif line.strip():
-                            doc.add_paragraph(line.strip())
-                else:
-                    doc.add_paragraph("No additional textual revisions required.")
-                doc.save(target)
-            except Exception:
-                target.write_bytes(b"Examiner Comments Document\n")
-        return target, f"Paper_{paper.id}_Examiner_Comments.docx", "docx", "word"
-        
+@router.get("/papers/department/results-excel-config")
+def get_department_results_excel_config(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if not settings.onlyoffice_doc_server_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OnlyOffice is not configured")
+
+    u_dept = (current_user.department or "").strip().lower()
+    if u_dept:
+        dept_papers = (
+            db.query(Paper)
+            .join(User, Paper.created_by_id == User.id, isouter=True)
+            .filter(
+                (func.lower(func.coalesce(Paper.discipline, "")) == u_dept)
+                | (func.lower(func.coalesce(User.department, "")) == u_dept)
+            )
+            .all()
+        )
     else:
-        file_path_obj = Path(paper.file_path) if paper.file_path else None
-        target = file_path_obj if (file_path_obj and file_path_obj.exists()) else (base_dir / f"paper_{paper.id}.docx")
-        file_name = paper.file_name or target.name
-        file_ext = (Path(file_name).suffix or "").lstrip(".").lower() or "docx"
-        doc_kind = "cell" if file_ext in {"xlsx", "xls", "csv"} else ("slide" if file_ext in {"pptx", "ppt"} else "word")
-        return target, file_name, file_ext, doc_kind
+        dept_papers = db.query(Paper).all()
+
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(None, "dept_excel", user=current_user, assigned_papers=dept_papers)
+
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="callback"), safe="")
+    callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
+    file_url = f"{callback_base}{settings.api_prefix}/papers/0/file/public?token={file_token}&doc_type=dept_excel&uid={current_user.id}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/0/editor-callback?token={callback_token}&doc_type=dept_excel&uid={current_user.id}"
+
+    session_key = f"dept-excel-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
+
+    config = {
+        "documentType": "cell",
+        "type": "desktop",
+        "document": {
+            "title": file_name,
+            "url": file_url,
+            "fileType": "xlsx",
+            "key": session_key,
+        },
+        "editorConfig": {
+            "callbackUrl": callback_url,
+            "mode": "edit",
+            "lang": "en",
+            "user": {
+                "id": str(current_user.id),
+                "name": current_user.full_name or current_user.email,
+            },
+        },
+    }
+    return {
+        "document_server_url": settings.onlyoffice_doc_server_url.rstrip("/"),
+        "config": config,
+    }
+
+
+@router.get("/papers/dean/results-excel-config")
+def get_dean_results_excel_config(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if not settings.onlyoffice_doc_server_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OnlyOffice is not configured")
+
+    school_papers = db.query(Paper).all()
+
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(None, "dean_excel", user=current_user, assigned_papers=school_papers)
+
+    file_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="file"), safe="")
+    callback_token = urllib.parse.quote(_build_editor_token(paper_id=0, action="callback"), safe="")
+    callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
+    file_url = f"{callback_base}{settings.api_prefix}/papers/0/file/public?token={file_token}&doc_type=dean_excel&uid={current_user.id}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/0/editor-callback?token={callback_token}&doc_type=dean_excel&uid={current_user.id}"
+
+    session_key = f"dean-excel-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
+
+    config = {
+        "documentType": "cell",
+        "type": "desktop",
+        "document": {
+            "title": file_name,
+            "url": file_url,
+            "fileType": "xlsx",
+            "key": session_key,
+        },
+        "editorConfig": {
+            "callbackUrl": callback_url,
+            "mode": "edit",
+            "lang": "en",
+            "user": {
+                "id": str(current_user.id),
+                "name": current_user.full_name or current_user.email,
+            },
+        },
+    }
+    return {
+        "document_server_url": settings.onlyoffice_doc_server_url.rstrip("/"),
+        "config": config,
+    }
 
 
 @router.get("/papers/{paper_id}/editor-config")
@@ -2158,25 +2525,20 @@ def get_editor_config(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
 
+    target, file_name, file_ext, doc_kind = _get_target_doc_path(paper, doc_type, user=current_user, db=db)
+
     # Basic access gate for editor config.
     if not current_user.is_admin and paper.created_by_id != current_user.id and paper.supervisor_id not in {None, current_user.id}:
-        if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "hod") and not has_role(db, current_user, "project_coordinator") and not has_role(db, current_user, "lecturer"):
+        if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "hod") and not has_role(db, current_user, "project_coordinator") and paper.internal_examiner_id != current_user.id and paper.external_examiner_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to access this document")
-
-    target_path, file_name, file_ext, doc_kind = _get_paper_target_doc(paper, doc_type, user=current_user, db=db)
 
     file_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="file"), safe="")
     callback_token = urllib.parse.quote(_build_editor_token(paper_id=paper.id, action="callback"), safe="")
     callback_base = (settings.onlyoffice_callback_base_url or settings.public_api_base_url).rstrip("/")
-    if settings.api_prefix and callback_base.endswith(settings.api_prefix):
-        callback_base = callback_base[:-len(settings.api_prefix)].rstrip("/")
-    
-    file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}&doc_type={doc_type}"
-    callback_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/editor-callback?token={callback_token}&doc_type={doc_type}"
+    file_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/file/public?token={file_token}&doc_type={doc_type}&uid={current_user.id}&v={int(target.stat().st_mtime if target.exists() else 0)}"
+    callback_url = f"{callback_base}{settings.api_prefix}/papers/{paper.id}/editor-callback?token={callback_token}&doc_type={doc_type}&uid={current_user.id}"
 
-    file_mtime = int(target_path.stat().st_mtime) if (target_path and target_path.exists()) else 0
-    file_size = target_path.stat().st_size if (target_path and target_path.exists()) else 0
-    session_key = f"paper_{paper.id}_{doc_type}_{file_size}_{file_mtime}"
+    session_key = f"paper-{paper.id}-{doc_type}-{current_user.id}-{target.stat().st_size if target.exists() else 0}-{int(datetime.now(timezone.utc).timestamp())}"
 
     config = {
         "documentType": doc_kind,
@@ -2191,15 +2553,6 @@ def get_editor_config(
             "callbackUrl": callback_url,
             "mode": "edit",
             "lang": "en",
-            "coEditing": {
-                "mode": "fast",
-                "change": True,
-            },
-            "customization": {
-                "autosave": True,
-                "forcesave": True,
-                "comments": True,
-            },
             "user": {
                 "id": str(current_user.id),
                 "name": current_user.full_name or current_user.email,
@@ -2212,188 +2565,114 @@ def get_editor_config(
     }
 
 
-@router.api_route("/papers/{paper_id}/file/public", methods=["GET", "HEAD"])
-def download_paper_file_public(
-    paper_id: int,
-    token: str = Query(..., min_length=20),
-    doc_type: str = Query("paper"),
-    db: Session = Depends(get_db),
-):
-    if not _verify_editor_token(token=token, paper_id=paper_id, action="file"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired file token")
+def _sync_batch_excel_to_db(target: Path, db: Session, user):
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(target, data_only=True)
+        ws = wb.active
+        for r in range(2, ws.max_row + 1):
+            pid_val = ws.cell(row=r, column=1).value
+            if pid_val is None:
+                continue
+            try:
+                pid = int(str(pid_val).replace("PAPER-", "").replace("#", "").strip())
+            except ValueError:
+                continue
+            
+            p = get_paper(db, pid)
+            if not p:
+                continue
+            
+            int_score_cell = ws.cell(row=r, column=6).value
+            ext_score_cell = ws.cell(row=r, column=7).value
+            rec_cell = ws.cell(row=r, column=8).value
+            comments_cell = ws.cell(row=r, column=9).value
+            
+            if int_score_cell is not None and str(int_score_cell).strip():
+                try:
+                    p.internal_score = float(int_score_cell)
+                except ValueError:
+                    pass
+            if ext_score_cell is not None and str(ext_score_cell).strip():
+                try:
+                    p.external_score = float(ext_score_cell)
+                except ValueError:
+                    pass
+            if comments_cell and str(comments_cell).strip():
+                p.review_comments = str(comments_cell).strip()
+            db.add(p)
+        db.commit()
+    except Exception:
+        pass
 
-    paper = get_paper(db, paper_id)
-    if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
 
-    target_path, file_name, file_ext, _ = _get_paper_target_doc(paper, doc_type, db=db)
-    if not target_path.exists() or not target_path.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
-
-    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if file_ext == "xlsx" else (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if file_ext == "docx" else "application/octet-stream"
-    )
-    return FileResponse(
-        path=target_path,
-        media_type=media_type,
-        filename=file_name,
-    )
+def _sync_marks_sheet_to_db(target: Path, db: Session, paper):
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(target, data_only=True)
+        ws = wb.active
+        if ws.max_row >= 2:
+            int_score_cell = ws.cell(row=2, column=4).value
+            ext_score_cell = ws.cell(row=2, column=5).value
+            rec_cell = ws.cell(row=2, column=6).value
+            remarks_cell = ws.cell(row=2, column=7).value
+            
+            if int_score_cell is not None and str(int_score_cell).strip():
+                try:
+                    paper.internal_score = float(int_score_cell)
+                except ValueError:
+                    pass
+            if ext_score_cell is not None and str(ext_score_cell).strip():
+                try:
+                    paper.external_score = float(ext_score_cell)
+                except ValueError:
+                    pass
+            if remarks_cell and str(remarks_cell).strip():
+                paper.review_comments = str(remarks_cell).strip()
+            db.add(paper)
+            db.commit()
+    except Exception:
+        pass
 
 
 @router.post("/papers/{paper_id}/editor-callback")
 async def handle_editor_callback(
     paper_id: int,
-    request: Request,
     token: str = Query(..., min_length=20),
     doc_type: str = Query("paper"),
+    uid: int | None = Query(None),
+    payload: dict | None = None,
     db: Session = Depends(get_db),
 ):
     if not _verify_editor_token(token=token, paper_id=paper_id, action="callback"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired callback token")
 
-    paper = get_paper(db, paper_id)
-    if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    paper = get_paper(db, paper_id) if paper_id > 0 else None
+    user = db.query(User).filter(User.id == uid).first() if uid else None
 
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
+    target, _, _, _ = _get_target_doc_path(paper, doc_type, user=user)
 
+    data = payload or {}
     status_code = int(data.get("status", 0) or 0)
     download_url = data.get("url")
     if status_code in {2, 6} and isinstance(download_url, str) and download_url.strip():
-        target, _, _, _ = _get_paper_target_doc(paper, doc_type, db=db)
-        content = None
-
-        # 1. Try fetching from internal ONLYOFFICE container port 8082
         try:
-            parsed = urllib.parse.urlparse(download_url)
-            internal_url = f"http://127.0.0.1:8082{parsed.path}"
-            if parsed.query:
-                internal_url += f"?{parsed.query}"
-            req = urllib.request.Request(internal_url, headers={"User-Agent": "GIMPA-Thesis-Backend"})
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(download_url, timeout=30) as response:
                 content = response.read()
-        except Exception:
-            pass
-
-        # 2. Fallback to original download_url if direct container fetch failed
-        if not content:
-            try:
-                req = urllib.request.Request(download_url, headers={"User-Agent": "GIMPA-Thesis-Backend"})
-                with urllib.request.urlopen(req, timeout=30) as response:
-                    content = response.read()
-            except Exception:
+            if not content:
                 return {"error": 1}
-
-        if not content:
-            return {"error": 1}
-
-        try:
             target.write_bytes(content)
-            if doc_type == "paper":
+            if paper and doc_type == "paper":
                 paper.file_size = len(content)
                 db.add(paper)
                 db.commit()
+            elif doc_type == "batch_excel" and user:
+                _sync_batch_excel_to_db(target, db, user)
+            elif doc_type == "excel" and paper:
+                _sync_marks_sheet_to_db(target, db, paper)
         except Exception:
             return {"error": 1}
-
     return {"error": 0}
-
-
-@router.post("/papers/{paper_id}/notify-feedback-saved")
-def notify_feedback_saved(
-    paper_id: int,
-    type: str = Query("comments"),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    paper = get_paper(db, paper_id)
-    if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-
-    reviewer_name = current_user.full_name or current_user.email or "Your Supervisor / Reviewer"
-    type_label = "comments and annotations in ONLYOFFICE" if type == "comments" else ("marks and evaluation sheet" if "excel" in type else "qualitative feedback")
-
-    # Trigger ONLYOFFICE forcesave to immediately flush all comments/edits to disk
-    file_path_obj = Path(paper.file_path) if paper.file_path else None
-    file_mtime = int(file_path_obj.stat().st_mtime) if (file_path_obj and file_path_obj.exists()) else 0
-    file_size = paper.file_size or (file_path_obj.stat().st_size if (file_path_obj and file_path_obj.exists()) else 0)
-    session_key = f"paper_{paper.id}_{file_size}_{file_mtime}"
-    try:
-        req_data = json.dumps({"c": "forcesave", "key": session_key}).encode("utf-8")
-        req = urllib.request.Request(
-            "http://127.0.0.1:8082/coauthoring/CommandService.ashx",
-            data=req_data,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            pass
-    except Exception as e:
-        logger.warning(f"ONLYOFFICE forcesave trigger: {e}")
-
-    # Determine if the caller is the student or a reviewer/supervisor
-    is_student = (current_user.id == paper.created_by_id) or (getattr(current_user, "role", "") in {"student", "member"})
-
-    if is_student:
-        student_name = current_user.full_name or current_user.email or "Student"
-        supervisor_id = paper.supervisor_id
-        if supervisor_id:
-            create_notification(
-                db,
-                user_id=supervisor_id,
-                paper_id=paper.id,
-                ntype="workflow_update",
-                message=f"Student {student_name} has updated and saved revisions on '{paper.title}' via ONLYOFFICE Editor.",
-            )
-            supervisor_user = db.query(User).filter(User.id == supervisor_id).first()
-            if supervisor_user and supervisor_user.email:
-                send_notification_email(
-                    to_email=supervisor_user.email,
-                    to_name=supervisor_user.full_name or supervisor_user.name,
-                    subject=f"GIMPA Thesis Update: {paper.title} (Student Saved Edits)",
-                    message=f"Student {student_name} has saved new edits/revisions on thesis '{paper.title}' in ONLYOFFICE Editor. Please log in to your reviewer portal to inspect the changes.",
-                )
-        else:
-            # If no supervisor assigned yet, notify HOD and coordinators
-            _notify_hod_and_coordinators(
-                db,
-                paper,
-                f"Student {student_name} updated and saved revisions on thesis '{paper.title}' via ONLYOFFICE Editor.",
-            )
-
-        _record_workflow_event(
-            db,
-            paper_id=paper.id,
-            event_type="student_edits_saved",
-            actor_id=current_user.id,
-            actor_role="student",
-            from_status=paper.status,
-            to_status=paper.status,
-            message=f"Student {student_name} saved revisions via ONLYOFFICE Editor.",
-        )
-        db.commit()
-        return {"message": "Revisions saved and supervisor notified successfully", "paper_id": paper.id}
-    else:
-        reviewer_name = current_user.full_name or current_user.email or "Your Supervisor / Reviewer"
-        type_label = "comments and annotations in ONLYOFFICE" if type == "comments" else ("marks and evaluation sheet" if "excel" in type else "qualitative feedback")
-
-        message = f"{reviewer_name} has reviewed and saved {type_label} on your thesis '{paper.title}'. Please log in to your student portal to review the feedback."
-        _notify_student(db, paper, message)
-
-        _record_workflow_event(
-            db,
-            paper_id=paper.id,
-            event_type="feedback_saved",
-            actor_id=current_user.id,
-            actor_role=current_user.role or "lecturer",
-            from_status=paper.status,
-            to_status=paper.status,
-            message=f"{reviewer_name} saved {type_label} via ONLYOFFICE Editor.",
-        )
-        db.commit()
-        return {"message": "Feedback saved and student notified successfully", "paper_id": paper.id}
 
 
 @router.post("/papers/{paper_id}/corrected-file", response_model=PaperRead)
@@ -2792,7 +3071,7 @@ def assign_supervisor(
         db.add(PaperSupervisor(paper_id=paper.id, user_id=supervisor_id, assigned_by_id=current_user.id))
     
     from_status = paper.status
-    paper.status = "phase3_chapters"
+    paper.status = "phase1_topic_accepted"
     db.add(paper)
     
     _record_workflow_event(
@@ -2813,7 +3092,7 @@ def assign_supervisor(
         paper,
         f"Topic Approved & Supervisor Assigned: Supervisor {supervisor_user.full_name or supervisor_user.email} assigned to '{paper.title}'."
     )
-    _notify_student(db, paper, f"Your thesis topic was approved! Supervisor {supervisor_user.full_name or supervisor_user.email} has been assigned to supervise your work. You are now in Phase 3 (Chapters writing).")
+    _notify_student(db, paper, f"Your thesis topic was approved! Supervisor {supervisor_user.full_name or supervisor_user.email} has been assigned to supervise your work. You can now submit your Project Proposal for Phase 2.")
     
     create_notification(
         db,
@@ -2940,18 +3219,11 @@ def complete_phase3(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
     
-    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin
     if not is_supervisor:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor can complete Phase 2 and advance to Examination")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor can complete Phase 3")
     
-    # Mark all chapters/steps as approved by supervisor
-    paper.ch1_supervisor_approved = True
-    paper.ch2_supervisor_approved = True
-    paper.ch3_supervisor_approved = True
-    paper.ch4_supervisor_approved = True
-    paper.ch5_supervisor_approved = True
     paper.combined_thesis_supervisor_approved = True
-        
     paper.status = "phase4_pending_examiners"
     db.add(paper)
     
@@ -2963,7 +3235,7 @@ def complete_phase3(
         actor_role="project_supervisor",
         from_status="phase3_chapters",
         to_status=paper.status,
-        message=f"Phase 2 Steps Complete: Approved by supervisor for '{paper.title}'. Advanced to Examination. Examiners need to be assigned.",
+        message=f"Phase 3 Complete: All 5 chapters approved by supervisor for '{paper.title}'. Examiners need to be assigned.",
     )
     db.commit()
     db.refresh(paper)
@@ -2971,9 +3243,9 @@ def complete_phase3(
     _notify_hod_and_coordinators(
         db,
         paper,
-        f"Phase 2 Complete: Steps approved by supervisor for '{paper.title}'. Internal & External Examiners need to be assigned for Examination."
+        f"Phase 3 Complete: All 5 chapters approved by supervisor for '{paper.title}'. Examiners need to be assigned."
     )
-    _notify_student(db, paper, f"Congratulations! Your supervisor ({current_user.full_name or current_user.email}) approved your thesis steps. The HOD or Project Coordinator will now assign internal and external examiners.")
+    _notify_student(db, paper, "Congratulations! Your supervisor approved all 5 chapters. The HOD or Project Coordinator will now assign internal and external examiners.")
     
     return _to_paper_read(paper, db, current_user)
 
@@ -2982,7 +3254,7 @@ def complete_phase3(
 def assign_examiners(
     paper_id: int,
     internal_examiner_id: int = Form(...),
-    external_examiner_id: int | None = Form(None),
+    external_examiner_id: int = Form(...),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> PaperRead:
@@ -2995,42 +3267,34 @@ def assign_examiners(
     if not (is_hod or is_coord or current_user.is_admin):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the HOD, Project Coordinator, or Admin can assign examiners")
     
-    stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if paper.created_by_id else None
-    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
-    is_undergrad = degree_level == "Undergraduate"
+    if internal_examiner_id == external_examiner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Conflict of interest: Internal and external examiners must be distinct individuals",
+        )
 
     int_exam = db.query(User).filter(User.id == internal_examiner_id).first()
-    if not int_exam:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected internal examiner / supervisor not found")
+    ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
+    if not int_exam or not ext_exam:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected internal or external examiner not found")
         
-    int_roles = get_user_roles(db, internal_examiner_id)
-    if "lecturer" not in int_roles and "project_supervisor" not in int_roles and int_exam.role not in {"lecturer", "project_supervisor"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal examiner must be a lecturer or supervisor in the school")
+    int_roles = set(get_user_roles(db, internal_examiner_id))
+    int_roles.add(int_exam.role)
+    allowed_int = {"lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
+    if not int_roles.intersection(allowed_int):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal examiner must be a lecturer, supervisor, HOD, or Dean")
         
-    ext_exam = None
-    if not is_undergrad:
-        if not external_examiner_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner is required for Masters, MPhil, and Postgraduate theses")
-        ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
-        if not ext_exam:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected external examiner not found")
-        ext_roles = get_user_roles(db, external_examiner_id)
-        if "external_examiner" not in ext_roles and ext_exam.role != "external_examiner":
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must have the external_examiner role")
-    elif external_examiner_id:
-        ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
+    ext_roles = set(get_user_roles(db, external_examiner_id))
+    ext_roles.add(ext_exam.role)
+    allowed_ext = {"external_examiner", "lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
+    if not ext_roles.intersection(allowed_ext):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must be an external examiner, lecturer, HOD, or Dean")
     
     paper.internal_examiner_id = internal_examiner_id
-    paper.external_examiner_id = external_examiner_id if (not is_undergrad or external_examiner_id) else None
+    paper.external_examiner_id = external_examiner_id
     paper.status = "phase4_marking"
     db.add(paper)
     
-    event_msg = (
-        f"Undergraduate Project Examiner / Supervisor assigned: {int_exam.full_name or int_exam.email}"
-        if is_undergrad and not ext_exam
-        else f"Examiners assigned: Internal={int_exam.full_name or int_exam.email}, External={ext_exam.full_name or ext_exam.email if ext_exam else 'None'}"
-    )
-
     _record_workflow_event(
         db,
         paper_id=paper.id,
@@ -3039,161 +3303,16 @@ def assign_examiners(
         actor_role="project_coordinator" if is_coord else "hod",
         from_status="phase4_pending_examiners",
         to_status=paper.status,
-        message=event_msg,
+        message=f"Examiners assigned: Internal={int_exam.full_name or int_exam.email}, External={ext_exam.full_name or ext_exam.email}",
     )
     db.commit()
     db.refresh(paper)
     
-    create_notification(db, user_id=internal_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned to mark '{paper.title}'. Please evaluate and submit results.")
-    if ext_exam:
-        create_notification(db, user_id=ext_exam.id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as External Examiner for '{paper.title}'. Please mark and submit results.")
+    create_notification(db, user_id=internal_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as Internal Examiner for '{paper.title}'. Please mark and submit results.")
+    create_notification(db, user_id=external_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as External Examiner for '{paper.title}'. Please mark and submit results.")
     
-    _notify_student(db, paper, "Examiner(s) have been assigned. They will now review and mark your project.")
+    _notify_student(db, paper, "Internal and external examiners have been assigned. They will now review and mark your thesis.")
     return _to_paper_read(paper, db, current_user)
-
-
-@router.get("/papers/bulk-examiner-template")
-def download_bulk_examiner_template(
-    format: str = Query("csv"),
-):
-    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
-    if format == "xlsx":
-        file_path = templates_dir / "examiner_batch_mapping_template.xlsx"
-        if file_path.exists():
-            return FileResponse(file_path, filename="examiner_batch_mapping_template.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    
-    file_path = templates_dir / "examiner_batch_mapping_template.csv"
-    if file_path.exists():
-        return FileResponse(file_path, filename="examiner_batch_mapping_template.csv", media_type="text/csv")
-        
-    csv_content = "Student_ID,Thesis_ID,Student_Name,Thesis_Title,Internal_Examiner_ID,Internal_Examiner_Email,External_Examiner_ID,External_Examiner_Email\n2210045678,7,John Smith,GIMPA Library Management System,STF-9021,abena.osei@gimpa.edu.gh,EXT-4011,nana.assyne@ug.edu.gh\n"
-    return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=examiner_batch_mapping_template.csv"})
-
-
-@router.post("/papers/bulk-assign-examiners")
-async def bulk_assign_examiners(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    is_hod = has_role(db, current_user, "hod")
-    is_coord = has_role(db, current_user, "project_coordinator")
-    if not (is_hod or is_coord or current_user.is_admin):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only HOD, Project Coordinator, or Admin can perform batch examiner mapping")
-
-    raw = await file.read()
-    if not raw:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
-
-    rows: list[dict[str, str]] = []
-    filename = (file.filename or "").lower()
-    if filename.endswith(".xlsx") or filename.endswith(".xlsm") or filename.endswith(".xls"):
-        from app.services.import_service import _rows_from_xlsx_bytes
-        rows = _rows_from_xlsx_bytes(raw)
-    else:
-        from app.services.import_service import _rows_from_csv_bytes
-        rows = _rows_from_csv_bytes(raw)
-
-    if not rows:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No readable rows found in the uploaded file")
-
-    total = len(rows)
-    success = 0
-    errors: list[str] = []
-
-    for idx, row in enumerate(rows, 1):
-        normalized = {"".join(c for c in k.lower() if c.isalnum()): str(v).strip() for k, v in row.items() if k}
-        
-        thesis_id_val = normalized.get("thesisid") or normalized.get("paperid") or ""
-        student_id_val = normalized.get("studentid") or normalized.get("indexnumber") or normalized.get("schoolid") or ""
-        student_email_val = normalized.get("studentemail") or normalized.get("email") or ""
-        thesis_title_val = normalized.get("thesistitle") or normalized.get("title") or ""
-        
-        int_id_val = normalized.get("internalexaminerid") or normalized.get("internalid") or normalized.get("internalexaminerstaffid") or ""
-        int_email_val = normalized.get("internalexamineremail") or normalized.get("internalemail") or ""
-        
-        ext_id_val = normalized.get("externalexaminerid") or normalized.get("externalid") or ""
-        ext_email_val = normalized.get("externalexamineremail") or normalized.get("externalemail") or ""
-
-        # 1. Find Paper
-        paper = None
-        if thesis_id_val and thesis_id_val.isdigit():
-            paper = get_paper(db, int(thesis_id_val))
-        
-        if not paper and student_id_val:
-            student_user = db.query(User).filter((User.school_id == student_id_val) | (User.email.ilike(f"{student_id_val}%"))).first()
-            if student_user:
-                paper = db.query(Paper).filter(Paper.created_by_id == student_user.id).order_by(Paper.id.desc()).first()
-
-        if not paper and student_email_val:
-            student_user = db.query(User).filter(User.email.ilike(student_email_val)).first()
-            if student_user:
-                paper = db.query(Paper).filter(Paper.created_by_id == student_user.id).order_by(Paper.id.desc()).first()
-
-        if not paper and thesis_title_val:
-            paper = db.query(Paper).filter(Paper.title.ilike(f"%{thesis_title_val}%")).first()
-
-        if not paper:
-            errors.append(f"Row {idx}: Could not locate thesis for Student ID '{student_id_val}' / Thesis ID '{thesis_id_val}'")
-            continue
-
-        # 2. Find Internal Examiner
-        int_exam = None
-        if int_id_val:
-            if int_id_val.isdigit():
-                int_exam = db.query(User).filter(User.id == int(int_id_val)).first()
-            if not int_exam:
-                int_exam = db.query(User).filter(User.school_id == int_id_val).first()
-        if not int_exam and int_email_val:
-            int_exam = db.query(User).filter(User.email.ilike(int_email_val)).first()
-
-        if not int_exam:
-            errors.append(f"Row {idx} (Thesis #{paper.id}): Internal examiner '{int_id_val or int_email_val}' not found")
-            continue
-
-        # 3. Find External Examiner
-        ext_exam = None
-        if ext_id_val:
-            if ext_id_val.isdigit():
-                ext_exam = db.query(User).filter(User.id == int(ext_id_val)).first()
-            if not ext_exam:
-                ext_exam = db.query(User).filter(User.school_id == ext_id_val).first()
-        if not ext_exam and ext_email_val:
-            ext_exam = db.query(User).filter(User.email.ilike(ext_email_val)).first()
-
-        if not ext_exam:
-            errors.append(f"Row {idx} (Thesis #{paper.id}): External examiner '{ext_id_val or ext_email_val}' not found")
-            continue
-
-        # 4. Assign Examiners
-        paper.internal_examiner_id = int_exam.id
-        paper.external_examiner_id = ext_exam.id
-        paper.status = "phase4_marking"
-        db.add(paper)
-
-        _record_workflow_event(
-            db,
-            paper_id=paper.id,
-            event_type="assign_examiners",
-            actor_id=current_user.id,
-            actor_role="project_coordinator" if is_coord else "hod",
-            from_status=paper.status,
-            to_status="phase4_marking",
-            message=f"Batch assigned examiners: Internal={int_exam.full_name or int_exam.email}, External={ext_exam.full_name or ext_exam.email}",
-        )
-
-        create_notification(db, user_id=int_exam.id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as Internal Examiner for '{paper.title}'. Please mark and submit results.")
-        create_notification(db, user_id=ext_exam.id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as External Examiner for '{paper.title}'. Please mark and submit results.")
-        _notify_student(db, paper, "Internal and external examiners have been assigned. They will now review and mark your thesis.")
-
-        success += 1
-
-    db.commit()
-    return {
-        "total_processed": total,
-        "successful": success,
-        "errors": errors,
-    }
 
 
 @router.post("/papers/{paper_id}/upload-results", response_model=PaperRead)
@@ -3254,12 +3373,8 @@ async def upload_results(
     else:
         paper.examiner_corrections = f"[{role_label} - {current_user.full_name or current_user.email}]: {examiner_corrections}"
 
-    stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if paper.created_by_id else None
-    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
-    is_undergrad = degree_level == "Undergraduate"
-
-    marking_complete = (paper.internal_score is not None) if is_undergrad else (paper.internal_score is not None and paper.external_score is not None)
-    if marking_complete:
+    both_marked = paper.internal_score is not None and paper.external_score is not None
+    if both_marked:
         paper.status = "phase5_corrections"
     else:
         paper.status = "phase4_marking"
@@ -3274,18 +3389,18 @@ async def upload_results(
         actor_role="examiner" if (is_internal or is_external) else "project_coordinator",
         from_status=from_status,
         to_status=paper.status,
-        message=f"Marking update ({degree_level}) submitted by {current_user.full_name or current_user.email}.",
+        message=f"Marking update submitted by {current_user.full_name or current_user.email}.",
     )
     db.commit()
     db.refresh(paper)
     
-    if marking_complete:
+    if both_marked:
         _notify_hod_and_coordinators(
             db,
             paper,
-            f"Phase 4 Complete: Marking results and corrections uploaded for {degree_level} thesis '{paper.title}'."
+            f"Phase 4 Complete: Both examiner marking results and corrections uploaded for '{paper.title}'."
         )
-        _notify_student(db, paper, "Examiner marking is complete. Please check the examiner corrections, make the necessary adjustments, and upload the updated document.")
+        _notify_student(db, paper, "Examiners have completed their markings. Please check the examiner corrections, make the necessary adjustments, and upload the updated document.")
     else:
         _notify_hod_and_coordinators(
             db,
@@ -3349,6 +3464,50 @@ async def upload_corrections(
     return _to_paper_read(paper, db, current_user)
 
 
+@router.post("/papers/{paper_id}/submit-in-system-corrections", response_model=PaperRead)
+async def submit_in_system_corrections(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    
+    if paper.created_by_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the student author can submit corrections")
+    
+    if not paper.file_path or not Path(paper.file_path).exists():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No in-system document found to submit")
+    
+    paper.status = "phase5_pending_supervisor"
+    db.add(paper)
+    
+    _record_workflow_event(
+        db,
+        paper_id=paper.id,
+        event_type="submit_in_system_corrections",
+        actor_id=current_user.id,
+        actor_role="student",
+        from_status="phase5_corrections",
+        to_status=paper.status,
+        message="Student submitted in-system ONLYOFFICE edits as final corrections, awaiting supervisor approval.",
+    )
+    db.commit()
+    db.refresh(paper)
+    
+    if paper.supervisor_id:
+        create_notification(
+            db,
+            user_id=paper.supervisor_id,
+            paper_id=paper.id,
+            ntype="workflow_update",
+            message=f"Student submitted in-system ONLYOFFICE corrections for '{paper.title}'. Please review and approve."
+        )
+        
+    return _to_paper_read(paper, db, current_user)
+
+
 @router.post("/papers/{paper_id}/supervisor-approve-corrections", response_model=PaperRead)
 def supervisor_approve_corrections(
     paper_id: int,
@@ -3359,9 +3518,9 @@ def supervisor_approve_corrections(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
     
-    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin
+    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
     if not is_supervisor:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor can approve corrections")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor, HOD, or coordinator can approve corrections")
     
     paper.status = "phase5_pending_coordinator"
     db.add(paper)
@@ -3385,6 +3544,182 @@ def supervisor_approve_corrections(
         f"Supervisor approved corrections for '{paper.title}', awaiting final sign-off."
     )
     
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/supervisor-reject-corrections", response_model=PaperRead)
+def supervisor_reject_corrections(
+    paper_id: int,
+    feedback: str = Form("Corrections not satisfactorily addressed. Please review examiner comments and make required revisions."),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+    
+    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+    if not is_supervisor:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor or HOD can request revisions")
+    
+    paper.status = "phase5_corrections"
+    if feedback.strip():
+        paper.review_comments = feedback.strip()
+    db.add(paper)
+    db.commit()
+    db.refresh(paper)
+    
+    # Notify student
+    if paper.created_by_id:
+        from app.models.thesis_system import Notification
+        notif = Notification(
+            user_id=paper.created_by_id,
+            title="Further Corrections Required",
+            message=f"Supervisor reviewed your resubmitted work for '{paper.title}' and requested further corrections: {feedback.strip()}",
+            ntype="workflow_update",
+        )
+        db.add(notif)
+        db.commit()
+        
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/coordinator-approve-corrections", response_model=PaperRead)
+def coordinator_approve_corrections(
+    paper_id: int,
+    decision: str = Form("approved"),
+    comment: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    allowed = (
+        current_user.is_admin
+        or has_role(db, current_user, "project_coordinator")
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "system_admin")
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Project Coordinator or Admin can approve corrections")
+
+    if decision == "approved":
+        paper.project_coordinator_approved_by_id = current_user.id
+        paper.project_coordinator_approved_at = datetime.now(timezone.utc)
+        
+        if paper.hod_approved_at is not None or has_role(db, current_user, "hod") or current_user.is_admin:
+            paper.status = "phase5_approved_for_library"
+        else:
+            paper.status = "phase5_pending_hod"
+        
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="coordinator_approve_corrections",
+            actor_id=current_user.id,
+            actor_role="project_coordinator",
+            from_status="phase5_pending_coordinator",
+            to_status=paper.status,
+            message="Project Coordinator approved corrections.",
+        )
+    else:
+        paper.status = "phase5_corrections"
+        paper.review_comments = comment or "Revisions requested by Project Coordinator."
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="coordinator_reject_corrections",
+            actor_id=current_user.id,
+            actor_role="project_coordinator",
+            from_status="phase5_pending_coordinator",
+            to_status=paper.status,
+            message=f"Project Coordinator requested revisions: {comment}",
+        )
+
+    db.commit()
+    db.refresh(paper)
+
+    if paper.created_by_id:
+        notif_msg = f"Project Coordinator reviewed your corrections: {decision.upper()}."
+        create_notification(
+            db,
+            user_id=paper.created_by_id,
+            paper_id=paper.id,
+            ntype="workflow_update",
+            message=notif_msg,
+        )
+
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/papers/{paper_id}/hod-approve-corrections", response_model=PaperRead)
+def hod_approve_corrections(
+    paper_id: int,
+    decision: str = Form("approved"),
+    comment: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    paper = get_paper(db, paper_id)
+    if not paper:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
+
+    allowed = (
+        current_user.is_admin
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "system_admin")
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Head of Department (HOD) or Admin can approve corrections")
+
+    if decision == "approved":
+        paper.hod_approved_by_id = current_user.id
+        paper.hod_approved_at = datetime.now(timezone.utc)
+        
+        if paper.project_coordinator_approved_at is not None or current_user.is_admin:
+            paper.status = "phase5_approved_for_library"
+        else:
+            paper.status = "phase5_pending_coordinator"
+
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="hod_approve_corrections",
+            actor_id=current_user.id,
+            actor_role="hod",
+            from_status="phase5_pending_hod",
+            to_status=paper.status,
+            message="HOD signed and approved corrections.",
+        )
+    else:
+        paper.status = "phase5_corrections"
+        paper.review_comments = comment or "Revisions requested by HOD."
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="hod_reject_corrections",
+            actor_id=current_user.id,
+            actor_role="hod",
+            from_status="phase5_pending_hod",
+            to_status=paper.status,
+            message=f"HOD requested revisions: {comment}",
+        )
+
+    db.commit()
+    db.refresh(paper)
+
+    if paper.created_by_id:
+        notif_msg = f"Head of Department (HOD) reviewed your corrections: {decision.upper()}."
+        create_notification(
+            db,
+            user_id=paper.created_by_id,
+            paper_id=paper.id,
+            ntype="workflow_update",
+            message=notif_msg,
+        )
+
     return _to_paper_read(paper, db, current_user)
 
 
@@ -3720,6 +4055,7 @@ async def upload_draft(
             ntype="workflow_update",
             message=f"Student uploaded a new draft of their thesis: {file.filename}"
         )
+    
     return _to_paper_read(paper, db, current_user)
 
 
@@ -3801,168 +4137,501 @@ def download_examiner_assigned_zip(
     return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
 
 
-@router.post("/papers/{paper_id}/supervisor-approve-corrections", response_model=PaperRead)
-def supervisor_approve_corrections(
+# -----------------------------------------------------------------------------
+# Section 6 Specification REST Endpoint Aliases
+# -----------------------------------------------------------------------------
+
+@router.post("/theses/{paper_id}/topic/accept", response_model=PaperRead)
+def topic_accept_alias(
     paper_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> PaperRead:
+    """Canonical spec alias: HOD accepts student topic."""
     paper = get_paper(db, paper_id)
     if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    
-    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
-    if not is_supervisor:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor, HOD, or coordinator can approve corrections")
-    
-    # Check degree level: If Undergraduate, can pass directly to HOD/final approval
-    paper.status = "phase5_pending_coordinator"
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
+    paper.status = "topic_accepted"
     db.add(paper)
     db.commit()
     db.refresh(paper)
-    
-    _notify_roles(
-        db,
-        roles={"project_coordinator", "hod", "system_admin"},
-        paper_id=paper.id,
-        message=f"Supervisor confirmed and approved corrections for '{paper.title}'. Awaiting final coordinator/HOD sign-off.",
-        department=paper.discipline,
-    )
     return _to_paper_read(paper, db, current_user)
 
 
-@router.post("/papers/{paper_id}/supervisor-reject-corrections", response_model=PaperRead)
-def supervisor_reject_corrections(
+@router.post("/theses/{paper_id}/assign-supervisor", response_model=PaperRead)
+def thesis_assign_supervisor_alias(
     paper_id: int,
-    feedback: str = Form("Corrections not satisfactorily addressed. Please review examiner comments and make required revisions."),
+    supervisor_id: int = Form(...),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> PaperRead:
+    """Canonical spec alias: HOD assigns supervisor."""
+    return assign_supervisor(paper_id=paper_id, supervisor_id=supervisor_id, db=db, current_user=current_user)
+
+
+
+
+
+
+
+@router.post("/theses/{paper_id}/finish-steps", response_model=PaperRead)
+def thesis_finish_steps_alias(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: Supervisor finishes steps and advances thesis to Phase 3 examination."""
+    return complete_phase3(paper_id=paper_id, db=db, current_user=current_user)
+
+
+@router.post("/theses/{paper_id}/assign-examiners", response_model=PaperRead)
+def thesis_assign_examiners_alias(
+    paper_id: int,
+    internal_examiner_id: int = Form(...),
+    external_examiner_id: int = Form(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: HOD assigns internal and external examiners."""
+    return assign_examiners(
+        paper_id=paper_id,
+        internal_examiner_id=internal_examiner_id,
+        external_examiner_id=external_examiner_id,
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.get("/examiners/{examiner_id}/download-zip")
+def examiner_download_zip_alias(
+    examiner_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Canonical spec alias: Examiner downloads assigned student ZIP archive."""
+    return download_examiner_assigned_zip(db=db, current_user=current_user)
+
+
+@router.post("/examiner-assignments/{assignment_id}/upload-marks", response_model=PaperRead)
+async def examiner_upload_marks_alias(
+    assignment_id: int,
+    internal_score: float | None = Form(None),
+    external_score: float | None = Form(None),
+    comments: str = Form(...),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: Examiner uploads marking results."""
+    return await upload_results(
+        paper_id=assignment_id,
+        internal_score=internal_score,
+        external_score=external_score,
+        examiner_corrections=comments,
+        file=file,
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.post("/theses/{paper_id}/compile-comments", response_model=PaperRead)
+def thesis_compile_comments_alias(
+    paper_id: int,
+    compiled_comments: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: HOD compiles examiner comments."""
+    payload = PaperReview(decision="revision", comments=compiled_comments)
+    return review_paper_endpoint(paper_id=paper_id, payload=payload, db=db, current_admin=current_user)
+
+
+@router.post("/theses/{paper_id}/send-comments-to-student", response_model=PaperRead)
+def thesis_send_comments_alias(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: HOD relays comments to student advancing to Phase 4."""
     paper = get_paper(db, paper_id)
     if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    
-    is_supervisor = paper.supervisor_id == current_user.id or current_user.is_admin or has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
-    if not is_supervisor:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned supervisor or HOD can request revisions")
-    
-    paper.status = "phase5_corrections"
-    if feedback.strip():
-        paper.review_comments = feedback.strip()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
+    paper.status = "phase5_pending_supervisor"
     db.add(paper)
     db.commit()
     db.refresh(paper)
+    _notify_student(db, paper, "Examiner comments compiled. Please review comments and submit corrections.")
+    return _to_paper_read(paper, db, current_user)
+
+
+@router.post("/theses/{paper_id}/corrections", response_model=PaperRead)
+def thesis_submit_corrections_alias(
+    paper_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: Student submits Phase 4 corrections."""
+    return upload_corrections(paper_id=paper_id, file=file, db=db, current_user=current_user)
+
+
+@router.post("/corrections/{correction_id}/supervisor-decision", response_model=PaperRead)
+def correction_supervisor_decision_alias(
+    correction_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: Supervisor approves Phase 4 corrections."""
+    return supervisor_approve_corrections(paper_id=correction_id, db=db, current_user=current_user)
+
+
+@router.post("/corrections/{correction_id}/hod-decision", response_model=PaperRead)
+def correction_hod_decision_alias(
+    correction_id: int,
+    comments: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: HOD approves Phase 4 corrections (dual sign-off)."""
+    payload = PaperReview(decision="approve", comments=comments)
+    return review_paper_endpoint(paper_id=correction_id, payload=payload, db=db, current_admin=current_user)
+
+
+@router.post("/theses/{paper_id}/publish", response_model=PaperRead)
+def thesis_publish_alias(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaperRead:
+    """Canonical spec alias: Librarian publishes thesis to repository."""
+    payload = PaperReview(decision="approve", comments="Published by Librarian")
+    return review_paper_endpoint(paper_id=paper_id, payload=payload, db=db, current_admin=current_user)
+
+
+@router.get("/repository", response_model=list[PaperRead])
+def repository_browse_alias(
+    department: str | None = Query(None),
+    year: int | None = Query(None),
+    search: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> list[PaperRead]:
+    """Canonical spec alias: Public repository browse page."""
+    return list_papers(db=db, discipline=department, year=year, q=search, catalog_mode=True)
+
+
+@router.get("/repository/{paper_id}", response_model=PaperRead)
+def repository_get_alias(
+    paper_id: int,
+    db: Session = Depends(get_db),
+) -> PaperRead:
+    """Canonical spec alias: Read published thesis detail."""
+    paper = get_paper(db, paper_id)
+    if not paper or not paper.is_public:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Published thesis not found")
+    return _to_paper_read(paper, db)
+
+
+@router.get("/theses/{paper_id}/comments")
+def thesis_get_comments_alias(
+    paper_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Canonical spec alias: External comment channel list."""
+    return get_annotations_endpoint(paper_id=paper_id, db=db, current_user=current_user)
+
+
+@router.post("/theses/{paper_id}/comments")
+def thesis_add_comment_alias(
+    paper_id: int,
+    text: str = Form(...),
+    location: str | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Canonical spec alias: Add comment to external comment panel channel."""
+    return create_annotation_endpoint(paper_id=paper_id, text=text, location=location, db=db, current_user=current_user)
+
+
+@router.get("/hod/dashboard")
+def hod_dashboard_alias(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Canonical spec alias: HOD / Project Coordinator dashboard overview."""
+    return read_paper_stats(db=db)
+
+
+@router.get("/dean/dashboard")
+def dean_dashboard_alias(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Canonical spec alias: Dean school-wide dashboard rollup overview."""
+    return read_paper_stats(db=db)
+
+
+@router.get("/papers/reports/export")
+def export_academic_report(
+    degree_level: str | None = Query(None),
+    department: str | None = Query(None),
+    lecturer_id: int | None = Query(None),
+    student_id: int | None = Query(None),
+    status_filter: str | None = Query(None),
+    format: str = Query("xlsx"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    is_admin_or_dean = current_user.is_admin or has_role(db, current_user, "system_admin") or has_role(db, current_user, "dean") or has_role(db, current_user, "head_library") or has_role(db, current_user, "librarian")
+    is_hod_or_coord = has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+    is_lecturer = has_role(db, current_user, "lecturer") or current_user.role == "lecturer"
     
-    # Notify student
-    if paper.created_by_id:
-        from app.models.thesis_system import Notification
-        notif = Notification(
-            user_id=paper.created_by_id,
-            title="Further Corrections Required",
-            message=f"Supervisor reviewed your resubmitted work for '{paper.title}' and requested further corrections: {feedback.strip()}",
-            ntype="workflow_update",
+    if not (is_admin_or_dean or is_hod_or_coord or is_lecturer):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Only academic staff and administrators can generate reports.")
+        
+    query = db.query(Paper)
+    
+    if not is_admin_or_dean:
+        if is_hod_or_coord:
+            u_dept = (current_user.department or "").strip().lower()
+            if u_dept:
+                query = query.filter(
+                    (func.lower(func.coalesce(Paper.discipline, "")) == u_dept)
+                    | (Paper.department_id != None)
+                )
+        elif is_lecturer:
+            query = query.filter(
+                (Paper.supervisor_id == current_user.id)
+                | (Paper.internal_examiner_id == current_user.id)
+                | (Paper.external_examiner_id == current_user.id)
+            )
+            
+    if department and department.strip().lower() not in {"all", ""}:
+        d_val = department.strip().lower()
+        query = query.filter(
+            (func.lower(func.coalesce(Paper.discipline, "")).contains(d_val))
+            | (func.lower(func.coalesce(Paper.university, "")).contains(d_val))
         )
-        db.add(notif)
-        db.commit()
         
-    return _to_paper_read(paper, db, current_user)
-
-
-@router.post("/papers/{paper_id}/coordinator-approve-corrections", response_model=PaperRead)
-def coordinator_approve_corrections(
-    paper_id: int,
-    decision: str = Form("approved"),
-    comment: str | None = Form(None),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-) -> PaperRead:
-    paper = get_paper(db, paper_id)
-    if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-
-    allowed = (
-        current_user.is_admin
-        or has_role(db, current_user, "project_coordinator")
-        or has_role(db, current_user, "hod")
-        or has_role(db, current_user, "system_admin")
-    )
-    if not allowed:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Project Coordinator or Admin can approve corrections")
-
-    if decision == "approved":
-        paper.project_coordinator_approved_by_id = current_user.id
-        paper.project_coordinator_approved_at = datetime.now(timezone.utc)
-        
-        if paper.hod_approved_at is not None or has_role(db, current_user, "hod") or current_user.is_admin:
-            paper.status = "phase5_approved_for_library"
-        else:
-            paper.status = "phase5_pending_hod"
-        
-        db.add(paper)
-        db.commit()
-        db.refresh(paper)
-        
-        _notify_roles(
-            db,
-            roles={"hod", "system_admin", "librarian"},
-            paper_id=paper.id,
-            message=f"Project Coordinator approved final corrections for '{paper.title}'.",
-            department=paper.discipline,
+    if lecturer_id and lecturer_id > 0:
+        query = query.filter(
+            (Paper.supervisor_id == lecturer_id)
+            | (Paper.internal_examiner_id == lecturer_id)
+            | (Paper.external_examiner_id == lecturer_id)
         )
+        
+    if student_id and student_id > 0:
+        query = query.filter(Paper.created_by_id == student_id)
+        
+    if status_filter and status_filter.strip().lower() not in {"all", ""}:
+        query = query.filter(Paper.status == status_filter.strip())
+        
+    papers = query.order_by(Paper.id.desc()).all()
+    
+    if degree_level and degree_level.strip().lower() not in {"all", ""}:
+        target_deg = degree_level.strip().lower()
+        filtered_papers = []
+        for p in papers:
+            stu = db.query(User).filter(User.id == p.created_by_id).first() if p.created_by_id else None
+            p_deg = classify_degree_level(paper=p, student_user=stu, db=db).lower()
+            if target_deg in p_deg or p_deg in target_deg:
+                filtered_papers.append(p)
+        papers = filtered_papers
+
+    report_rows = []
+    for idx, p in enumerate(papers, start=1):
+        stu = db.query(User).filter(User.id == p.created_by_id).first() if p.created_by_id else None
+        deg = classify_degree_level(paper=p, student_user=stu, db=db)
+        
+        sup_user = db.query(User).filter(User.id == p.supervisor_id).first() if p.supervisor_id else None
+        int_user = db.query(User).filter(User.id == p.internal_examiner_id).first() if p.internal_examiner_id else None
+        ext_user = db.query(User).filter(User.id == p.external_examiner_id).first() if p.external_examiner_id else None
+        
+        int_m = p.internal_score
+        ext_m = p.external_score
+        avg_m = None
+        if int_m is not None and ext_m is not None:
+            avg_m = round((int_m + ext_m) / 2.0, 1)
+        elif int_m is not None:
+            avg_m = int_m
+        elif ext_m is not None:
+            avg_m = ext_m
+            
+        grade = "N/A"
+        if avg_m is not None:
+            if avg_m >= 80: grade = "A (Distinction)"
+            elif avg_m >= 75: grade = "B+ (Very Good)"
+            elif avg_m >= 70: grade = "B (Good)"
+            elif avg_m >= 65: grade = "C+ (Credit)"
+            elif avg_m >= 60: grade = "C (Pass)"
+            elif avg_m >= 55: grade = "D+ (Marginal Pass)"
+            elif avg_m >= 50: grade = "D (Pass)"
+            else: grade = "F (Fail)"
+            
+        report_rows.append({
+            "num": idx,
+            "id": f"PAPER-{p.id}",
+            "student_id": stu.school_id if (stu and getattr(stu, 'school_id', None)) else (f"STU-{stu.id}" if stu else "-"),
+            "student_name": stu.full_name if stu else (p.authors[0].name if p.authors else "Unknown"),
+            "degree_level": deg,
+            "discipline": p.discipline or (stu.program if stu else "-") or "Computer Science",
+            "title": p.title,
+            "supervisor": sup_user.full_name if sup_user else "Unassigned",
+            "internal_examiner": int_user.full_name if int_user else "-",
+            "external_examiner": ext_user.full_name if ext_user else "-",
+            "internal_mark": int_m if int_m is not None else "-",
+            "external_mark": ext_m if ext_m is not None else "-",
+            "final_mark": avg_m if avg_m is not None else "-",
+            "grade": grade,
+            "status": p.status.replace("_", " ").title(),
+            "created_at": p.created_at.strftime("%Y-%m-%d") if p.created_at else "-",
+        })
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "#", "Paper ID", "Student Index / ID", "Student Name", "Degree Level", 
+            "Program / Discipline", "Thesis Title", "Supervisor", "Internal Examiner", 
+            "External Examiner", "Internal Mark", "External Mark", "Final Average Mark", 
+            "Letter Grade", "Status", "Date Submitted"
+        ])
+        for r in report_rows:
+            writer.writerow([
+                r["num"], r["id"], r["student_id"], r["student_name"], r["degree_level"],
+                r["discipline"], r["title"], r["supervisor"], r["internal_examiner"],
+                r["external_examiner"], r["internal_mark"], r["external_mark"], r["final_mark"],
+                r["grade"], r["status"], r["created_at"]
+            ])
+        output.seek(0)
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode("utf-8-sig")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="GIMPA_Academic_Report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'}
+        )
+        
+    elif format == "json":
+        return report_rows
+        
     else:
-        paper.status = "phase5_corrections"
-        if comment:
-            paper.review_comments = comment
-        db.add(paper)
-        db.commit()
-        db.refresh(paper)
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         
-    return _to_paper_read(paper, db, current_user)
-
-
-@router.post("/papers/{paper_id}/hod-approve-corrections", response_model=PaperRead)
-def hod_approve_corrections(
-    paper_id: int,
-    decision: str = Form("approved"),
-    comment: str | None = Form(None),
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-) -> PaperRead:
-    paper = get_paper(db, paper_id)
-    if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-
-    allowed = (
-        current_user.is_admin
-        or has_role(db, current_user, "hod")
-        or has_role(db, current_user, "system_admin")
-    )
-    if not allowed:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only HOD or Admin can sign off on thesis")
-
-    if decision == "approved":
-        paper.hod_approved_by_id = current_user.id
-        paper.hod_approved_at = datetime.now(timezone.utc)
-        paper.status = "phase5_approved_for_library"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Academic Evaluation Report"
+        ws.views.sheetView[0].showGridLines = True
         
-        db.add(paper)
-        db.commit()
-        db.refresh(paper)
-        
-        _notify_roles(
-            db,
-            roles={"librarian", "head_library", "system_admin"},
-            paper_id=paper.id,
-            message=f"HOD signed off on '{paper.title}'. Ready for Library catalog publication.",
-            department=paper.discipline,
+        title_font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+        title_fill = PatternFill(start_color="1E1B4B", end_color="1E1B4B", fill_type="solid")
+        meta_font = Font(name="Calibri", size=10, italic=True, color="475569")
+        header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="3B82F6", end_color="3B82F6", fill_type="solid")
+        data_font = Font(name="Calibri", size=10)
+        bold_font = Font(name="Calibri", size=10, bold=True)
+        thin_border = Border(
+            left=Side(style='thin', color='CBD5E1'),
+            right=Side(style='thin', color='CBD5E1'),
+            top=Side(style='thin', color='CBD5E1'),
+            bottom=Side(style='thin', color='CBD5E1')
         )
-    else:
-        paper.status = "phase5_corrections"
-        if comment:
-            paper.review_comments = comment
-        db.add(paper)
-        db.commit()
-        db.refresh(paper)
         
-    return _to_paper_read(paper, db, current_user)
+        ws.merge_cells("A1:P1")
+        top_cell = ws["A1"]
+        top_cell.value = "GHANA INSTITUTE OF MANAGEMENT AND PUBLIC ADMINISTRATION (GIMPA)"
+        top_cell.font = title_font
+        top_cell.fill = title_fill
+        top_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 30
+        
+        ws.merge_cells("A2:P2")
+        sub_cell = ws["A2"]
+        sub_cell.value = "Thesis & Academic Project Evaluation Master Report"
+        sub_cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        sub_cell.fill = PatternFill(start_color="312E81", end_color="312E81", fill_type="solid")
+        sub_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[2].height = 22
+        
+        ws.cell(row=3, column=1, value=f"Generated By: {current_user.full_name or current_user.email} | Export Date: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')} | Total Candidates: {len(report_rows)}").font = meta_font
+        ws.row_dimensions[3].height = 18
+        
+        headers = [
+            "#", "Paper ID", "Student ID", "Candidate Name", "Degree Level", 
+            "Program / Discipline", "Thesis Title", "Supervisor", "Internal Examiner", 
+            "External Examiner", "Internal (/100)", "External (/100)", "Final Score (/100)", 
+            "Grade", "Workflow Status", "Submitted Date"
+        ]
+        
+        header_row = 4
+        ws.row_dimensions[header_row].height = 24
+        for col_idx, h_text in enumerate(headers, start=1):
+            c = ws.cell(row=header_row, column=col_idx, value=h_text)
+            c.font = header_font
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            c.border = thin_border
+            
+        cur_row = 5
+        for r in report_rows:
+            ws.cell(row=cur_row, column=1, value=r["num"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=2, value=r["id"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=3, value=r["student_id"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=4, value=r["student_name"]).font = bold_font
+            ws.cell(row=cur_row, column=5, value=r["degree_level"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=6, value=r["discipline"])
+            ws.cell(row=cur_row, column=7, value=r["title"])
+            ws.cell(row=cur_row, column=8, value=r["supervisor"])
+            ws.cell(row=cur_row, column=9, value=r["internal_examiner"])
+            ws.cell(row=cur_row, column=10, value=r["external_examiner"])
+            
+            c_int = ws.cell(row=cur_row, column=11, value=r["internal_mark"])
+            c_int.alignment = Alignment(horizontal="center")
+            c_ext = ws.cell(row=cur_row, column=12, value=r["external_mark"])
+            c_ext.alignment = Alignment(horizontal="center")
+            c_fin = ws.cell(row=cur_row, column=13, value=r["final_mark"])
+            c_fin.alignment = Alignment(horizontal="center")
+            c_fin.font = bold_font
+            
+            c_grd = ws.cell(row=cur_row, column=14, value=r["grade"])
+            c_grd.alignment = Alignment(horizontal="center")
+            c_grd.font = bold_font
+            
+            ws.cell(row=cur_row, column=15, value=r["status"]).alignment = Alignment(horizontal="center")
+            ws.cell(row=cur_row, column=16, value=r["created_at"]).alignment = Alignment(horizontal="center")
+            
+            for col_i in range(1, 17):
+                cell = ws.cell(row=cur_row, column=col_i)
+                cell.border = thin_border
+                if not cell.font.bold:
+                    cell.font = data_font
+            ws.row_dimensions[cur_row].height = 20
+            cur_row += 1
+            
+        ws.row_dimensions[cur_row].height = 22
+        ws.cell(row=cur_row, column=1, value="TOTALS").font = bold_font
+        ws.cell(row=cur_row, column=2, value=f"{len(report_rows)} Submissions").font = bold_font
+        for col_i in range(1, 17):
+            ws.cell(row=cur_row, column=col_i).border = thin_border
+            ws.cell(row=cur_row, column=col_i).fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+            
+        widths = {
+            "A": 6, "B": 14, "C": 16, "D": 24, "E": 18, 
+            "F": 28, "G": 42, "H": 22, "I": 22, "J": 22, 
+            "K": 14, "L": 14, "M": 16, "N": 18, "O": 20, "P": 14
+        }
+        for col_letter, w in widths.items():
+            ws.column_dimensions[col_letter].width = w
+            
+        stream = io.BytesIO()
+        wb.save(stream)
+        stream.seek(0)
+        
+        filename = f"GIMPA_Academic_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return StreamingResponse(
+            stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+
 
