@@ -538,6 +538,18 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
         <div className="space-y-3">
           {paper.status === 'phase5_corrections' && (
             <div className="space-y-4">
+              {paper.examiner_corrections && (
+                <div className="border border-amber-400/40 bg-amber-50/60 dark:bg-amber-950/20 rounded-lg p-3.5 space-y-2">
+                  <p className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 m-0">
+                    <MessageSquare className="size-4 text-amber-600" />
+                    Examiner Evaluation Feedback & Required Corrections
+                  </p>
+                  <div className="p-3 rounded-md bg-background border border-amber-200 dark:border-amber-900/60 text-xs font-normal whitespace-pre-wrap leading-relaxed text-foreground">
+                    {paper.examiner_corrections}
+                  </div>
+                </div>
+              )}
+
               {/* ONLYOFFICE & Download Tools Panel for Student Revisions */}
               <div className="border border-primary/20 bg-primary/5 rounded-lg p-3 space-y-2">
                 <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
@@ -1174,7 +1186,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                         <Button
                           size="sm"
                           className="btn-ta-purple text-xs font-semibold flex items-center gap-1.5"
-                          onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
+                          onClick={() => window.open(`/editor?paperId=${paper.id}&type=comments`, '_blank')}
                         >
                           <FileEdit className="size-3.5" />
                           📝 Open in ONLYOFFICE (View Comments & Feedback)

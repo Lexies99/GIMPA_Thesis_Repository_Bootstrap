@@ -67,20 +67,45 @@ export function DocumentCommentViewer({
         <div className="space-y-1">
           <h4 className="text-xs font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1.5 m-0">
             <MessageSquare className="size-4" />
-            Supervisor In-Document Comments & Annotations (ONLYOFFICE Word)
+            Examiner & Supervisor Feedback Document (ONLYOFFICE Word)
           </h4>
           <p className="text-xs text-muted-foreground m-0">
-            Your supervisor adds sticky comments, highlights, and annotations directly inside the document.
+            Read examiner feedback, corrections, and comments directly inside the ONLYOFFICE document editor.
           </p>
         </div>
         <Button
           size="sm"
           className="btn-ta-purple text-xs shrink-0 flex items-center gap-1.5 font-bold shadow-sm"
-          onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
+          onClick={() => window.open(`/editor?paperId=${paper.id}&type=comments`, '_blank')}
         >
-          📝 Open Live Document in ONLYOFFICE
+          💬 Open Comments Document in ONLYOFFICE
         </Button>
       </div>
+
+      {/* Examiner Evaluation & Required Corrections Card */}
+      {paper.examiner_corrections && (
+        <Card className="border-amber-400/40 bg-amber-50/50 dark:bg-amber-950/20 shadow-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                <MessageSquare className="size-4 text-amber-600" />
+                Examiner Evaluation & Required Corrections
+              </CardTitle>
+              <Badge variant="outline" className="text-xs uppercase bg-amber-100 dark:bg-amber-900 border-amber-300 text-amber-800 dark:text-amber-300">
+                Action Required
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Please review the following examiner feedback and make the required corrections:
+            </p>
+            <div className="p-3.5 rounded-lg bg-background border border-amber-200 dark:border-amber-900/60 text-xs font-normal whitespace-pre-wrap leading-relaxed text-foreground">
+              {paper.examiner_corrections}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Abstract Project Summary Banner at top */}
       <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
