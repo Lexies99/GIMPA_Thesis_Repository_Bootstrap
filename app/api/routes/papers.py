@@ -39,6 +39,7 @@ from app.services.paper_service import (
     review_paper,
 )
 from app.services.user_service import list_users, has_role, get_user_by_email, get_user_roles
+from app.services.grading_service import classify_degree_level, calculate_thesis_examination_score
 
 router = APIRouter()
 UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "papers"
@@ -2944,8 +2945,12 @@ async def upload_results(
     else:
         paper.examiner_corrections = f"[{role_label} - {current_user.full_name or current_user.email}]: {examiner_corrections}"
 
-    both_marked = paper.internal_score is not None and paper.external_score is not None
-    if both_marked:
+    stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if paper.created_by_id else None
+    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
+    is_undergrad = degree_level == "Undergraduate"
+
+    marking_complete = (paper.internal_score is not None) if is_undergrad else (paper.internal_score is not None and paper.external_score is not None)
+    if marking_complete:
         paper.status = "phase5_corrections"
     else:
         paper.status = "phase4_marking"
@@ -2960,18 +2965,18 @@ async def upload_results(
         actor_role="examiner" if (is_internal or is_external) else "project_coordinator",
         from_status=from_status,
         to_status=paper.status,
-        message=f"Marking update submitted by {current_user.full_name or current_user.email}.",
+        message=f"Marking update ({degree_level}) submitted by {current_user.full_name or current_user.email}.",
     )
     db.commit()
     db.refresh(paper)
     
-    if both_marked:
+    if marking_complete:
         _notify_hod_and_coordinators(
             db,
             paper,
-            f"Phase 4 Complete: Both examiner marking results and corrections uploaded for '{paper.title}'."
+            f"Phase 4 Complete: Marking results and corrections uploaded for {degree_level} thesis '{paper.title}'."
         )
-        _notify_student(db, paper, "Examiners have completed their markings. Please check the examiner corrections, make the necessary adjustments, and upload the updated document.")
+        _notify_student(db, paper, "Examiner marking is complete. Please check the examiner corrections, make the necessary adjustments, and upload the updated document.")
     else:
         _notify_hod_and_coordinators(
             db,
