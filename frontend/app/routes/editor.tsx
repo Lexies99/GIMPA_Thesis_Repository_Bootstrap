@@ -54,8 +54,8 @@ function OnlyOfficeEditor({
     setIsSaving(true)
     try {
       const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-      if (!isStudent && token && paperId && Number.isFinite(paperId) && paperId > 0) {
-        await apiNotifyFeedbackSaved(paperId, docType || 'comments', token)
+      if (token && paperId && Number.isFinite(paperId) && paperId > 0) {
+        await apiNotifyFeedbackSaved(paperId, docType || (isStudent ? 'paper' : 'comments'), token)
       }
       setSaveSuccess(true)
     } catch (err) {
@@ -133,12 +133,12 @@ function OnlyOfficeEditor({
           {isSaving ? (
             <>
               <span className="inline-block animate-spin">⏳</span>
-              {isStudent ? 'Saving...' : 'Saving & Notifying Student...'}
+              {isStudent ? 'Saving & Notifying Supervisor...' : 'Saving & Notifying Student...'}
             </>
           ) : saveSuccess ? (
-            <>{isStudent ? '✓ Saved!' : '✓ Saved & Student Notified!'}</>
+            <>{isStudent ? '✓ Saved & Supervisor Notified!' : '✓ Saved & Student Notified!'}</>
           ) : (
-            <>{isStudent ? '✓ Done (Save)' : '✓ Done (Save & Notify Student)'}</>
+            <>{isStudent ? '✓ Done (Save & Notify Supervisor)' : '✓ Done (Save & Notify Student)'}</>
           )}
         </button>
       </header>

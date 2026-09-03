@@ -2042,21 +2042,67 @@ def notify_feedback_saved(
     except Exception as e:
         logger.warning(f"ONLYOFFICE forcesave trigger: {e}")
 
-    message = f"{reviewer_name} has reviewed and saved {type_label} on your thesis '{paper.title}'. Please log in to your student portal to review the feedback."
-    _notify_student(db, paper, message)
+    # Determine if the caller is the student or a reviewer/supervisor
+    is_student = (current_user.id == paper.created_by_id) or (getattr(current_user, "role", "") in {"student", "member"})
 
-    _record_workflow_event(
-        db,
-        paper_id=paper.id,
-        event_type="feedback_saved",
-        actor_id=current_user.id,
-        actor_role=current_user.role or "lecturer",
-        from_status=paper.status,
-        to_status=paper.status,
-        message=f"{reviewer_name} saved {type_label} via ONLYOFFICE Editor.",
-    )
-    db.commit()
-    return {"message": "Feedback saved and student notified successfully", "paper_id": paper.id}
+    if is_student:
+        student_name = current_user.full_name or current_user.email or "Student"
+        supervisor_id = paper.supervisor_id
+        if supervisor_id:
+            create_notification(
+                db,
+                user_id=supervisor_id,
+                paper_id=paper.id,
+                ntype="workflow_update",
+                message=f"Student {student_name} has updated and saved revisions on '{paper.title}' via ONLYOFFICE Editor.",
+            )
+            supervisor_user = db.query(User).filter(User.id == supervisor_id).first()
+            if supervisor_user and supervisor_user.email:
+                send_notification_email(
+                    to_email=supervisor_user.email,
+                    to_name=supervisor_user.full_name or supervisor_user.name,
+                    subject=f"GIMPA Thesis Update: {paper.title} (Student Saved Edits)",
+                    message=f"Student {student_name} has saved new edits/revisions on thesis '{paper.title}' in ONLYOFFICE Editor. Please log in to your reviewer portal to inspect the changes.",
+                )
+        else:
+            # If no supervisor assigned yet, notify HOD and coordinators
+            _notify_hod_and_coordinators(
+                db,
+                paper,
+                f"Student {student_name} updated and saved revisions on thesis '{paper.title}' via ONLYOFFICE Editor.",
+            )
+
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="student_edits_saved",
+            actor_id=current_user.id,
+            actor_role="student",
+            from_status=paper.status,
+            to_status=paper.status,
+            message=f"Student {student_name} saved revisions via ONLYOFFICE Editor.",
+        )
+        db.commit()
+        return {"message": "Revisions saved and supervisor notified successfully", "paper_id": paper.id}
+    else:
+        reviewer_name = current_user.full_name or current_user.email or "Your Supervisor / Reviewer"
+        type_label = "comments and annotations in ONLYOFFICE" if type == "comments" else ("marks and evaluation sheet" if "excel" in type else "qualitative feedback")
+
+        message = f"{reviewer_name} has reviewed and saved {type_label} on your thesis '{paper.title}'. Please log in to your student portal to review the feedback."
+        _notify_student(db, paper, message)
+
+        _record_workflow_event(
+            db,
+            paper_id=paper.id,
+            event_type="feedback_saved",
+            actor_id=current_user.id,
+            actor_role=current_user.role or "lecturer",
+            from_status=paper.status,
+            to_status=paper.status,
+            message=f"{reviewer_name} saved {type_label} via ONLYOFFICE Editor.",
+        )
+        db.commit()
+        return {"message": "Feedback saved and student notified successfully", "paper_id": paper.id}
 
 
 @router.post("/papers/{paper_id}/corrected-file", response_model=PaperRead)
