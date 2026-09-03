@@ -134,6 +134,7 @@ export interface ApiPaper {
   lecturer_approved_at?: string | null
   project_coordinator_approved_at?: string | null
   hod_approved_at?: string | null
+  degree_level?: string | null
 }
 
 export interface ApiStepItem {
