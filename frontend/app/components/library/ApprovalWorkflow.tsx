@@ -1398,100 +1398,126 @@ export function ApprovalWorkflow() {
                 </div>
               )}
 
-              {selectedPaper.status === 'phase4_pending_examiners' && (isHOD || isCoordinator || isAdmin) && (
-                <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                  <h4 className="font-bold text-sm text-primary flex items-center gap-2">
-                    <Shield className="size-4" />
-                    Phase 3: Assign Examiners (HOD / Coordinator)
-                  </h4>
-                  <p className="text-xs text-muted-foreground">
-                    Assign one internal and one external examiner individually or via automated batch mapping.
-                  </p>
+              {selectedPaper.status === 'phase4_pending_examiners' && (isHOD || isCoordinator || isAdmin) && (() => {
+                const isUndergradPaper = (selectedPaper.degree_level === 'Undergraduate') || 
+                  (selectedPaper.publication_type?.toLowerCase().includes('undergrad') ?? false) ||
+                  (selectedPaper.document_type?.toLowerCase().includes('undergrad') ?? false) ||
+                  (Boolean(selectedPaper.discipline?.toLowerCase().includes('b.sc')) || Boolean(selectedPaper.discipline?.toLowerCase().includes('bsc')));
 
-                  {/* Individual Examiner Selection */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="assign-internal-select">Select Internal Examiner *</Label>
-                      <Select value={selectedInternalId} onValueChange={setSelectedInternalId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose Internal Examiner..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {supervisorsList.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.full_name || s.email}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                return (
+                  <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
+                    <h4 className="font-bold text-sm text-primary flex items-center gap-2">
+                      <Shield className="size-4" />
+                      {isUndergradPaper ? 'Phase 3: Undergraduate Project Examination (Supervisor / Internal Examiner)' : 'Phase 3: Assign Examiners (HOD / Coordinator)'}
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      {isUndergradPaper 
+                        ? 'Undergraduate (B.Sc.) projects are assessed internally by the assigned Project Supervisor or an Internal Examiner. No external examiner is required.'
+                        : 'Assign one internal and one external examiner individually or via automated batch mapping.'}
+                    </p>
+
+                    {/* Individual Examiner Selection */}
+                    <div className={`grid grid-cols-1 ${isUndergradPaper ? 'md:grid-cols-1' : 'md:grid-cols-2'} gap-4`}>
+                      <div className="space-y-2">
+                        <Label htmlFor="assign-internal-select">
+                          {isUndergradPaper ? 'Select Project Supervisor / Internal Examiner *' : 'Select Internal Examiner *'}
+                        </Label>
+                        <Select 
+                          value={selectedInternalId || (isUndergradPaper && selectedPaper.supervisor_id ? String(selectedPaper.supervisor_id) : '')} 
+                          onValueChange={setSelectedInternalId}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={isUndergradPaper ? 'Choose Supervisor / Examiner...' : 'Choose Internal Examiner...'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {supervisorsList.map((s) => (
+                              <SelectItem key={s.id} value={String(s.id)}>
+                                {s.full_name || s.email} {selectedPaper.supervisor_id === s.id ? '(Assigned Supervisor)' : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {!isUndergradPaper && (
+                        <div className="space-y-2">
+                          <Label htmlFor="assign-external-select">Select External Examiner *</Label>
+                          <Select value={selectedExternalId} onValueChange={setSelectedExternalId}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose External Examiner..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {supervisorsList.map((s) => (
+                                <SelectItem key={s.id} value={String(s.id)}>
+                                  {s.full_name || s.email}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="assign-external-select">Select External Examiner *</Label>
-                      <Select value={selectedExternalId} onValueChange={setSelectedExternalId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose External Examiner..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {supervisorsList.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.full_name || s.email}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 items-end">
-                    <Button 
-                      onClick={async () => {
-                        setReviewError('')
-                        if (!selectedInternalId || !selectedExternalId) {
-                          setReviewError('Please select both an Internal and External examiner.')
-                          return
-                        }
-                        if (selectedInternalId === selectedExternalId) {
-                          setReviewError('Internal and External examiners must be different users')
-                          return
-                        }
-                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                        if (!token) {
-                          setReviewError('Authentication token missing. Please log in again.')
-                          return
-                        }
-                        setSubmittingReview(true)
-                        try {
-                          await apiAssignExaminers(selectedPaper.id, Number(selectedInternalId), Number(selectedExternalId), token)
-                          setDialogOpen(false)
-                          setSelectedPaper(null)
-                          await loadAll()
-                        } catch (err) {
-                          const msg = err instanceof Error ? err.message : 'Assignment failed'
-                          if (msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('Failed to execute')) {
-                            setReviewError('Unable to connect to the backend server. Please refresh the page or ensure the backend server is active.')
-                          } else {
-                            try {
-                              const parsed = JSON.parse(msg)
-                              setReviewError(parsed.detail || msg)
-                            } catch {
-                              setReviewError(msg)
-                            }
+                    <div className="flex flex-col gap-2 items-end">
+                      <Button 
+                        onClick={async () => {
+                          setReviewError('')
+                          const effectiveInternalId = selectedInternalId || (isUndergradPaper && selectedPaper.supervisor_id ? String(selectedPaper.supervisor_id) : '')
+                          if (!effectiveInternalId) {
+                            setReviewError(isUndergradPaper ? 'Please select a Project Supervisor / Internal Examiner.' : 'Please select an Internal Examiner.')
+                            return
                           }
-                        } finally {
-                          setSubmittingReview(false)
-                        }
-                      }} 
-                      disabled={!selectedInternalId || !selectedExternalId || submittingReview}
-                    >
-                      {submittingReview ? 'Assigning...' : 'Assign Examiners'}
-                    </Button>
-                    {reviewError && (
-                      <p className="text-xs font-semibold text-destructive mt-1">{reviewError}</p>
-                    )}
+                          if (!isUndergradPaper && !selectedExternalId) {
+                            setReviewError('Please select an External Examiner.')
+                            return
+                          }
+                          if (!isUndergradPaper && effectiveInternalId === selectedExternalId) {
+                            setReviewError('Internal and External examiners must be different users')
+                            return
+                          }
+                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                          if (!token) {
+                            setReviewError('Authentication token missing. Please log in again.')
+                            return
+                          }
+                          setSubmittingReview(true)
+                          try {
+                            await apiAssignExaminers(
+                              selectedPaper.id, 
+                              Number(effectiveInternalId), 
+                              isUndergradPaper ? null : Number(selectedExternalId), 
+                              token
+                            )
+                            setDialogOpen(false)
+                            setSelectedPaper(null)
+                            await loadAll()
+                          } catch (err) {
+                            const msg = err instanceof Error ? err.message : 'Assignment failed'
+                            if (msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('Failed to execute')) {
+                              setReviewError('Unable to connect to the backend server. Please refresh the page or ensure the backend server is active.')
+                            } else {
+                              try {
+                                const parsed = JSON.parse(msg)
+                                setReviewError(parsed.detail || msg)
+                              } catch {
+                                setReviewError(msg)
+                              }
+                            }
+                          } finally {
+                            setSubmittingReview(false)
+                          }
+                        }} 
+                        disabled={submittingReview || (!isUndergradPaper && (!selectedInternalId || !selectedExternalId))}
+                      >
+                        {submittingReview ? 'Assigning...' : (isUndergradPaper ? 'Assign & Advance to Grading' : 'Assign Examiners')}
+                      </Button>
+                      {reviewError && (
+                        <p className="text-xs font-semibold text-destructive mt-1">{reviewError}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* Phase 4: Official GIMPA Examiner Project Assessment & Marking Panel */}
               {selectedPaper.status === 'phase4_marking' && (isSupervisor || isAdmin || isHOD || isCoordinator || selectedPaper.internal_examiner_id === user?.id || selectedPaper.external_examiner_id === user?.id) && (

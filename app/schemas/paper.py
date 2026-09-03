@@ -180,6 +180,7 @@ class PaperRead(BaseModel):
     lecturer_approved_at: datetime | None = None
     project_coordinator_approved_at: datetime | None = None
     hod_approved_at: datetime | None = None
+    degree_level: str | None = None
 
     class Config:
         from_attributes = True

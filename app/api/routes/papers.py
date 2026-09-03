@@ -102,8 +102,8 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user = None)
     internal_score = paper.internal_score if can_view_marks else None
     external_score = paper.external_score if can_view_marks else None
     examiner_result_file_name = paper.examiner_result_file_name if can_view_marks else None
-    internal_result_file_name = paper.internal_result_file_name if can_view_marks else None
-    external_result_file_name = paper.external_result_file_name if can_view_marks else None
+    stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if (db and paper.created_by_id) else None
+    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
 
     return PaperRead(
         id=paper.id,
@@ -157,6 +157,7 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user = None)
         lecturer_approved_at=paper.lecturer_approved_at,
         project_coordinator_approved_at=paper.project_coordinator_approved_at,
         hod_approved_at=paper.hod_approved_at,
+        degree_level=degree_level,
     )
 
 
@@ -2692,7 +2693,7 @@ def complete_phase3(
 def assign_examiners(
     paper_id: int,
     internal_examiner_id: int = Form(...),
-    external_examiner_id: int = Form(...),
+    external_examiner_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> PaperRead:
@@ -2705,24 +2706,42 @@ def assign_examiners(
     if not (is_hod or is_coord or current_user.is_admin):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the HOD, Project Coordinator, or Admin can assign examiners")
     
+    stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if paper.created_by_id else None
+    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
+    is_undergrad = degree_level == "Undergraduate"
+
     int_exam = db.query(User).filter(User.id == internal_examiner_id).first()
-    ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
-    if not int_exam or not ext_exam:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected internal or external examiner not found")
+    if not int_exam:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected internal examiner / supervisor not found")
         
     int_roles = get_user_roles(db, internal_examiner_id)
     if "lecturer" not in int_roles and "project_supervisor" not in int_roles and int_exam.role not in {"lecturer", "project_supervisor"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal examiner must be a lecturer or supervisor in the school")
         
-    ext_roles = get_user_roles(db, external_examiner_id)
-    if "external_examiner" not in ext_roles and ext_exam.role != "external_examiner":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must have the external_examiner role")
+    ext_exam = None
+    if not is_undergrad:
+        if not external_examiner_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner is required for Masters, MPhil, and Postgraduate theses")
+        ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
+        if not ext_exam:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected external examiner not found")
+        ext_roles = get_user_roles(db, external_examiner_id)
+        if "external_examiner" not in ext_roles and ext_exam.role != "external_examiner":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must have the external_examiner role")
+    elif external_examiner_id:
+        ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
     
     paper.internal_examiner_id = internal_examiner_id
-    paper.external_examiner_id = external_examiner_id
+    paper.external_examiner_id = external_examiner_id if (not is_undergrad or external_examiner_id) else None
     paper.status = "phase4_marking"
     db.add(paper)
     
+    event_msg = (
+        f"Undergraduate Project Examiner / Supervisor assigned: {int_exam.full_name or int_exam.email}"
+        if is_undergrad and not ext_exam
+        else f"Examiners assigned: Internal={int_exam.full_name or int_exam.email}, External={ext_exam.full_name or ext_exam.email if ext_exam else 'None'}"
+    )
+
     _record_workflow_event(
         db,
         paper_id=paper.id,
@@ -2731,15 +2750,16 @@ def assign_examiners(
         actor_role="project_coordinator" if is_coord else "hod",
         from_status="phase4_pending_examiners",
         to_status=paper.status,
-        message=f"Examiners assigned: Internal={int_exam.full_name or int_exam.email}, External={ext_exam.full_name or ext_exam.email}",
+        message=event_msg,
     )
     db.commit()
     db.refresh(paper)
     
-    create_notification(db, user_id=internal_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as Internal Examiner for '{paper.title}'. Please mark and submit results.")
-    create_notification(db, user_id=external_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as External Examiner for '{paper.title}'. Please mark and submit results.")
+    create_notification(db, user_id=internal_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned to mark '{paper.title}'. Please evaluate and submit results.")
+    if ext_exam:
+        create_notification(db, user_id=ext_exam.id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as External Examiner for '{paper.title}'. Please mark and submit results.")
     
-    _notify_student(db, paper, "Internal and external examiners have been assigned. They will now review and mark your thesis.")
+    _notify_student(db, paper, "Examiner(s) have been assigned. They will now review and mark your project.")
     return _to_paper_read(paper, db, current_user)
 
 

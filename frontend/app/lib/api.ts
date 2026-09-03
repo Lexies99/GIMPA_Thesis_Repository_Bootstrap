@@ -1100,12 +1100,14 @@ export async function apiCompletePhase3(paperId: number, accessToken: string): P
 export async function apiAssignExaminers(
   paperId: number,
   internalExaminerId: number,
-  externalExaminerId: number,
+  externalExaminerId: number | null | undefined,
   accessToken: string,
 ): Promise<ApiPaper> {
   const form = new FormData()
   form.set("internal_examiner_id", String(internalExaminerId))
-  form.set("external_examiner_id", String(externalExaminerId))
+  if (externalExaminerId) {
+    form.set("external_examiner_id", String(externalExaminerId))
+  }
   const response = await fetch(`${apiBase}/papers/${paperId}/assign-examiners`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },

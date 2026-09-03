@@ -771,94 +771,38 @@ export function AccountManagement() {
                 </CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  className="text-xs flex items-center gap-1"
-                  onClick={async () => {
-                    try {
-                      const blob = await apiDownloadStudentsTemplate('xlsx')
-                      const url = window.URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = 'students_template.xlsx'
-                      a.click()
-                      window.URL.revokeObjectURL(url)
-                    } catch (err) {
-                      setBulkUploadMessage('Failed to download student template')
-                    }
-                  }}
+                <a
+                  href="/templates/students_template.xlsx"
+                  download="students_template.xlsx"
+                  className="btn btn-outline-secondary btn-sm text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 no-underline font-medium"
                 >
                   <Download className="h-3.5 w-3.5 text-emerald-500" />
                   Students Template (.xlsx)
-                </Button>
-                <Button
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  className="text-xs flex items-center gap-1"
-                  onClick={async () => {
-                    try {
-                      const blob = await apiDownloadStudentsTemplate('csv')
-                      const url = window.URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = 'students_template.csv'
-                      a.click()
-                      window.URL.revokeObjectURL(url)
-                    } catch (err) {
-                      setBulkUploadMessage('Failed to download student template')
-                    }
-                  }}
+                </a>
+                <a
+                  href="/templates/students_template.csv"
+                  download="students_template.csv"
+                  className="btn btn-outline-secondary btn-sm text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 no-underline font-medium"
                 >
                   <Download className="h-3.5 w-3.5 text-blue-500" />
                   Students Template (.csv)
-                </Button>
-                <Button
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  className="text-xs flex items-center gap-1"
-                  onClick={async () => {
-                    try {
-                      const blob = await apiDownloadLecturersTemplate('xlsx')
-                      const url = window.URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = 'lecturers_template.xlsx'
-                      a.click()
-                      window.URL.revokeObjectURL(url)
-                    } catch (err) {
-                      setBulkUploadMessage('Failed to download lecturer template')
-                    }
-                  }}
+                </a>
+                <a
+                  href="/templates/lecturers_template.xlsx"
+                  download="lecturers_template.xlsx"
+                  className="btn btn-outline-secondary btn-sm text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 no-underline font-medium"
                 >
                   <Download className="h-3.5 w-3.5 text-purple-500" />
                   Lecturers Template (.xlsx)
-                </Button>
-                <Button
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  className="text-xs flex items-center gap-1"
-                  onClick={async () => {
-                    try {
-                      const blob = await apiDownloadLecturersTemplate('csv')
-                      const url = window.URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = 'lecturers_template.csv'
-                      a.click()
-                      window.URL.revokeObjectURL(url)
-                    } catch (err) {
-                      setBulkUploadMessage('Failed to download lecturer template')
-                    }
-                  }}
+                </a>
+                <a
+                  href="/templates/lecturers_template.csv"
+                  download="lecturers_template.csv"
+                  className="btn btn-outline-secondary btn-sm text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 no-underline font-medium"
                 >
                   <Download className="h-3.5 w-3.5 text-indigo-500" />
                   Lecturers Template (.csv)
-                </Button>
+                </a>
               </div>
             </div>
           </CardHeader>
@@ -930,52 +874,22 @@ export function AccountManagement() {
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Button
-                size="sm"
-                type="button"
-                className="btn-ta-glass text-xs flex items-center gap-1.5"
-                onClick={async () => {
-                  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                  if (!token) return
-                  try {
-                    const blob = await apiDownloadBulkExaminerTemplate(token, 'xlsx')
-                    const url = window.URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = 'examiner_batch_mapping_template.xlsx'
-                    a.click()
-                    window.URL.revokeObjectURL(url)
-                  } catch (err) {
-                    setExaminerBulkMessage('Failed to download Excel template')
-                  }
-                }}
+              <a
+                href="/templates/examiner_batch_mapping_template.xlsx"
+                download="examiner_batch_mapping_template.xlsx"
+                className="btn-ta-glass text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-slate-200 hover:bg-white/10 no-underline font-medium"
               >
                 <Download className="h-3.5 w-3.5 text-emerald-400" />
                 Template (.xlsx)
-              </Button>
-              <Button
-                size="sm"
-                type="button"
-                className="btn-ta-glass text-xs flex items-center gap-1.5"
-                onClick={async () => {
-                  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                  if (!token) return
-                  try {
-                    const blob = await apiDownloadBulkExaminerTemplate(token, 'csv')
-                    const url = window.URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = 'examiner_batch_mapping_template.csv'
-                    a.click()
-                    window.URL.revokeObjectURL(url)
-                  } catch (err) {
-                    setExaminerBulkMessage('Failed to download CSV template')
-                  }
-                }}
+              </a>
+              <a
+                href="/templates/examiner_batch_mapping_template.csv"
+                download="examiner_batch_mapping_template.csv"
+                className="btn-ta-glass text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-slate-200 hover:bg-white/10 no-underline font-medium"
               >
                 <Download className="h-3.5 w-3.5 text-purple-400" />
                 Template (.csv)
-              </Button>
+              </a>
             </div>
           </div>
 

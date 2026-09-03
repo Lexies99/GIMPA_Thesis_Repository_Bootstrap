@@ -545,3 +545,40 @@ def mark_my_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     updated = mark_notification_read(db, notification)
     return NotificationRead.model_validate(updated)
+
+
+@router.get("/students-template")
+def download_students_template(
+    format: str = Query("csv"),
+):
+    from fastapi.responses import FileResponse
+    ext = "xlsx" if format.lower() == "xlsx" else "csv"
+    filename = f"students_template.{ext}"
+    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if ext == "xlsx" else "text/csv"
+    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
+    file_path = templates_dir / filename
+    if not file_path.exists():
+        templates_dir = Path(__file__).resolve().parents[2] / "frontend" / "public" / "templates"
+        file_path = templates_dir / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Template {filename} not found")
+    return FileResponse(path=str(file_path), media_type=media_type, filename=filename)
+
+
+@router.get("/lecturers-template")
+def download_lecturers_template(
+    format: str = Query("csv"),
+):
+    from fastapi.responses import FileResponse
+    ext = "xlsx" if format.lower() == "xlsx" else "csv"
+    filename = f"lecturers_template.{ext}"
+    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if ext == "xlsx" else "text/csv"
+    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
+    file_path = templates_dir / filename
+    if not file_path.exists():
+        templates_dir = Path(__file__).resolve().parents[2] / "frontend" / "public" / "templates"
+        file_path = templates_dir / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Template {filename} not found")
+    return FileResponse(path=str(file_path), media_type=media_type, filename=filename)
+
