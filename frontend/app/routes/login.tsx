@@ -1,11 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
 import { useAuth } from '../context/AuthContext'
-import { LogIn, BookOpen, AlertCircle, Eye, EyeOff } from 'lucide-react'
+import { LogIn, BookOpen, AlertCircle, Eye, EyeOff, Library } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -53,92 +49,364 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0d1b] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background glow effects */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-600/15 blur-3xl rounded-full pointer-events-none" />
+    <div
+      className="min-h-screen flex"
+      style={{
+        background: 'linear-gradient(135deg, #f0f4f8 0%, #e4eaf5 100%)',
+        fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+      }}
+    >
+      {/* Left decorative panel */}
+      <div
+        className="hidden lg:flex flex-col justify-between p-12"
+        style={{
+          width: '420px',
+          minWidth: '380px',
+          background: 'linear-gradient(155deg, #2A528A 0%, #5D6EC7 60%, #9F71DB 100%)',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Decorative circles */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '-60px',
+            right: '-60px',
+            width: '260px',
+            height: '260px',
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.07)',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '60px',
+            left: '-80px',
+            width: '320px',
+            height: '320px',
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.05)',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '-40px',
+            right: '20px',
+            width: '180px',
+            height: '180px',
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.06)',
+          }}
+        />
 
-      <div className="w-full max-w-md space-y-6 relative z-10">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
-              <BookOpen className="h-6 w-6 text-white" />
+        {/* Brand */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '48px',
+            }}
+          >
+            <div
+              style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '12px',
+                background: 'rgba(255,255,255,0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backdropFilter: 'blur(10px)',
+              }}
+            >
+              <Library size={22} color="#fff" />
+            </div>
+            <div>
+              <div style={{ color: '#fff', fontWeight: 800, fontSize: '18px', lineHeight: 1.2 }}>GIMPA</div>
+              <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Thesis Repository</div>
             </div>
           </div>
-          <h2 className="text-2xl font-black text-white tracking-wide m-0">GIMPA Thesis Repository</h2>
-          <p className="text-xs text-slate-400">Sign in to access research papers, supervisor reviews & repository tools</p>
+
+          <h1 style={{ color: '#fff', fontWeight: 800, fontSize: '32px', lineHeight: 1.25, margin: '0 0 16px' }}>
+            Access the Knowledge Repository
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.72)', fontSize: '15px', lineHeight: 1.65, margin: 0 }}>
+            Discover, review, and manage academic theses, research proposals, and scholarly publications from GIMPA.
+          </p>
         </div>
 
-        {/* Guest Access Card */}
-        <div className="ta-card p-4 space-y-3">
-          <div>
-            <h3 className="text-sm font-bold text-white m-0">Quick Guest Access</h3>
-            <p className="text-xs text-slate-400 m-0">Explore thesis catalog and search abstracts without signing in</p>
-          </div>
-          <Button onClick={handleGuestAccess} className="btn-ta-glass w-full text-xs">
-            Continue as Guest →
-          </Button>
-        </div>
-
-        {/* Login Form Card */}
-        <div className="ta-card p-6 space-y-5">
-          <div className="border-b border-white/10 pb-3">
-            <h3 className="text-base font-bold text-white m-0">Account Sign In</h3>
-            <p className="text-xs text-slate-400 m-0">Use your institutional GIMPA credentials</p>
-          </div>
-
-          <div className="space-y-4">
-            {error && (
-              <div className="flex items-center gap-2 p-3 bg-red-500/15 border border-red-500/30 text-red-300 rounded-xl text-xs">
-                <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
-                <p className="m-0">{error}</p>
+        {/* Stats row */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', gap: '24px' }}>
+            {[
+              { label: 'Theses', value: '2,400+' },
+              { label: 'Students', value: '850+' },
+              { label: 'Departments', value: '12' },
+            ].map((stat) => (
+              <div key={stat.label}>
+                <div style={{ color: '#E9D498', fontWeight: 800, fontSize: '22px' }}>{stat.value}</div>
+                <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginTop: '2px' }}>{stat.label}</div>
               </div>
-            )}
+            ))}
+          </div>
+        </div>
+      </div>
 
-            {/* Email */}
-            <div>
-              <Label htmlFor="email" className="text-xs font-medium text-slate-300">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@gimpa.edu.gh"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="mt-1"
-              />
+      {/* Right login panel */}
+      <div
+        className="flex-1 flex items-center justify-center p-6"
+        style={{ background: 'transparent' }}
+      >
+        <div style={{ width: '100%', maxWidth: '420px' }}>
+
+          {/* Mobile brand header */}
+          <div className="lg:hidden text-center mb-8">
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '52px',
+                height: '52px',
+                borderRadius: '14px',
+                background: 'linear-gradient(135deg, #2A528A, #5D6EC7)',
+                marginBottom: '12px',
+                boxShadow: '0 8px 20px rgba(42,82,138,0.3)',
+              }}
+            >
+              <BookOpen size={24} color="#fff" />
+            </div>
+            <h1 style={{ color: '#1a2340', fontWeight: 800, fontSize: '22px', margin: '0 0 4px' }}>GIMPA Thesis Repository</h1>
+            <p style={{ color: '#6b7a9a', fontSize: '13px', margin: 0 }}>Sign in to your institutional account</p>
+          </div>
+
+          {/* Card */}
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '16px',
+              boxShadow: '0 4px 24px rgba(42,82,138,0.1), 0 1px 4px rgba(42,82,138,0.06)',
+              border: '1px solid #dde3ee',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Card Header */}
+            <div style={{ padding: '28px 32px 20px', borderBottom: '1px solid #edf0f7' }}>
+              <h2 style={{ color: '#1a2340', fontWeight: 700, fontSize: '20px', margin: '0 0 4px' }}>Sign In</h2>
+              <p style={{ color: '#6b7a9a', fontSize: '13px', margin: 0 }}>Use your GIMPA institutional credentials</p>
             </div>
 
-            {/* Password */}
-            <div>
-              <Label htmlFor="password" className="text-xs font-medium text-slate-300">Password</Label>
-              <div className="relative mt-1">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className="pr-10"
-                />
+            {/* Card Body */}
+            <div style={{ padding: '28px 32px' }}>
+              {/* Error alert */}
+              {error && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '12px 14px',
+                    background: 'rgba(239,68,68,0.06)',
+                    border: '1px solid rgba(239,68,68,0.2)',
+                    borderRadius: '10px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: '1px' }} />
+                  <span style={{ fontSize: '13px', color: '#dc2626' }}>{error}</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {/* Email */}
+                <div>
+                  <label
+                    htmlFor="login-email"
+                    style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#3d4f6e', marginBottom: '6px' }}
+                  >
+                    Email Address
+                  </label>
+                  <input
+                    id="login-email"
+                    type="email"
+                    placeholder="name@gimpa.edu.gh"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      fontSize: '14px',
+                      border: '1.5px solid #dde3ee',
+                      borderRadius: '8px',
+                      background: '#f5f7fa',
+                      color: '#1a2340',
+                      outline: 'none',
+                      transition: 'border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease',
+                      boxSizing: 'border-box',
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = '#5D6EC7'
+                      e.target.style.boxShadow = '0 0 0 3px rgba(93,110,199,0.15)'
+                      e.target.style.background = '#fff'
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#dde3ee'
+                      e.target.style.boxShadow = 'none'
+                      e.target.style.background = '#f5f7fa'
+                    }}
+                  />
+                </div>
+
+                {/* Password */}
+                <div>
+                  <label
+                    htmlFor="login-password"
+                    style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#3d4f6e', marginBottom: '6px' }}
+                  >
+                    Password
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      id="login-password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      style={{
+                        width: '100%',
+                        padding: '10px 44px 10px 14px',
+                        fontSize: '14px',
+                        border: '1.5px solid #dde3ee',
+                        borderRadius: '8px',
+                        background: '#f5f7fa',
+                        color: '#1a2340',
+                        outline: 'none',
+                        transition: 'border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = '#5D6EC7'
+                        e.target.style.boxShadow = '0 0 0 3px rgba(93,110,199,0.15)'
+                        e.target.style.background = '#fff'
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = '#dde3ee'
+                        e.target.style.boxShadow = 'none'
+                        e.target.style.background = '#f5f7fa'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#9aaabb',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: 0,
+                      }}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit button */}
                 <button
                   type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute inset-y-0 right-2 flex items-center text-slate-400 hover:text-white"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={handleLogin}
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    padding: '11px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    color: '#fff',
+                    background: loading
+                      ? 'rgba(42,82,138,0.6)'
+                      : 'linear-gradient(135deg, #2A528A 0%, #5D6EC7 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    boxShadow: loading ? 'none' : '0 4px 14px rgba(42,82,138,0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s ease',
+                    letterSpacing: '0.015em',
+                  }}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  <LogIn size={16} />
+                  {loading ? 'Signing In...' : 'Sign In'}
                 </button>
               </div>
             </div>
 
-            {/* Submit Button */}
-            <Button onClick={handleLogin} className="btn-ta-purple w-full text-xs py-2.5" disabled={loading}>
-              <LogIn className="h-4 w-4 mr-2" />
-              {loading ? 'Signing In...' : 'Sign In'}
-            </Button>
+            {/* Card Footer - Guest Access */}
+            <div
+              style={{
+                padding: '16px 32px 24px',
+                borderTop: '1px solid #edf0f7',
+                background: '#fafbfd',
+              }}
+            >
+              <p style={{ fontSize: '12px', color: '#6b7a9a', margin: '0 0 10px', textAlign: 'center' }}>
+                Want to explore without an account?
+              </p>
+              <button
+                type="button"
+                onClick={handleGuestAccess}
+                style={{
+                  width: '100%',
+                  padding: '9px 20px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#3d4f6e',
+                  background: '#fff',
+                  border: '1.5px solid #dde3ee',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+                onMouseOver={(e) => {
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#5D6EC7'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = '#2A528A'
+                  ;(e.currentTarget as HTMLButtonElement).style.background = '#f5f7fa'
+                }}
+                onMouseOut={(e) => {
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#dde3ee'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = '#3d4f6e'
+                  ;(e.currentTarget as HTMLButtonElement).style.background = '#fff'
+                }}
+              >
+                Continue as Guest →
+              </button>
+            </div>
           </div>
+
+          {/* Footer note */}
+          <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: '#9aaabb' }}>
+            © {new Date().getFullYear()} GIMPA Thesis Repository · Institutional Access Only
+          </p>
         </div>
       </div>
     </div>

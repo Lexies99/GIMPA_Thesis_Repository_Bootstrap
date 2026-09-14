@@ -238,15 +238,23 @@ export function PublicCatalog() {
         </div>
       </div>
 
-      <div className="content-search-bar" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
-        <Search className="content-search-icon" style={{color:'var(--text-muted)'}} />
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        background: '#fff', border: '1.5px solid #e2e8f0',
+        borderRadius: 10, padding: '0 14px',
+        boxShadow: '0 1px 4px rgba(42,82,138,0.06)',
+      }}>
+        <Search style={{ width: 16, height: 16, color: '#94a3b8', flexShrink: 0 }} />
         <input
           type="text"
           placeholder="Search papers, authors, disciplines..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="content-search-input"
-          style={{background:'transparent',border:'none',outline:'none',color:'var(--text-main)'}}
+          style={{
+            flex: 1, width: '100%', border: 'none', outline: 'none',
+            background: 'transparent', fontSize: 14, color: '#1e293b',
+            padding: '12px 0', fontFamily: 'Inter, sans-serif',
+          }}
         />
       </div>
 

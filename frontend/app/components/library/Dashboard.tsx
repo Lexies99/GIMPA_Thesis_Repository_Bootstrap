@@ -865,98 +865,61 @@ export function Dashboard({ userRole }: DashboardProps) {
   return (
     <div className="space-y-6">
 
-      {/* 4 TrendyAdmin Metric Stat Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* Card 1 */}
-        <div className="ta-stat-card">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-500">
-              <FileText className="size-5" />
+      {/* 4 Clean Stat Cards Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+        {/* Card 1 – Total Submissions */}
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <FileText style={{ width: 20, height: 20, color: '#7c3aed' }} />
             </div>
-            <span className="badge-ta-green text-xs font-semibold px-2.5 py-1 rounded-full font-mono flex items-center gap-1">
-              ↗ 12.5%
-            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', background: '#dcfce7', borderRadius: 999, padding: '3px 9px' }}>+12.5%</span>
           </div>
-          <p className="text-2xl font-black m-0 tracking-tight" style={{color:'var(--text-main)'}}>{stats?.total_papers ?? 0}</p>
-          <p className="text-xs font-medium m-0 mt-1" style={{color:'var(--text-muted)'}}>Total Submissions</p>
-          {/* Decorative bar chart dots */}
-          <div className="flex items-end gap-1.5 mt-4 pt-2 border-t" style={{borderColor:'var(--border-color)'}}>
-            <div className="w-2.5 h-2 rounded-full bg-purple-500/30" />
-            <div className="w-2.5 h-3 rounded-full bg-purple-500/50" />
-            <div className="w-2.5 h-5 rounded-full bg-purple-500/70" />
-            <div className="w-2.5 h-3 rounded-full bg-purple-500/40" />
-            <div className="w-2.5 h-6 rounded-full bg-purple-500" />
-          </div>
+          <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{stats?.total_papers ?? 0}</p>
+          <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>Total Submissions</p>
         </div>
 
-        {/* Card 2 */}
-        <div className="ta-stat-card">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-500">
-              <Clock className="size-5" />
+        {/* Card 2 – Pending Reviews */}
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Clock style={{ width: 20, height: 20, color: '#0284c7' }} />
             </div>
-            <span className="badge-ta-cyan text-xs font-semibold px-2.5 py-1 rounded-full font-mono flex items-center gap-1">
-              ↗ 8.2%
-            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', background: '#e0f2fe', borderRadius: 999, padding: '3px 9px' }}>+8.2%</span>
           </div>
-          <p className="text-2xl font-black m-0 tracking-tight" style={{color:'var(--text-main)'}}>{stats?.pending_reviews ?? 0}</p>
-          <p className="text-xs font-medium m-0 mt-1" style={{color:'var(--text-muted)'}}>Pending Reviews</p>
-          <div className="flex items-end gap-1.5 mt-4 pt-2 border-t" style={{borderColor:'var(--border-color)'}}>
-            <div className="w-2.5 h-3 rounded-full bg-cyan-500/30" />
-            <div className="w-2.5 h-5 rounded-full bg-cyan-500/60" />
-            <div className="w-2.5 h-2 rounded-full bg-cyan-500/40" />
-            <div className="w-2.5 h-6 rounded-full bg-cyan-500" />
-            <div className="w-2.5 h-4 rounded-full bg-cyan-500/70" />
-          </div>
+          <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{stats?.pending_reviews ?? 0}</p>
+          <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>Pending Reviews</p>
         </div>
 
-        {/* Card 3 */}
-        <div className="ta-stat-card">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-500">
-              <Download className="size-5" />
+        {/* Card 3 – Downloads */}
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Download style={{ width: 20, height: 20, color: '#d97706' }} />
             </div>
-            <span className="badge-ta-amber text-xs font-semibold px-2.5 py-1 rounded-full font-mono flex items-center gap-1">
-              ↘ 3.1%
-            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7', borderRadius: 999, padding: '3px 9px' }}>↘ 3.1%</span>
           </div>
-          <p className="text-2xl font-black m-0 tracking-tight" style={{color:'var(--text-main)'}}>{stats?.total_downloads?.toLocaleString() ?? 0}</p>
-          <p className="text-xs font-medium m-0 mt-1" style={{color:'var(--text-muted)'}}>Paper Downloads</p>
-          <div className="flex items-end gap-1.5 mt-4 pt-2 border-t" style={{borderColor:'var(--border-color)'}}>
-            <div className="w-2.5 h-5 rounded-full bg-amber-500/40" />
-            <div className="w-2.5 h-2 rounded-full bg-amber-500/30" />
-            <div className="w-2.5 h-6 rounded-full bg-amber-500" />
-            <div className="w-2.5 h-4 rounded-full bg-amber-500/60" />
-            <div className="w-2.5 h-3 rounded-full bg-amber-500/50" />
-          </div>
+          <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{stats?.total_downloads?.toLocaleString() ?? 0}</p>
+          <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>Paper Downloads</p>
         </div>
 
-        {/* Card 4 */}
-        <div className="ta-stat-card">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-500">
-              <CheckCircle2 className="size-5" />
+        {/* Card 4 – Repository Views */}
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle2 style={{ width: 20, height: 20, color: '#16a34a' }} />
             </div>
-            <span className="badge-ta-green text-xs font-semibold px-2.5 py-1 rounded-full font-mono flex items-center gap-1">
-              ↗ 5.8%
-            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', background: '#dcfce7', borderRadius: 999, padding: '3px 9px' }}>+5.8%</span>
           </div>
-          <p className="text-2xl font-black m-0 tracking-tight" style={{color:'var(--text-main)'}}>{stats?.total_views?.toLocaleString() ?? 0}</p>
-          <p className="text-xs font-medium m-0 mt-1" style={{color:'var(--text-muted)'}}>Repository Views</p>
-          <div className="flex items-end gap-1.5 mt-4 pt-2 border-t" style={{borderColor:'var(--border-color)'}}>
-            <div className="w-2.5 h-3 rounded-full bg-emerald-500/30" />
-            <div className="w-2.5 h-4 rounded-full bg-emerald-500/50" />
-            <div className="w-2.5 h-2 rounded-full bg-emerald-500/40" />
-            <div className="w-2.5 h-5 rounded-full bg-emerald-500/80" />
-            <div className="w-2.5 h-6 rounded-full bg-emerald-500" />
-          </div>
+          <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{stats?.total_views?.toLocaleString() ?? 0}</p>
+          <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>Repository Views</p>
         </div>
       </div>
 
-      {/* Main Grid Content Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Primary Column (8 cols) */}
-        <div className="lg:col-span-8 space-y-6">
+      {/* Main Content Layout */}
+      <div className="space-y-6">
+        {/* Primary Column (full width) */}
+        <div className="space-y-6">
 
           {/* Department Student Pipeline Section */}
           {showPipeline && (
@@ -1328,29 +1291,8 @@ export function Dashboard({ userRole }: DashboardProps) {
             </div>
           )}
         </div>
-
-        {/* Right Secondary Column (4 cols) */}
-        <div className="lg:col-span-4 space-y-6">
-
-          {/* Goal Progress Target Widget */}
-          <div className="ta-card p-5 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3" style={{borderColor:'var(--border-color)'}}>
-              <h3 className="text-sm font-bold m-0" style={{color:'var(--text-main)'}}>Repository Target Goal</h3>
-              <span className="badge-ta-purple text-[10px] px-2 py-0.5 rounded-full font-mono">Monthly</span>
-            </div>
-
-            <div className="text-center py-3">
-              <div className="w-24 h-24 rounded-full border-4 border-purple-500 border-t-indigo-400 border-r-purple-400 flex flex-col items-center justify-center mx-auto shadow-lg shadow-purple-500/20">
-                <span className="text-xl font-black text-purple-500">85%</span>
-                <span className="text-[9px] text-purple-400 uppercase font-semibold">Completed</span>
-              </div>
-              <p className="text-xs font-semibold m-0 mt-3" style={{color:'var(--text-main)'}}>85% of Semester Thesis Approvals Reached</p>
-              <p className="text-[11px] m-0 mt-1" style={{color:'var(--text-muted)'}}>12 theses currently undergoing examiner review</p>
-            </div>
-          </div>
-
-        </div>
       </div>
+
 
       <ReportExportModal
         open={exportModalOpen}

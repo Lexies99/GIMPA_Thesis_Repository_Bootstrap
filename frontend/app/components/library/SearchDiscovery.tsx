@@ -188,15 +188,23 @@ export function SearchDiscovery() {
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="content-search-bar" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
-          <Search className="content-search-icon" style={{color:'var(--text-muted)'}} />
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: '#fff', border: '1.5px solid #e2e8f0',
+          borderRadius: 10, padding: '0 14px',
+          boxShadow: '0 1px 4px rgba(42,82,138,0.06)',
+        }}>
+          <Search style={{ width: 16, height: 16, color: '#94a3b8', flexShrink: 0 }} />
           <input
             type="text"
             placeholder="Search papers, authors, keywords..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="content-search-input"
-            style={{background:'transparent',border:'none',outline:'none',color:'var(--text-main)'}}
+            style={{
+              flex: 1, width: '100%', border: 'none', outline: 'none',
+              background: 'transparent', fontSize: 14, color: '#1e293b',
+              padding: '12px 0', fontFamily: 'Inter, sans-serif',
+            }}
           />
         </div>
 
@@ -214,34 +222,35 @@ export function SearchDiscovery() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1">
-          <div className="ta-card p-4 space-y-5">
-            <div className="flex items-center justify-between border-b pb-3" style={{borderColor:'var(--border-color)'}}>
-              <h3 className="text-sm font-bold m-0 flex items-center gap-2">
-                <Filter className="h-4 w-4 text-purple-400" />
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '16px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Filter style={{ width: 14, height: 14, color: '#5D6EC7' }} />
                 Filters
               </h3>
               {activeFilterCount > 0 && (
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 bg-red-500/10 px-2 py-0.5 rounded-lg border border-red-500/20"
+                  style={{ fontSize: 11, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 4, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}
                 >
-                  <X className="h-3 w-3" /> Clear
+                  <X style={{ width: 12, height: 12 }} /> Clear
                 </button>
               )}
             </div>
 
-            <div className="space-y-5">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {/* Discipline Filter */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2">Discipline</h4>
-                <div className="space-y-0.5 max-h-60 overflow-y-auto pr-1">
+                <h4 style={{ margin: '0 0 10px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#2A528A' }}>Discipline</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
                   {visibleDisciplines.map((d) => (
-                    <label key={d} className="filter-label">
+                    <label key={d} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: '#475569', lineHeight: 1.4 }}>
                       <input
                         type="checkbox"
                         checked={activeFilters.discipline?.includes(d) || false}
                         onChange={() => toggleFilter('discipline', d)}
+                        style={{ marginTop: 2, accentColor: '#5D6EC7', flexShrink: 0, width: 14, height: 14 }}
                       />
                       <span>{d}</span>
                     </label>
@@ -250,15 +259,16 @@ export function SearchDiscovery() {
               </div>
 
               {/* School Filter */}
-              <div className="border-t pt-4" style={{borderColor:'var(--border-color)'}}>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2">School</h4>
-                <div className="space-y-0.5">
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#2A528A' }}>School</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {schools.map((u) => (
-                    <label key={u} className="filter-label">
+                    <label key={u} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: '#475569', lineHeight: 1.4 }}>
                       <input
                         type="checkbox"
                         checked={activeFilters.university?.includes(u) || false}
                         onChange={() => toggleFilter('university', u)}
+                        style={{ marginTop: 2, accentColor: '#5D6EC7', flexShrink: 0, width: 14, height: 14 }}
                       />
                       <span>{u}</span>
                     </label>
@@ -267,15 +277,16 @@ export function SearchDiscovery() {
               </div>
 
               {/* Year Filter */}
-              <div className="border-t pt-4" style={{borderColor:'var(--border-color)'}}>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2">Year</h4>
-                <div className="space-y-0.5">
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#2A528A' }}>Year</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {years.map((y) => (
-                    <label key={y} className="filter-label">
+                    <label key={y} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: '#475569' }}>
                       <input
                         type="checkbox"
                         checked={activeFilters.year?.includes(y) || false}
                         onChange={() => toggleFilter('year', y)}
+                        style={{ accentColor: '#5D6EC7', width: 14, height: 14 }}
                       />
                       <span>{y}</span>
                     </label>

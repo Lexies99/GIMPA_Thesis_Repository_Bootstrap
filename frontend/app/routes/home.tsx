@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { Route } from "./+types/home";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { PublicCatalog } from '../components/library/PublicCatalog';
 import { UserAccount } from '../components/library/UserAccount';
 import { LibraryStats } from '../components/library/LibraryStats';
@@ -24,11 +23,9 @@ import {
   LogOut,
   User,
   Bell,
-  Sun,
-  Moon,
-  Laptop,
   PanelLeftClose,
   PanelLeftOpen,
+  LogIn,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -48,12 +45,6 @@ export default function Home() {
   const [overdueCount, setOverdueCount] = useState(0);
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('gimpa_theme') as 'light' | 'dark' | 'system') || 'dark';
-    }
-    return 'dark';
-  });
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -62,24 +53,11 @@ export default function Home() {
     return false;
   });
 
+  // Always force light theme to match clean professional design
   useEffect(() => {
-    const applyTheme = (theme: 'light' | 'dark' | 'system') => {
-      let activeTheme = theme;
-      if (theme === 'system') {
-        activeTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      }
-      document.documentElement.setAttribute('data-theme', activeTheme);
-      localStorage.setItem('gimpa_theme', theme);
-    };
-    applyTheme(themeMode);
-
-    if (themeMode === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handleChange = () => applyTheme('system');
-      mediaQuery.addEventListener('change', handleChange);
-      return () => mediaQuery.removeEventListener('change', handleChange);
-    }
-  }, [themeMode]);
+    document.documentElement.setAttribute('data-theme', 'light');
+    localStorage.setItem('gimpa_theme', 'light');
+  }, []);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => {
@@ -88,30 +66,30 @@ export default function Home() {
       return next;
     });
   };
-  const hasRole = (role: string) => !!user && (user.role === role || (user.roles || []).includes(role as typeof user.role))
+
+  const hasRole = (role: string) => !!user && (user.role === role || (user.roles || []).includes(role as typeof user.role));
   const roleLabel = (() => {
-    if (!user) return ''
-    if (hasRole('system_admin')) return 'System Admin'
-    if (hasRole('head_library')) return 'Head Library'
-    if (hasRole('librarian')) return 'Librarian'
-    if (hasRole('dean')) return 'Dean'
-    if (hasRole('hod')) return 'HOD'
-    if (hasRole('project_coordinator')) return 'Project Coordinator'
-    if (hasRole('project_supervisor')) return 'Project Supervisor'
-    if (hasRole('lecturer')) return 'Lecturer'
-    if (user.role === 'student' || user.role === 'member') return 'Student'
-    return user.role
-  })()
+    if (!user) return '';
+    if (hasRole('system_admin')) return 'System Admin';
+    if (hasRole('head_library')) return 'Head Librarian';
+    if (hasRole('librarian')) return 'Librarian';
+    if (hasRole('dean')) return 'Dean';
+    if (hasRole('hod')) return 'HOD';
+    if (hasRole('project_coordinator')) return 'Project Coordinator';
+    if (hasRole('project_supervisor')) return 'Project Supervisor';
+    if (hasRole('lecturer')) return 'Lecturer';
+    if (user.role === 'student' || user.role === 'member') return 'Student';
+    return user.role;
+  })();
+
   const isReviewer =
     !user?.mustChangePassword &&
-    (hasRole('librarian') || hasRole('project_coordinator') || hasRole('hod') || hasRole('lecturer') || hasRole('project_supervisor'))
-  const isAdminAreaUser = hasRole('system_admin')
-  const isAdministrationUser = isAdminAreaUser || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator') || hasRole('lecturer')
+    (hasRole('librarian') || hasRole('project_coordinator') || hasRole('hod') || hasRole('lecturer') || hasRole('project_supervisor'));
+  const isAdminAreaUser = hasRole('system_admin');
+  const isAdministrationUser = isAdminAreaUser || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator') || hasRole('lecturer');
 
   const handleTabChange = (tab: string) => {
     const publicTabs = new Set(['catalog', 'search']);
-
-    // Treat guest as unauthenticated: only allow public tabs
     const isGuest = user?.role === 'guest';
     const isAuthedNonGuest = isAuthenticated && !isGuest;
 
@@ -119,470 +97,503 @@ export default function Home() {
       navigate('/login');
       return;
     }
-
-    // Role-based guards for authenticated non-guest users
     if (tab === 'approval' && !isReviewer) return;
     if (tab === 'librarian' && !isAdministrationUser) return;
-
     setActiveTab(tab);
   };
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     const load = async () => {
-      if (!isReviewer) return
+      if (!isReviewer) return;
       try {
-        const token = localStorage.getItem('murrs_access_token')
-        if (!token) {
-          if (!cancelled) setOverdueCount(0)
-          return
-        }
-        const pending = await apiGetPendingPapers(token)
-        if (!cancelled) setOverdueCount(pending.length)
-      } catch {
-        if (!cancelled) setOverdueCount(0)
-      }
-    }
-    void load()
-    const timer = setInterval(() => {
-      void load()
-    }, 10000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-  }, [isReviewer, activeTab, user?.role])
+        const token = localStorage.getItem('murrs_access_token');
+        if (!token) { if (!cancelled) setOverdueCount(0); return; }
+        const pending = await apiGetPendingPapers(token);
+        if (!cancelled) setOverdueCount(pending.length);
+      } catch { if (!cancelled) setOverdueCount(0); }
+    };
+    void load();
+    const timer = setInterval(() => { void load(); }, 10000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [isReviewer, activeTab, user?.role]);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     const load = async () => {
-      const token = localStorage.getItem('murrs_access_token')
-      if (!token || !isAuthenticated || user?.role === 'guest') return
+      const token = localStorage.getItem('murrs_access_token');
+      if (!token || !isAuthenticated || user?.role === 'guest') return;
       try {
-        const items = await apiGetNotifications(token)
-        if (!cancelled) setNotifications(items)
-      } catch {
-        if (!cancelled) setNotifications([])
-      }
-    }
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [isAuthenticated, user?.role, activeTab])
+        const items = await apiGetNotifications(token);
+        if (!cancelled) setNotifications(items);
+      } catch { if (!cancelled) setNotifications([]); }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [isAuthenticated, user?.role, activeTab]);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   const handleNotificationClick = async (id: number) => {
-    const token = localStorage.getItem('murrs_access_token')
-    if (!token) return
+    const token = localStorage.getItem('murrs_access_token');
+    if (!token) return;
     try {
-      const updated = await apiMarkNotificationRead(id, token)
-      setNotifications((prev) => prev.map((n) => (n.id === id ? updated : n)))
+      const updated = await apiMarkNotificationRead(id, token);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? updated : n)));
     } catch {}
-  }
+  };
+
+  // Nav items
+  const navItems = ([
+    { tab: 'catalog',   label: 'Catalog',           icon: Book,      show: true },
+    { tab: 'search',    label: 'Search & Discovery', icon: Search,    show: true },
+    { tab: 'dashboard', label: 'Dashboard',          icon: BarChart3, show: isAuthenticated && user?.role !== 'guest' },
+    { tab: 'approval',  label: 'Approval Workflow',  icon: BookOpen,  show: isReviewer,            badge: overdueCount > 0 ? overdueCount : null },
+    { tab: 'librarian', label: 'Administration',     icon: Settings,  show: isAdministrationUser },
+  ] as Array<{tab:string;label:string;icon:React.ElementType;show:boolean|undefined;badge?:number|null}>).filter(item => item.show);
 
   return (
-    <div className="ta-app-canvas min-h-screen flex transition-colors duration-300">
-      {/* Left Sidebar */}
-      <aside className={`${sidebarCollapsed ? 'w-20' : 'w-64'} fixed inset-y-0 left-0 ta-sidebar border-r flex flex-col z-50 shadow-2xl transition-all duration-300`}>
-        {/* Brand Logo & Collapse Toggle Header */}
-        <div className="px-3.5 py-3.5 border-b flex items-center justify-between gap-2" style={{borderColor:'var(--border-color)'}}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f0f4f8', fontFamily: "'Inter', 'Outfit', sans-serif" }}>
+
+      {/* ─── LEFT SIDEBAR ─────────────────────────────────────────── */}
+      <aside
+        style={{
+          width: sidebarCollapsed ? '72px' : '240px',
+          minHeight: '100vh',
+          background: 'linear-gradient(180deg, #2A528A 0%, #1e3f6d 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          bottom: 0,
+          zIndex: 50,
+          boxShadow: '4px 0 24px rgba(42,82,138,0.18)',
+          transition: 'width 0.25s ease',
+          overflowX: 'hidden',
+        }}
+      >
+        {/* Brand Header */}
+        <div style={{
+          padding: '18px 14px 14px',
+          borderBottom: '1px solid rgba(255,255,255,0.10)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+          gap: 8,
+          minHeight: 64,
+        }}>
           {sidebarCollapsed ? (
-            <div className="flex items-center justify-between w-full">
-              <button
-                type="button"
-                onClick={() => handleTabChange('catalog')}
-                className="border-none bg-transparent p-0 cursor-pointer group"
-                title="Go to Catalog Homepage"
-              >
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-purple-500/20 shrink-0 group-hover:scale-105 transition-transform">
-                  <Library className="size-4.5 text-white" />
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={toggleSidebar}
-                className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors shrink-0"
-                style={{color:'var(--text-muted)'}}
-                title="Expand Sidebar"
-              >
-                <PanelLeftOpen className="size-4" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              style={{ background: 'rgba(255,255,255,0.13)', border: 'none', borderRadius: 10, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              title="Expand Sidebar"
+            >
+              <Library style={{ width: 18, height: 18, color: '#fff' }} />
+            </button>
           ) : (
             <>
               <button
                 type="button"
                 onClick={() => handleTabChange('catalog')}
-                className="flex items-center gap-2.5 text-left border-none bg-transparent p-0 cursor-pointer group min-w-0 flex-1"
-                title="Go to Catalog Homepage"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', flex: 1, minWidth: 0 }}
+                title="GIMPA Thesis Repository"
               >
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-purple-500/20 shrink-0 group-hover:scale-105 transition-transform">
-                  <Library className="size-4.5 text-white" />
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Library style={{ width: 18, height: 18, color: '#fff' }} />
                 </div>
-                <div className="flex flex-col text-left min-w-0">
-                  <span className="text-sm font-extrabold tracking-wide leading-tight group-hover:text-purple-400 transition-colors truncate" style={{color:'var(--text-main)'}}>
-                    GIMPA
-                  </span>
-                  <span className="text-[10px] font-semibold text-purple-400 tracking-wider uppercase leading-tight mt-0.5 truncate">
-                    Thesis Repo
-                  </span>
+                <div style={{ textAlign: 'left', overflow: 'hidden' }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.02em', lineHeight: 1.2 }}>GIMPA</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: '#E9D498', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>Thesis Repo</div>
                 </div>
               </button>
-
               <button
                 type="button"
                 onClick={toggleSidebar}
-                className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors shrink-0"
-                style={{color:'var(--text-muted)'}}
-                title="Collapse Sidebar"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', padding: 4, borderRadius: 6, flexShrink: 0 }}
+                title="Collapse"
               >
-                <PanelLeftClose className="size-4" />
+                <PanelLeftClose style={{ width: 16, height: 16 }} />
               </button>
             </>
           )}
         </div>
 
-        {/* Sidebar Navigation */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-6">
-          {/* Section: Overview */}
-          <div>
-            {!sidebarCollapsed && (
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-2">
-                OVERVIEW
-              </p>
-            )}
-            <div className="space-y-1">
+        {/* Navigation Items */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 10px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {!sidebarCollapsed && (
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.40)', padding: '0 8px', marginBottom: 6, marginTop: 0 }}>
+              Navigation
+            </p>
+          )}
+
+          {navItems.map(({ tab, label, icon: Icon, badge }) => {
+            const isActive = activeTab === tab;
+            return (
               <button
+                key={tab}
                 type="button"
-                onClick={() => handleTabChange('catalog')}
-                title="Catalog"
-                className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} transition-all ${
-                  activeTab === 'catalog'
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                }`}
+                onClick={() => handleTabChange(tab)}
+                title={label}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+                  padding: sidebarCollapsed ? '10px' : '9px 10px',
+                  borderRadius: 9,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: isActive ? 'rgba(255,255,255,0.16)' : 'transparent',
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.75)',
+                  fontWeight: isActive ? 600 : 400,
+                  fontSize: 13,
+                  textAlign: 'left',
+                  transition: 'background 0.15s, color 0.15s',
+                  position: 'relative',
+                }}
+                onMouseEnter={e => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)';
+                    (e.currentTarget as HTMLButtonElement).style.color = '#fff';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                    (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.75)';
+                  }
+                }}
               >
-                <span className="flex items-center gap-2.5">
-                  <Book className="size-4 shrink-0" />
-                  {!sidebarCollapsed && <span>Catalog</span>}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTabChange('search')}
-                title="Search & Discovery"
-                className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} transition-all ${
-                  activeTab === 'search'
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <Search className="size-4 shrink-0" />
-                  {!sidebarCollapsed && <span>Search & Discovery</span>}
-                </span>
-              </button>
-
-              {isAuthenticated && user?.role !== 'guest' && (
-                <button
-                  type="button"
-                  onClick={() => handleTabChange('dashboard')}
-                  title="Dashboard"
-                  className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} transition-all ${
-                    activeTab === 'dashboard'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5">
-                    <BarChart3 className="size-4 shrink-0" />
-                    {!sidebarCollapsed && <span>Dashboard</span>}
-                  </span>
-                </button>
-              )}
-
-              {isReviewer && (
-                <button
-                  type="button"
-                  onClick={() => handleTabChange('approval')}
-                  title="Approval Workflow"
-                  className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} transition-all ${
-                    activeTab === 'approval'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5">
-                    <BookOpen className="size-4 shrink-0" />
-                    {!sidebarCollapsed && <span>Approval Workflow</span>}
-                  </span>
-                  {overdueCount > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                      {overdueCount}
-                    </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {isActive && (
+                    <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: 2, background: '#E9D498' }} />
                   )}
-                </button>
-              )}
-
-              {isAdministrationUser && (
-                <button
-                  type="button"
-                  onClick={() => handleTabChange('librarian')}
-                  title="Administration"
-                  className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} transition-all ${
-                    activeTab === 'librarian'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5">
-                    <Settings className="size-4 shrink-0" />
-                    {!sidebarCollapsed && <span>Administration</span>}
+                  <Icon style={{ width: 16, height: 16, flexShrink: 0 }} />
+                  {!sidebarCollapsed && <span>{label}</span>}
+                </span>
+                {badge != null && badge > 0 && (
+                  <span style={{ background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', lineHeight: 1.5 }}>
+                    {badge}
                   </span>
-                </button>
-              )}
-            </div>
-          </div>
+                )}
+              </button>
+            );
+          })}
 
-          {/* Section: Account */}
+          {/* Account section */}
           {isAuthenticated && user?.role !== 'guest' && (
-            <div>
+            <>
               {!sidebarCollapsed && (
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-2">
-                  ACCOUNT
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.40)', padding: '0 8px', marginTop: 20, marginBottom: 6 }}>
+                  Account
                 </p>
               )}
-              <div className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() => handleTabChange('profile')}
-                  title="My Profile"
-                  className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} transition-all ${
-                    activeTab === 'profile'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5">
-                    <User className="size-4 shrink-0" />
-                    {!sidebarCollapsed && <span>My Profile</span>}
-                  </span>
-                </button>
-              </div>
-            </div>
+              {sidebarCollapsed && <div style={{ height: 12 }} />}
+              <button
+                type="button"
+                onClick={() => handleTabChange('profile')}
+                title="My Profile"
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                  padding: sidebarCollapsed ? '10px' : '9px 10px',
+                  borderRadius: 9,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: activeTab === 'profile' ? 'rgba(255,255,255,0.16)' : 'transparent',
+                  color: activeTab === 'profile' ? '#fff' : 'rgba(255,255,255,0.75)',
+                  fontWeight: activeTab === 'profile' ? 600 : 400,
+                  fontSize: 13,
+                  gap: 10,
+                  transition: 'background 0.15s',
+                  position: 'relative',
+                }}
+                onMouseEnter={e => {
+                  if (activeTab !== 'profile') {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)';
+                    (e.currentTarget as HTMLButtonElement).style.color = '#fff';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (activeTab !== 'profile') {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                    (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.75)';
+                  }
+                }}
+              >
+                {activeTab === 'profile' && (
+                  <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: 2, background: '#E9D498' }} />
+                )}
+                <User style={{ width: 16, height: 16, flexShrink: 0 }} />
+                {!sidebarCollapsed && <span>My Profile</span>}
+              </button>
+            </>
           )}
         </div>
 
-        {/* Sidebar Bottom User Profile Card */}
-        {user && isAuthenticated ? (
-          <div className="p-3 border-t" style={{borderColor:'var(--border-color)',backgroundColor:'var(--bg-sidebar)'}}>
-            <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} gap-2 p-2 rounded-xl border`} style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
-              <div className="flex items-center gap-2.5 overflow-hidden">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-500 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+        {/* Sidebar Bottom: User Card */}
+        <div style={{ padding: '10px 10px 14px', borderTop: '1px solid rgba(255,255,255,0.10)' }}>
+          {user && isAuthenticated && user.role !== 'guest' ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+              gap: 8,
+              background: 'rgba(255,255,255,0.08)',
+              borderRadius: 10,
+              padding: '8px 10px',
+              border: '1px solid rgba(255,255,255,0.10)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, overflow: 'hidden' }}>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg, #5D6EC7, #9F71DB)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
                   {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                 </div>
                 {!sidebarCollapsed && (
-                  <div className="text-left truncate">
-                    <p className="text-xs font-bold m-0 leading-tight truncate" style={{color:'var(--text-main)'}}>{user.name}</p>
-                    <p className="text-[10px] text-purple-400 font-mono m-0 mt-0.5 truncate capitalize">{roleLabel}</p>
+                  <div style={{ overflow: 'hidden' }}>
+                    <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#fff', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</p>
+                    <p style={{ margin: 0, fontSize: 10, color: '#E9D498', marginTop: 2, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleLabel}</p>
                   </div>
                 )}
               </div>
               {!sidebarCollapsed && (
                 <button
                   type="button"
-                  onClick={async () => {
-                    await logout();
-                    navigate('/login');
-                  }}
-                  className="text-slate-400 hover:text-red-400 p-1 transition-colors shrink-0"
+                  onClick={async () => { await logout(); navigate('/login'); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.40)', padding: 4, borderRadius: 6, flexShrink: 0, transition: 'color 0.15s' }}
                   title="Logout"
+                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = '#f87171'}
+                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.40)'}
                 >
-                  <LogOut className="size-4" />
+                  <LogOut style={{ width: 15, height: 15 }} />
                 </button>
               )}
             </div>
-          </div>
-        ) : (
-          <div className="p-3 border-t border-white/10">
-            <Button
+          ) : (
+            <button
+              type="button"
               onClick={() => navigate('/login')}
-              className="btn-ta-purple w-full text-xs"
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '9px 14px',
+                background: 'rgba(255,255,255,0.13)',
+                border: '1px solid rgba(255,255,255,0.18)',
+                borderRadius: 9,
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.22)'}
+              onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.13)'}
             >
-              {sidebarCollapsed ? <User className="size-4" /> : 'Sign In'}
-            </Button>
-          </div>
-        )}
+              <LogIn style={{ width: 15, height: 15 }} />
+              {!sidebarCollapsed && <span>Sign In</span>}
+            </button>
+          )}
+        </div>
       </aside>
 
-      {/* Main Right Content Area */}
-      <div className={`${sidebarCollapsed ? 'pl-20' : 'pl-64'} flex-1 flex flex-col min-h-screen transition-all duration-300`}>
-        {/* Top Header Navbar */}
-        <header className="ta-header border-b sticky top-0 z-40 backdrop-blur-md px-6 py-3">
-          <div className="flex items-center justify-end gap-4">
-            {/* Header Right Actions */}
-            <div className="flex items-center gap-3">
-              {/* Header Theme Switcher Widget */}
-              <div className="flex items-center p-1 rounded-xl border text-xs" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('light')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                    themeMode === 'light'
-                      ? 'bg-purple-600 text-white shadow-md font-semibold'
-                      : 'hover:text-purple-400'
-                  }`}
-                  style={themeMode !== 'light' ? {color:'var(--text-muted)'} : undefined}
-                  title="Light Theme"
-                >
-                  <Sun className="size-3.5" />
-                  <span className="hidden md:inline">Light</span>
-                </button>
+      {/* ─── MAIN CONTENT AREA ─────────────────────────────────────── */}
+      <div style={{
+        marginLeft: sidebarCollapsed ? 72 : 240,
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100vh',
+        transition: 'margin-left 0.25s ease',
+      }}>
 
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('dark')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                    themeMode === 'dark'
-                      ? 'bg-purple-600 text-white shadow-md font-semibold'
-                      : 'hover:text-purple-400'
-                  }`}
-                  style={themeMode !== 'dark' ? {color:'var(--text-muted)'} : undefined}
-                  title="Dark Theme"
-                >
-                  <Moon className="size-3.5" />
-                  <span className="hidden md:inline">Dark</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('system')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                    themeMode === 'system'
-                      ? 'bg-purple-600 text-white shadow-md font-semibold'
-                      : 'hover:text-purple-400'
-                  }`}
-                  style={themeMode !== 'system' ? {color:'var(--text-muted)'} : undefined}
-                  title="System Theme"
-                >
-                  <Laptop className="size-3.5" />
-                  <span className="hidden md:inline">System</span>
-                </button>
-              </div>
-
-              {user && isAuthenticated && (user.role === 'student' || user.role === 'member') && (
-                <Button
-                  onClick={() => navigate('/submit-proposal')}
-                  className="btn-ta-purple text-xs flex items-center gap-1.5"
-                >
-                  <Upload className="size-3.5" />
-                  <span>+ Submit Proposal</span>
-                </Button>
-              )}
-
-              {user && isAuthenticated && (
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setShowNotifications((prev) => !prev)}
-                    className="w-10 h-10 rounded-xl flex items-center justify-center border transition-all hover:border-purple-400/50 hover:text-purple-400"
-                    style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)',color:'var(--text-sub)',position:'relative'}}
-                  >
-                    <Bell className="size-4" />
-                    {unreadCount > 0 && (
-                      <span
-                        style={{
-                          position: 'absolute',
-                          top: '2px',
-                          right: '2px',
-                          minWidth: '14px',
-                          height: '14px',
-                          borderRadius: '7px',
-                          backgroundColor: '#ef4444',
-                          color: '#fff',
-                          fontSize: '8px',
-                          fontWeight: 700,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '0 2px',
-                          lineHeight: 1,
-                        }}
-                      >
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
-                  </button>
-
-                  {showNotifications && (
-                    <div className="absolute right-0 mt-2 w-80 max-h-80 overflow-y-auto rounded-2xl shadow-2xl z-50 p-3 backdrop-blur-xl border" style={{backgroundColor:'var(--bg-card)',borderColor:'var(--border-color)'}}>
-                      <div className="flex items-center justify-between px-2 pb-2 mb-2 border-b border-white/10">
-                        <p className="text-xs font-semibold m-0" style={{color:'var(--text-main)'}}>Notifications</p>
-                        <span className="text-[10px] text-purple-400 bg-purple-500/20 px-2 py-0.5 rounded-full">{unreadCount} new</span>
-                      </div>
-                      {notifications.length === 0 ? (
-                        <p className="text-xs text-slate-400 px-2 py-3 text-center">No new notifications.</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {notifications.map((n) => (
-                            <button
-                              key={n.id}
-                              onClick={() => void handleNotificationClick(n.id)}
-                              className={`w-full text-left p-2.5 rounded-xl text-xs transition-all border ${
-                                n.is_read
-                                  ? 'bg-slate-900/40 text-slate-400 border-transparent'
-                                  : 'bg-purple-950/30 text-slate-200 border-purple-500/30 hover:bg-purple-900/40'
-                              }`}
-                            >
-                              <p className="m-0 font-medium">{n.message}</p>
-                              <p className="text-[10px] text-slate-500 mt-1 m-0">
-                                {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
-                              </p>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+        {/* ─── TOP HEADER ─────────────────────────────────────────── */}
+        <header style={{
+          background: '#fff',
+          borderBottom: '1px solid #e2e8f0',
+          padding: '0 28px',
+          height: 60,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 40,
+          boxShadow: '0 1px 6px rgba(42,82,138,0.06)',
+        }}>
+          {/* Left: breadcrumb / page title */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg, #2A528A, #5D6EC7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Library style={{ width: 14, height: 14, color: '#fff' }} />
             </div>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', letterSpacing: '-0.01em' }}>
+              GIMPA Thesis Repository
+            </span>
+          </div>
+
+          {/* Right: actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+            {/* Submit Proposal button (students) */}
+            {user && isAuthenticated && (user.role === 'student' || user.role === 'member') && (
+              <button
+                type="button"
+                onClick={() => navigate('/submit-proposal')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '7px 14px',
+                  background: 'linear-gradient(135deg, #5D6EC7, #9F71DB)',
+                  border: 'none', borderRadius: 8,
+                  color: '#fff', fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer', boxShadow: '0 2px 8px rgba(93,110,199,0.35)',
+                  transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.opacity = '0.88'}
+                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.opacity = '1'}
+              >
+                <Upload style={{ width: 13, height: 13 }} />
+                <span>+ Submit Proposal</span>
+              </button>
+            )}
+
+            {/* Notification Bell */}
+            {user && isAuthenticated && user.role !== 'guest' && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowNotifications(prev => !prev)}
+                  style={{
+                    width: 38, height: 38, borderRadius: 9,
+                    background: '#f1f5f9', border: '1px solid #e2e8f0',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', position: 'relative', transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#e2e8f0'}
+                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#f1f5f9'}
+                  title="Notifications"
+                >
+                  <Bell style={{ width: 16, height: 16, color: '#475569' }} />
+                  {unreadCount > 0 && (
+                    <span style={{
+                      position: 'absolute', top: 2, right: 2,
+                      minWidth: 15, height: 15, borderRadius: 999,
+                      background: '#ef4444', color: '#fff',
+                      fontSize: 8, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 3px', lineHeight: 1,
+                    }}>
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div style={{
+                    position: 'absolute', right: 0, top: 'calc(100% + 8px)',
+                    width: 320, maxHeight: 340, overflowY: 'auto',
+                    background: '#fff', border: '1px solid #e2e8f0',
+                    borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+                    zIndex: 100, padding: 12,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>Notifications</span>
+                      <span style={{ fontSize: 10, background: '#ede9fe', color: '#7c3aed', borderRadius: 999, padding: '2px 8px', fontWeight: 600 }}>
+                        {unreadCount} new
+                      </span>
+                    </div>
+                    {notifications.length === 0 ? (
+                      <p style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', padding: '12px 0', margin: 0 }}>No new notifications.</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {notifications.map(n => (
+                          <button
+                            key={n.id}
+                            type="button"
+                            onClick={() => void handleNotificationClick(n.id)}
+                            style={{
+                              width: '100%', textAlign: 'left',
+                              padding: '9px 10px', borderRadius: 9, border: 'none', cursor: 'pointer',
+                              background: n.is_read ? '#f8fafc' : '#f0f4ff',
+                              borderLeft: n.is_read ? '3px solid transparent' : '3px solid #5D6EC7',
+                              transition: 'background 0.15s',
+                            }}
+                          >
+                            <p style={{ margin: 0, fontSize: 12, fontWeight: n.is_read ? 400 : 600, color: n.is_read ? '#64748b' : '#1e293b', lineHeight: 1.4 }}>{n.message}</p>
+                            <p style={{ margin: '4px 0 0', fontSize: 10, color: '#94a3b8' }}>
+                              {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── SIGN IN BUTTON (top-right, for unauthenticated/guest) ── */}
+            {(!isAuthenticated || user?.role === 'guest') && (
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '8px 18px',
+                  background: 'linear-gradient(135deg, #2A528A, #5D6EC7)',
+                  border: 'none', borderRadius: 9,
+                  color: '#fff', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(42,82,138,0.30)',
+                  transition: 'opacity 0.15s, transform 0.15s',
+                  letterSpacing: '-0.01em',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.90'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
+              >
+                <LogIn style={{ width: 15, height: 15 }} />
+                <span>Sign In</span>
+              </button>
+            )}
           </div>
         </header>
 
-        {/* Main Content Area */}
-        <main className="flex-1 p-6 space-y-6">
+        {/* ─── PAGE CONTENT ───────────────────────────────────────── */}
+        <main style={{ flex: 1, padding: '28px 28px 40px', background: '#f0f4f8' }}>
           {user?.mustChangePassword && (
-            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 backdrop-blur-md flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-                <Settings className="size-4" />
-              </div>
+            <div style={{
+              marginBottom: 20, padding: '14px 18px',
+              background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 12,
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <Settings style={{ width: 18, height: 18, color: '#d97706', flexShrink: 0 }} />
               <div>
-                <p className="font-semibold text-amber-300 m-0">First-time login security notice</p>
-                <p className="m-0 text-amber-200/80">Please update your temporary password in the Profile tab to protect your repository account.</p>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#92400e' }}>First-time login — please update your password</p>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#b45309' }}>Go to <strong>My Profile → Change Password</strong> to secure your account.</p>
               </div>
             </div>
           )}
 
-          {activeTab === 'catalog' && <PublicCatalog />}
-          {activeTab === 'search' && <SearchDiscovery />}
+          {activeTab === 'catalog'   && <PublicCatalog />}
+          {activeTab === 'search'    && <SearchDiscovery />}
           {activeTab === 'dashboard' && isAuthenticated && user?.role !== 'guest' && (
             <Dashboard userRole={user?.role || 'student'} />
           )}
-          {activeTab === 'profile' && isAuthenticated && user?.role !== 'guest' && <Profile />}
+          {activeTab === 'profile'  && isAuthenticated && user?.role !== 'guest' && <Profile />}
           {activeTab === 'approval' && isReviewer && <ApprovalWorkflow />}
           {activeTab === 'librarian' && isAdministrationUser && (
-            <div className="space-y-6">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
               <div>
-                <h2 className="text-xl font-bold mb-4" style={{color:'var(--text-main)'}}>Account Management & Administration</h2>
+                <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', marginBottom: 16 }}>Account Management &amp; Administration</h2>
                 <AccountManagement />
               </div>
               {isAdminAreaUser && (
                 <div>
-                  <h2 className="text-xl font-bold mb-4" style={{color:'var(--text-main)'}}>Library Statistics</h2>
+                  <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', marginBottom: 16 }}>Library Statistics</h2>
                   <LibraryStats />
                 </div>
               )}
