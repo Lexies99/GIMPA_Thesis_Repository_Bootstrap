@@ -238,12 +238,16 @@ def increment_download(db: Session, paper: Paper) -> Paper:
     return paper
 
 
-def get_paper_stats(db: Session) -> dict[str, int]:
-    total_papers = db.query(func.count(Paper.id)).scalar() or 0
-    total_views = db.query(func.coalesce(func.sum(Paper.views), 0)).scalar() or 0
-    total_downloads = db.query(func.coalesce(func.sum(Paper.downloads), 0)).scalar() or 0
+def get_paper_stats(db: Session, user_id: int | None = None) -> dict[str, int]:
+    base_query = db.query(Paper)
+    if user_id is not None:
+        base_query = base_query.filter(Paper.created_by_id == user_id)
+
+    total_papers = base_query.count() or 0
+    total_views = base_query.with_entities(func.coalesce(func.sum(Paper.views), 0)).scalar() or 0
+    total_downloads = base_query.with_entities(func.coalesce(func.sum(Paper.downloads), 0)).scalar() or 0
     pending_reviews = (
-        db.query(func.count(Paper.id))
+        base_query
         .filter(
             Paper.status.in_(
                 [
@@ -253,19 +257,22 @@ def get_paper_stats(db: Session) -> dict[str, int]:
                     "pending_hod",
                     "pending_hod_and_coordinator",
                     "approved_for_library",
-                    # New phases
+                    # 5-phase statuses
                     "phase1_proposal_submitted",
                     "phase2_pending_coordinator",
                     "phase2_pending_supervisor",
+                    "phase2_proposal_defense_scheduled",
+                    "phase3_in_progress",
                     "phase4_pending_examiners",
                     "phase4_marking",
+                    "phase5_corrections",
                     "phase5_pending_supervisor",
                     "phase5_pending_hod_and_coordinator",
-                    "phase5_approved_for_library"
+                    "phase5_approved_for_library",
                 ]
             )
         )
-        .scalar()
+        .count()
         or 0
     )
     return {

@@ -674,8 +674,9 @@ export function Dashboard({ userRole }: DashboardProps) {
     const load = async () => {
       try {
         const accessToken = localStorage.getItem('murrs_access_token')
+        const isUserScoped = userRole === 'student' || userRole === 'member' || (!isAdmin && !isHodOrCoordinator)
         const [s, mine, userItems, studentItems, supervisorSummaryItems, pipe] = await Promise.all([
-          apiGetPaperStats(),
+          apiGetPaperStats(isUserScoped && user?.id ? user.id : undefined),
           accessToken ? apiGetMyPapers(accessToken) : Promise.resolve([]),
           accessToken && isAdmin ? apiListUsers(accessToken, { limit: 500 }) : Promise.resolve([]),
           accessToken && isAdmin ? apiListStudents(accessToken, { limit: 500 }) : Promise.resolve([]),
@@ -866,55 +867,83 @@ export function Dashboard({ userRole }: DashboardProps) {
     <div className="space-y-6">
 
       {/* 4 Clean Stat Cards Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
-        {/* Card 1 – Total Submissions */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <FileText style={{ width: 20, height: 20, color: '#7c3aed' }} />
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', background: '#dcfce7', borderRadius: 999, padding: '3px 9px' }}>+12.5%</span>
-          </div>
-          <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{stats?.total_papers ?? 0}</p>
-          <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>Total Submissions</p>
-        </div>
+      {(() => {
+        const isUserScoped = userRole === 'student' || userRole === 'member' || (!isAdmin && !isHodOrCoordinator)
+        
+        const userTotalSubmissions = myPapers.length
+        const userPendingCount = myPapers.filter(
+          (p) => !['approved', 'phase5_published'].includes(p.status)
+        ).length
+        const userDownloads = myPapers.reduce((sum, p) => sum + (p.downloads || 0), 0)
+        const userViews = myPapers.reduce((sum, p) => sum + (p.views || 0), 0)
 
-        {/* Card 2 – Pending Reviews */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Clock style={{ width: 20, height: 20, color: '#0284c7' }} />
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', background: '#e0f2fe', borderRadius: 999, padding: '3px 9px' }}>+8.2%</span>
-          </div>
-          <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{stats?.pending_reviews ?? 0}</p>
-          <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>Pending Reviews</p>
-        </div>
+        const totalSubs = isUserScoped ? userTotalSubmissions : (stats?.total_papers ?? 0)
+        const pendingCount = isUserScoped ? userPendingCount : (stats?.pending_reviews ?? 0)
+        const downloadsCount = isUserScoped ? userDownloads : (stats?.total_downloads ?? 0)
+        const viewsCount = isUserScoped ? userViews : (stats?.total_views ?? 0)
 
-        {/* Card 3 – Downloads */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Download style={{ width: 20, height: 20, color: '#d97706' }} />
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7', borderRadius: 999, padding: '3px 9px' }}>↘ 3.1%</span>
-          </div>
-          <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{stats?.total_downloads?.toLocaleString() ?? 0}</p>
-          <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>Paper Downloads</p>
-        </div>
+        const labelSubmissions = isUserScoped ? 'My Submissions' : 'Total Submissions'
+        const labelPending = isUserScoped ? 'In Review / Active' : 'Pending Reviews'
+        const labelDownloads = isUserScoped ? 'My Paper Downloads' : 'Paper Downloads'
+        const labelViews = isUserScoped ? 'My Paper Views' : 'Repository Views'
 
-        {/* Card 4 – Repository Views */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <CheckCircle2 style={{ width: 20, height: 20, color: '#16a34a' }} />
+        const badgeSubmissions = isUserScoped ? `${userTotalSubmissions} Total` : '+12.5%'
+        const badgePending = isUserScoped ? `${userPendingCount} Active` : '+8.2%'
+        const badgeDownloads = isUserScoped ? 'Downloads' : '↘ 3.1%'
+        const badgeViews = isUserScoped ? 'Views' : '+5.8%'
+
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+            {/* Card 1 – Total Submissions */}
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileText style={{ width: 20, height: 20, color: '#7c3aed' }} />
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', background: '#dcfce7', borderRadius: 999, padding: '3px 9px' }}>{badgeSubmissions}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{totalSubs}</p>
+              <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>{labelSubmissions}</p>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', background: '#dcfce7', borderRadius: 999, padding: '3px 9px' }}>+5.8%</span>
+
+            {/* Card 2 – Pending Reviews */}
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Clock style={{ width: 20, height: 20, color: '#0284c7' }} />
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', background: '#e0f2fe', borderRadius: 999, padding: '3px 9px' }}>{badgePending}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{pendingCount}</p>
+              <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>{labelPending}</p>
+            </div>
+
+            {/* Card 3 – Downloads */}
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Download style={{ width: 20, height: 20, color: '#d97706' }} />
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7', borderRadius: 999, padding: '3px 9px' }}>{badgeDownloads}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{downloadsCount.toLocaleString()}</p>
+              <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>{labelDownloads}</p>
+            </div>
+
+            {/* Card 4 – Repository Views */}
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '20px 22px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckCircle2 style={{ width: 20, height: 20, color: '#16a34a' }} />
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', background: '#dcfce7', borderRadius: 999, padding: '3px 9px' }}>{badgeViews}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{viewsCount.toLocaleString()}</p>
+              <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>{labelViews}</p>
+            </div>
           </div>
-          <p style={{ margin: 0, fontSize: 28, fontWeight: 900, color: '#1e293b', lineHeight: 1 }}>{stats?.total_views?.toLocaleString() ?? 0}</p>
-          <p style={{ margin: '5px 0 0', fontSize: 12, fontWeight: 500, color: '#64748b' }}>Repository Views</p>
-        </div>
-      </div>
+        )
+      })()}
 
       {/* Main Content Layout */}
       <div className="space-y-6">

@@ -730,8 +730,11 @@ def read_papers(
 
 
 @router.get("/papers/stats", response_model=PaperStats)
-def read_paper_stats(db: Session = Depends(get_db)) -> PaperStats:
-    return PaperStats(**get_paper_stats(db))
+def read_paper_stats(
+    user_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+) -> PaperStats:
+    return PaperStats(**get_paper_stats(db, user_id=user_id))
 
 
 @router.get("/papers/pipeline")

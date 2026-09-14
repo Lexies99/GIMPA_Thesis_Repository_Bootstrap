@@ -772,8 +772,9 @@ export async function apiDeletePaperAnnotation(
   }
 }
 
-export async function apiGetPaperStats(): Promise<ApiPaperStats> {
-  const response = await fetch(`${apiBase}/papers/stats`)
+export async function apiGetPaperStats(userId?: number): Promise<ApiPaperStats> {
+  const url = userId ? `${apiBase}/papers/stats?user_id=${userId}` : `${apiBase}/papers/stats`
+  const response = await fetch(url)
   return handleResponse<ApiPaperStats>(response)
 }
 
