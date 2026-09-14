@@ -259,10 +259,10 @@ export function PublicCatalog() {
       </div>
 
       <Tabs value={activeCategory} onValueChange={setActiveCategory} defaultValue="all">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="flex w-full overflow-x-auto justify-start sm:grid sm:grid-cols-4 gap-1 p-1 h-auto min-h-[42px] scrollbar-none">
           {categories.map((cat) => (
-            <TabsTrigger key={cat.id} value={cat.id}>
-              <span className="text-xs sm:text-sm">
+            <TabsTrigger key={cat.id} value={cat.id} className="shrink-0 flex-1 sm:flex-initial py-2 px-3 text-xs sm:text-sm whitespace-nowrap">
+              <span>
                 {cat.label}
                 {cat.id === 'all' && ` (${categoryCounts.all})`}
                 {cat.id === 'trending' && ` (${categoryCounts.trending})`}

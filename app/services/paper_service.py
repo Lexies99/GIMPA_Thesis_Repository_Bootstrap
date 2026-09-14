@@ -78,7 +78,7 @@ def build_query(
         query = query.filter(Paper.supervisor_id == supervisor_id)
     if catalog_mode and status is None:
         query = query.outerjoin(User, Paper.created_by_id == User.id).filter(
-            (Paper.status == "approved") | (User.is_admin.is_(True))
+            (Paper.status.in_(["approved", "phase5_published"])) | (User.is_admin.is_(True))
         )
     return query
 

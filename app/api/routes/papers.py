@@ -133,22 +133,22 @@ def _clean_examiner_corrections(text: str | None) -> str | None:
 def _to_paper_read(paper: Paper, db: Session | None = None, current_user: User | None = None) -> PaperRead:
     # Check if user can view examiner marks/scores
     can_view_marks = False
+    is_leadership = False
     if current_user:
-        if getattr(current_user, "is_admin", False) or (db and (has_role(db, current_user, "system_admin") or has_role(db, current_user, "dean") or has_role(db, current_user, "head_library"))):
+        if getattr(current_user, "is_admin", False):
             can_view_marks = True
+            is_leadership = True
+        elif db and (
+            has_role(db, current_user, "system_admin")
+            or has_role(db, current_user, "dean")
+            or has_role(db, current_user, "hod")
+            or has_role(db, current_user, "project_coordinator")
+            or has_role(db, current_user, "head_library")
+        ):
+            can_view_marks = True
+            is_leadership = True
         elif paper.internal_examiner_id == current_user.id or paper.external_examiner_id == current_user.id or paper.supervisor_id == current_user.id:
             can_view_marks = True
-        elif db:
-            user_dept = (current_user.department or "").strip().lower()
-            paper_dept = ""
-            if paper.department:
-                paper_dept = (paper.department.name or "").strip().lower()
-            elif paper.discipline:
-                paper_dept = (paper.discipline or "").strip().lower()
-            
-            is_hod_or_coord = has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
-            if is_hod_or_coord and user_dept and paper_dept and user_dept == paper_dept:
-                can_view_marks = True
 
     internal_score = paper.internal_score if can_view_marks else None
     external_score = paper.external_score if can_view_marks else None
@@ -159,12 +159,27 @@ def _to_paper_read(paper: Paper, db: Session | None = None, current_user: User |
     # Classify degree level
     stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if (db and paper.created_by_id) else None
     degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
+    is_undergrad = (degree_level == "Undergraduate")
+    has_external = paper.external_examiner_id is not None
 
-    # Sanitize examiner corrections for student
-    raw_corrections = paper.examiner_corrections
-    if not can_view_marks and raw_corrections:
-        examiner_corrections = _sanitize_examiner_feedback_for_student(raw_corrections)
+    if is_undergrad and not has_external:
+        all_examiners_marked = (paper.internal_score is not None)
     else:
+        all_examiners_marked = (paper.internal_score is not None and paper.external_score is not None)
+
+    # Sanitize examiner corrections for student and gate until all required examiners have marked
+    raw_corrections = paper.examiner_corrections
+    is_student_user = bool(current_user and paper.created_by_id == current_user.id and not is_leadership)
+
+    if is_student_user:
+        is_released_phase = paper.status in ["phase5_corrections", "phase5_pending_supervisor", "phase5_approved", "approved", "published"]
+        if not (all_examiners_marked and is_released_phase):
+            # Suppress comments for student until all required examiners complete marking & recommendations
+            examiner_corrections = None
+        else:
+            examiner_corrections = _sanitize_examiner_feedback_for_student(raw_corrections) if raw_corrections else None
+    else:
+        # Leadership (Dean, HOD, Coordinator), Supervisor, and Examiners can view comments
         examiner_corrections = raw_corrections
 
     steps_list = []
@@ -480,11 +495,22 @@ def _dispatch_overdue_review_alerts(db: Session) -> None:
     db.commit()
 
 
-def _is_annotation_participant(paper: Paper, user: User) -> bool:
+def _is_annotation_participant(paper: Paper, user: User, db: Session | None = None) -> bool:
+    if getattr(user, "is_admin", False):
+        return True
+    if db:
+        if (
+            has_role(db, user, "system_admin")
+            or has_role(db, user, "dean")
+            or has_role(db, user, "hod")
+            or has_role(db, user, "project_coordinator")
+            or has_role(db, user, "head_library")
+        ):
+            return True
     is_author = paper.created_by_id == user.id
     is_assigned_supervisor = paper.supervisor_id == user.id
     is_paper_supervisor = any(s.user_id == user.id for s in paper.supervisors)
-    return bool(user.is_admin or is_author or is_assigned_supervisor or is_paper_supervisor)
+    return bool(is_author or is_assigned_supervisor or is_paper_supervisor)
 
 
 def _safe_match_department_id(db: Session, department_name: str | None) -> int | None:
@@ -2825,8 +2851,8 @@ def create_annotation_endpoint(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
     
-    if not _is_annotation_participant(paper, current_user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only supervisors and authors can annotate")
+    if not _is_annotation_participant(paper, current_user, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only supervisors, leadership, and authors can annotate")
     
     annotation = create_annotation(db, paper_id, current_user.id, text, location)
     author_name = current_user.full_name or current_user.email or "Supervisor"
@@ -2857,8 +2883,8 @@ def get_annotations_endpoint(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
     
-    if not _is_annotation_participant(paper, current_user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only supervisors and authors can view annotations")
+    if not _is_annotation_participant(paper, current_user, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only supervisors, leadership, and authors can view annotations")
     
     annotations = get_paper_annotations(db, paper_id)
     res = []
@@ -3254,7 +3280,7 @@ def complete_phase3(
 def assign_examiners(
     paper_id: int,
     internal_examiner_id: int = Form(...),
-    external_examiner_id: int = Form(...),
+    external_examiner_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> PaperRead:
@@ -3264,54 +3290,79 @@ def assign_examiners(
     
     is_hod = has_role(db, current_user, "hod")
     is_coord = has_role(db, current_user, "project_coordinator")
-    if not (is_hod or is_coord or current_user.is_admin):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the HOD, Project Coordinator, or Admin can assign examiners")
-    
-    if internal_examiner_id == external_examiner_id:
+    is_dean = has_role(db, current_user, "dean")
+    if not (is_hod or is_coord or is_dean or current_user.is_admin):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the HOD, Project Coordinator, Dean, or Admin can assign examiners")
+
+    stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if paper.created_by_id else None
+    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
+    is_undergrad = (degree_level == "Undergraduate")
+
+    if not is_undergrad and not external_examiner_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Conflict of interest: Internal and external examiners must be distinct individuals",
+            detail="Postgraduate degree programs (Masters, MPhil, PhD) require both an Internal Examiner and an External Examiner."
         )
 
     int_exam = db.query(User).filter(User.id == internal_examiner_id).first()
-    ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
-    if not int_exam or not ext_exam:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected internal or external examiner not found")
+    if not int_exam:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected internal examiner not found")
         
     int_roles = set(get_user_roles(db, internal_examiner_id))
     int_roles.add(int_exam.role)
     allowed_int = {"lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
     if not int_roles.intersection(allowed_int):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal examiner must be a lecturer, supervisor, HOD, or Dean")
-        
-    ext_roles = set(get_user_roles(db, external_examiner_id))
-    ext_roles.add(ext_exam.role)
-    allowed_ext = {"external_examiner", "lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
-    if not ext_roles.intersection(allowed_ext):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must be an external examiner, lecturer, HOD, or Dean")
+
+    ext_exam = None
+    if external_examiner_id:
+        if internal_examiner_id == external_examiner_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Conflict of interest: Internal and external examiners must be distinct individuals",
+            )
+        ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
+        if not ext_exam:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected external examiner not found")
+            
+        ext_roles = set(get_user_roles(db, external_examiner_id))
+        ext_roles.add(ext_exam.role)
+        allowed_ext = {"external_examiner", "lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
+        if not ext_roles.intersection(allowed_ext):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must be an external examiner, lecturer, HOD, or Dean")
     
     paper.internal_examiner_id = internal_examiner_id
-    paper.external_examiner_id = external_examiner_id
+    paper.external_examiner_id = external_examiner_id if ext_exam else None
     paper.status = "phase4_marking"
     db.add(paper)
     
+    assigned_msg = f"Examiners assigned: Internal={int_exam.full_name or int_exam.email}"
+    if ext_exam:
+        assigned_msg += f", External={ext_exam.full_name or ext_exam.email}"
+    else:
+        assigned_msg += " (Single Internal/Supervisor Examiner assigned for Undergraduate project)"
+
     _record_workflow_event(
         db,
         paper_id=paper.id,
         event_type="assign_examiners",
         actor_id=current_user.id,
-        actor_role="project_coordinator" if is_coord else "hod",
+        actor_role="dean" if is_dean else ("project_coordinator" if is_coord else "hod"),
         from_status="phase4_pending_examiners",
         to_status=paper.status,
-        message=f"Examiners assigned: Internal={int_exam.full_name or int_exam.email}, External={ext_exam.full_name or ext_exam.email}",
+        message=assigned_msg,
     )
     db.commit()
     db.refresh(paper)
     
-    create_notification(db, user_id=internal_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as Internal Examiner for '{paper.title}'. Please mark and submit results.")
-    create_notification(db, user_id=external_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as External Examiner for '{paper.title}'. Please mark and submit results.")
+    create_notification(db, user_id=internal_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as Examiner for '{paper.title}'. Please mark and submit results.")
+    if ext_exam:
+        create_notification(db, user_id=external_examiner_id, paper_id=paper.id, ntype="workflow_update", message=f"You have been assigned as External Examiner for '{paper.title}'. Please mark and submit results.")
     
-    _notify_student(db, paper, "Internal and external examiners have been assigned. They will now review and mark your thesis.")
+    if is_undergrad and not ext_exam:
+        _notify_student(db, paper, "An examiner has been assigned to evaluate your project. Once marked, examiner feedback will be provided.")
+    else:
+        _notify_student(db, paper, "Internal and external examiners have been assigned. They will now review and mark your thesis.")
     return _to_paper_read(paper, db, current_user)
 
 
@@ -3373,7 +3424,16 @@ async def upload_results(
     else:
         paper.examiner_corrections = f"[{role_label} - {current_user.full_name or current_user.email}]: {examiner_corrections}"
 
-    both_marked = paper.internal_score is not None and paper.external_score is not None
+    stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if paper.created_by_id else None
+    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
+    is_undergrad = (degree_level == "Undergraduate")
+    has_external = paper.external_examiner_id is not None
+
+    if is_undergrad and not has_external:
+        both_marked = (paper.internal_score is not None)
+    else:
+        both_marked = (paper.internal_score is not None and paper.external_score is not None)
+
     if both_marked:
         paper.status = "phase5_corrections"
     else:
@@ -3398,9 +3458,9 @@ async def upload_results(
         _notify_hod_and_coordinators(
             db,
             paper,
-            f"Phase 4 Complete: Both examiner marking results and corrections uploaded for '{paper.title}'."
+            f"Phase 4 Complete: All required examiner marking results and corrections uploaded for '{paper.title}'."
         )
-        _notify_student(db, paper, "Examiners have completed their markings. Please check the examiner corrections, make the necessary adjustments, and upload the updated document.")
+        _notify_student(db, paper, "Examiners have completed their markings and submitted comments. Please review the examiner corrections, make the necessary adjustments, and upload your updated document.")
     else:
         _notify_hod_and_coordinators(
             db,

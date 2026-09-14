@@ -26,6 +26,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogIn,
+  Menu,
+  X,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -52,6 +54,21 @@ export default function Home() {
     }
     return false;
   });
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setMobileDrawerOpen(false);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Always force light theme to match clean professional design
   useEffect(() => {
@@ -89,6 +106,9 @@ export default function Home() {
   const isAdministrationUser = isAdminAreaUser || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator') || hasRole('lecturer');
 
   const handleTabChange = (tab: string) => {
+    if (isMobile) {
+      setMobileDrawerOpen(false);
+    }
     const publicTabs = new Set(['catalog', 'search']);
     const isGuest = user?.role === 'guest';
     const isAuthedNonGuest = isAuthenticated && !isGuest;
@@ -152,24 +172,27 @@ export default function Home() {
     { tab: 'librarian', label: 'Administration',     icon: Settings,  show: isAdministrationUser },
   ] as Array<{tab:string;label:string;icon:React.ElementType;show:boolean|undefined;badge?:number|null}>).filter(item => item.show);
 
+  const isSidebarExpanded = isMobile ? true : !sidebarCollapsed;
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f0f4f8', fontFamily: "'Inter', 'Outfit', sans-serif" }}>
 
+      {/* ─── MOBILE BACKDROP ───────────────────────────────────────── */}
+      <div
+        onClick={() => setMobileDrawerOpen(false)}
+        className={`gimpa-mobile-backdrop ${mobileDrawerOpen ? 'open' : ''}`}
+      />
+
       {/* ─── LEFT SIDEBAR ─────────────────────────────────────────── */}
       <aside
+        className={`gimpa-sidebar ${mobileDrawerOpen ? 'open' : ''}`}
         style={{
           width: sidebarCollapsed ? '72px' : '240px',
           minHeight: '100vh',
           background: 'linear-gradient(180deg, #2A528A 0%, #1e3f6d 100%)',
           display: 'flex',
           flexDirection: 'column',
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          bottom: 0,
-          zIndex: 50,
           boxShadow: '4px 0 24px rgba(42,82,138,0.18)',
-          transition: 'width 0.25s ease',
           overflowX: 'hidden',
         }}
       >
@@ -183,46 +206,45 @@ export default function Home() {
           gap: 8,
           minHeight: 64,
         }}>
-          {sidebarCollapsed ? (
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              style={{ background: 'rgba(255,255,255,0.13)', border: 'none', borderRadius: 10, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-              title="Expand Sidebar"
-            >
+          <button
+            type="button"
+            onClick={() => handleTabChange('catalog')}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', flex: 1, minWidth: 0 }}
+            title="GIMPA Thesis Repository"
+          >
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Library style={{ width: 18, height: 18, color: '#fff' }} />
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => handleTabChange('catalog')}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', flex: 1, minWidth: 0 }}
-                title="GIMPA Thesis Repository"
-              >
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Library style={{ width: 18, height: 18, color: '#fff' }} />
-                </div>
-                <div style={{ textAlign: 'left', overflow: 'hidden' }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.02em', lineHeight: 1.2 }}>GIMPA</div>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: '#E9D498', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>Thesis Repo</div>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={toggleSidebar}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', padding: 4, borderRadius: 6, flexShrink: 0 }}
-                title="Collapse"
-              >
-                <PanelLeftClose style={{ width: 16, height: 16 }} />
-              </button>
-            </>
-          )}
+            </div>
+            <div style={{ textAlign: 'left', overflow: 'hidden' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.02em', lineHeight: 1.2 }}>GIMPA</div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#E9D498', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>Thesis Repo</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="gimpa-desktop-collapse-btn"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', padding: 4, borderRadius: 6, flexShrink: 0 }}
+            title={sidebarCollapsed ? "Expand" : "Collapse"}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen style={{ width: 16, height: 16 }} /> : <PanelLeftClose style={{ width: 16, height: 16 }} />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMobileDrawerOpen(false)}
+            className="gimpa-mobile-close-btn"
+            style={{ background: 'rgba(255,255,255,0.12)', border: 'none', cursor: 'pointer', color: '#fff', width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}
+            title="Close Menu"
+          >
+            <X style={{ width: 18, height: 18 }} />
+          </button>
         </div>
 
         {/* Navigation Items */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 10px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {!sidebarCollapsed && (
+          {isSidebarExpanded && (
             <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.40)', padding: '0 8px', marginBottom: 6, marginTop: 0 }}>
               Navigation
             </p>
@@ -240,8 +262,8 @@ export default function Home() {
                   width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: sidebarCollapsed ? 'center' : 'space-between',
-                  padding: sidebarCollapsed ? '10px' : '9px 10px',
+                  justifyContent: isSidebarExpanded ? 'space-between' : 'center',
+                  padding: isSidebarExpanded ? '9px 10px' : '10px',
                   borderRadius: 9,
                   border: 'none',
                   cursor: 'pointer',
@@ -271,7 +293,7 @@ export default function Home() {
                     <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: 2, background: '#E9D498' }} />
                   )}
                   <Icon style={{ width: 16, height: 16, flexShrink: 0 }} />
-                  {!sidebarCollapsed && <span>{label}</span>}
+                  {isSidebarExpanded && <span>{label}</span>}
                 </span>
                 {badge != null && badge > 0 && (
                   <span style={{ background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', lineHeight: 1.5 }}>
@@ -285,12 +307,12 @@ export default function Home() {
           {/* Account section */}
           {isAuthenticated && user?.role !== 'guest' && (
             <>
-              {!sidebarCollapsed && (
+              {isSidebarExpanded && (
                 <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.40)', padding: '0 8px', marginTop: 20, marginBottom: 6 }}>
                   Account
                 </p>
               )}
-              {sidebarCollapsed && <div style={{ height: 12 }} />}
+              {!isSidebarExpanded && <div style={{ height: 12 }} />}
               <button
                 type="button"
                 onClick={() => handleTabChange('profile')}
@@ -299,8 +321,8 @@ export default function Home() {
                   width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                  padding: sidebarCollapsed ? '10px' : '9px 10px',
+                  justifyContent: isSidebarExpanded ? 'flex-start' : 'center',
+                  padding: isSidebarExpanded ? '9px 10px' : '10px',
                   borderRadius: 9,
                   border: 'none',
                   cursor: 'pointer',
@@ -329,7 +351,7 @@ export default function Home() {
                   <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: 2, background: '#E9D498' }} />
                 )}
                 <User style={{ width: 16, height: 16, flexShrink: 0 }} />
-                {!sidebarCollapsed && <span>My Profile</span>}
+                {isSidebarExpanded && <span>My Profile</span>}
               </button>
             </>
           )}
@@ -341,7 +363,7 @@ export default function Home() {
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+              justifyContent: isSidebarExpanded ? 'space-between' : 'center',
               gap: 8,
               background: 'rgba(255,255,255,0.08)',
               borderRadius: 10,
@@ -352,14 +374,14 @@ export default function Home() {
                 <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg, #5D6EC7, #9F71DB)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
                   {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                 </div>
-                {!sidebarCollapsed && (
+                {isSidebarExpanded && (
                   <div style={{ overflow: 'hidden' }}>
                     <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#fff', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</p>
                     <p style={{ margin: 0, fontSize: 10, color: '#E9D498', marginTop: 2, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleLabel}</p>
                   </div>
                 )}
               </div>
-              {!sidebarCollapsed && (
+              {isSidebarExpanded && (
                 <button
                   type="button"
                   onClick={async () => { await logout(); navigate('/login'); }}
@@ -396,48 +418,84 @@ export default function Home() {
               onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.13)'}
             >
               <LogIn style={{ width: 15, height: 15 }} />
-              {!sidebarCollapsed && <span>Sign In</span>}
+              {isSidebarExpanded && <span>Sign In</span>}
             </button>
           )}
         </div>
       </aside>
 
       {/* ─── MAIN CONTENT AREA ─────────────────────────────────────── */}
-      <div style={{
-        marginLeft: sidebarCollapsed ? 72 : 240,
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        transition: 'margin-left 0.25s ease',
-      }}>
+      <div
+        className="gimpa-main-content"
+        style={{
+          marginLeft: sidebarCollapsed ? 72 : 240,
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100vh',
+          transition: 'margin-left 0.25s ease',
+          overflowX: 'hidden',
+        }}
+      >
 
         {/* ─── TOP HEADER ─────────────────────────────────────────── */}
-        <header style={{
-          background: '#fff',
-          borderBottom: '1px solid #e2e8f0',
-          padding: '0 28px',
-          height: 60,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          position: 'sticky',
-          top: 0,
-          zIndex: 40,
-          boxShadow: '0 1px 6px rgba(42,82,138,0.06)',
-        }}>
-          {/* Left: breadcrumb / page title */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg, #2A528A, #5D6EC7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <header
+          className="gimpa-header"
+          style={{
+            background: '#fff',
+            borderBottom: '1px solid #e2e8f0',
+            padding: '0 28px',
+            height: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            position: 'sticky',
+            top: 0,
+            zIndex: 40,
+            boxShadow: '0 1px 6px rgba(42,82,138,0.06)',
+            gap: 8,
+          }}
+        >
+          {/* Left: Hamburger menu (mobile) + brand / page title */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <button
+              type="button"
+              onClick={() => setMobileDrawerOpen(true)}
+              className="gimpa-mobile-menu-btn"
+              style={{
+                background: 'rgba(42,82,138,0.08)',
+                border: 'none',
+                borderRadius: 8,
+                width: 36,
+                height: 36,
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: '#2A528A',
+                flexShrink: 0,
+              }}
+              title="Open Menu"
+            >
+              <Menu style={{ width: 20, height: 20 }} />
+            </button>
+            <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg, #2A528A, #5D6EC7)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Library style={{ width: 14, height: 14, color: '#fff' }} />
             </div>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', letterSpacing: '-0.01em' }}>
+            <span style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: '#1e293b',
+              letterSpacing: '-0.01em',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
               GIMPA Thesis Repository
             </span>
           </div>
 
           {/* Right: actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
 
             {/* Submit Proposal button (students) */}
             {user && isAuthenticated && (user.role === 'student' || user.role === 'member') && (
@@ -446,18 +504,19 @@ export default function Home() {
                 onClick={() => navigate('/submit-proposal')}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '7px 14px',
+                  padding: isMobile ? '6px 10px' : '7px 14px',
                   background: 'linear-gradient(135deg, #5D6EC7, #9F71DB)',
                   border: 'none', borderRadius: 8,
-                  color: '#fff', fontSize: 12, fontWeight: 600,
+                  color: '#fff', fontSize: isMobile ? 11 : 12, fontWeight: 600,
                   cursor: 'pointer', boxShadow: '0 2px 8px rgba(93,110,199,0.35)',
                   transition: 'opacity 0.15s',
+                  whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.opacity = '0.88'}
                 onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.opacity = '1'}
               >
                 <Upload style={{ width: 13, height: 13 }} />
-                <span>+ Submit Proposal</span>
+                <span>{isMobile ? '+ Submit' : '+ Submit Proposal'}</span>
               </button>
             )}
 
@@ -468,7 +527,7 @@ export default function Home() {
                   type="button"
                   onClick={() => setShowNotifications(prev => !prev)}
                   style={{
-                    width: 38, height: 38, borderRadius: 9,
+                    width: isMobile ? 34 : 38, height: isMobile ? 34 : 38, borderRadius: 9,
                     background: '#f1f5f9', border: '1px solid #e2e8f0',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: 'pointer', position: 'relative', transition: 'background 0.15s',
@@ -542,20 +601,21 @@ export default function Home() {
                 type="button"
                 onClick={() => navigate('/login')}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 7,
-                  padding: '8px 18px',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: isMobile ? '6px 12px' : '8px 18px',
                   background: 'linear-gradient(135deg, #2A528A, #5D6EC7)',
                   border: 'none', borderRadius: 9,
-                  color: '#fff', fontSize: 13, fontWeight: 700,
+                  color: '#fff', fontSize: isMobile ? 12 : 13, fontWeight: 700,
                   cursor: 'pointer',
                   boxShadow: '0 2px 10px rgba(42,82,138,0.30)',
                   transition: 'opacity 0.15s, transform 0.15s',
                   letterSpacing: '-0.01em',
+                  whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.90'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
               >
-                <LogIn style={{ width: 15, height: 15 }} />
+                <LogIn style={{ width: 14, height: 14 }} />
                 <span>Sign In</span>
               </button>
             )}
@@ -563,7 +623,14 @@ export default function Home() {
         </header>
 
         {/* ─── PAGE CONTENT ───────────────────────────────────────── */}
-        <main style={{ flex: 1, padding: '28px 28px 40px', background: '#f0f4f8' }}>
+        <main style={{
+          flex: 1,
+          padding: isMobile ? '16px 12px 32px' : '28px 28px 40px',
+          background: '#f0f4f8',
+          width: '100%',
+          maxWidth: '100%',
+          overflowX: 'hidden',
+        }}>
           {user?.mustChangePassword && (
             <div style={{
               marginBottom: 20, padding: '14px 18px',

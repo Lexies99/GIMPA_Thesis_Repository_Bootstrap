@@ -327,3 +327,64 @@ p, span, label, li {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0);    }
 }
+
+/* ── Mobile Responsive Sidebar & Layout ────────────────── */
+.gimpa-sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 90;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s ease;
+}
+
+.gimpa-mobile-menu-btn {
+  display: none;
+}
+.gimpa-mobile-close-btn {
+  display: none;
+}
+.gimpa-mobile-backdrop {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .gimpa-sidebar {
+    width: 260px !important;
+    transform: translateX(-100%);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  .gimpa-sidebar.open {
+    transform: translateX(0) !important;
+  }
+  .gimpa-main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .gimpa-mobile-menu-btn {
+    display: flex !important;
+  }
+  .gimpa-mobile-close-btn {
+    display: flex !important;
+  }
+  .gimpa-desktop-collapse-btn {
+    display: none !important;
+  }
+  .gimpa-mobile-backdrop.open {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.60);
+    backdrop-filter: blur(3px);
+    z-index: 85;
+  }
+  .gimpa-header {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .gimpa-main-padding {
+    padding: 16px 12px 32px !important;
+  }
+}
+

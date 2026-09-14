@@ -1025,66 +1025,84 @@ def finish_steps(
 def assign_examiners(
     thesis_id: int,
     internal_examiner_id: int = Form(...),
-    external_examiner_id: int = Form(...),
+    external_examiner_id: int | None = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_any_role("hod", "project_coordinator", "system_admin")),
+    current_user: User = Depends(require_any_role("hod", "project_coordinator", "dean", "system_admin")),
 ):
     thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
     if not thesis:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
 
+    paper = db.query(Paper).filter(Paper.id == thesis_id).first()
+    student = db.query(User).filter(User.id == thesis.student_id).first() if thesis else None
+    degree_level = classify_degree_level(thesis=thesis, paper=paper, student_user=student, db=db)
+    is_undergrad = (degree_level == "Undergraduate")
+
+    if not is_undergrad and not external_examiner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Postgraduate degree programs (Masters, MPhil, PhD) require both an Internal Examiner and an External Examiner."
+        )
+
     int_exam = db.query(User).filter(User.id == internal_examiner_id).first()
-    ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
-    if not int_exam or not ext_exam:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal or External Examiner user not found")
+    if not int_exam:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal Examiner user not found")
+
+    ext_exam = None
+    if external_examiner_id:
+        if internal_examiner_id == external_examiner_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal and External Examiner cannot be the same user")
+        ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
+        if not ext_exam:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External Examiner user not found")
 
     # Clear old assignments
     db.query(ExaminerAssignment).filter(ExaminerAssignment.thesis_id == thesis_id).delete()
 
     a1 = ExaminerAssignment(thesis_id=thesis_id, examiner_id=internal_examiner_id, examiner_type="internal")
-    a2 = ExaminerAssignment(thesis_id=thesis_id, examiner_id=external_examiner_id, examiner_type="external")
     db.add(a1)
-    db.add(a2)
+    if ext_exam:
+        a2 = ExaminerAssignment(thesis_id=thesis_id, examiner_id=external_examiner_id, examiner_type="external")
+        db.add(a2)
 
     thesis.phase = 3
-    paper = db.query(Paper).filter(Paper.id == thesis_id).first()
     if paper:
         paper.internal_examiner_id = internal_examiner_id
-        paper.external_examiner_id = external_examiner_id
+        paper.external_examiner_id = external_examiner_id if ext_exam else None
         paper.status = "phase4_marking"
 
     db.commit()
     _record_audit_log(db, thesis_id=thesis.id, actor_id=current_user.id, action="assign_examiners", from_phase=3, to_phase=3)
 
-    student = db.query(User).filter(User.id == thesis.student_id).first()
-    create_notification(db, user_id=internal_examiner_id, paper_id=thesis.id, ntype="workflow_update", message=f"Assigned as Internal Examiner for thesis: '{thesis.topic_title}'.")
+    create_notification(db, user_id=internal_examiner_id, paper_id=thesis.id, ntype="workflow_update", message=f"Assigned as Examiner for thesis: '{thesis.topic_title}'.")
     _send_thesis_email(
         to_user=int_exam,
         subject=f"[GIMPA Thesis] Examiner Assignment — {thesis.topic_title}",
         body=(
-            f"You have been assigned as an Internal Examiner for the following thesis.\n\n"
+            f"You have been assigned as an Examiner for the following thesis.\n\n"
             f"Student: {student.full_name if student else 'N/A'}\n"
             f"Thesis Title: {thesis.topic_title}\n\n"
             f"Please log in to the GIMPA Thesis Repository to download the thesis bundle and upload your marks."
         ),
     )
-    create_notification(db, user_id=external_examiner_id, paper_id=thesis.id, ntype="workflow_update", message=f"Assigned as External Examiner for thesis: '{thesis.topic_title}'.")
-    _send_thesis_email(
-        to_user=ext_exam,
-        subject=f"[GIMPA Thesis] Examiner Assignment — {thesis.topic_title}",
-        body=(
-            f"You have been assigned as an External Examiner for the following thesis.\n\n"
-            f"Student: {student.full_name if student else 'N/A'}\n"
-            f"Thesis Title: {thesis.topic_title}\n\n"
-            f"Please log in to the GIMPA Thesis Repository to download the thesis bundle and upload your marks."
-        ),
-    )
+    if ext_exam:
+        create_notification(db, user_id=external_examiner_id, paper_id=thesis.id, ntype="workflow_update", message=f"Assigned as External Examiner for thesis: '{thesis.topic_title}'.")
+        _send_thesis_email(
+            to_user=ext_exam,
+            subject=f"[GIMPA Thesis] Examiner Assignment — {thesis.topic_title}",
+            body=(
+                f"You have been assigned as an External Examiner for the following thesis.\n\n"
+                f"Student: {student.full_name if student else 'N/A'}\n"
+                f"Thesis Title: {thesis.topic_title}\n\n"
+                f"Please log in to the GIMPA Thesis Repository to download the thesis bundle and upload your marks."
+            ),
+        )
     create_notification(db, user_id=thesis.student_id, paper_id=thesis.id, ntype="workflow_update", message="Examiners have been assigned to your thesis.")
     _send_thesis_email(
         to_user=student,
         subject=f"[GIMPA Thesis] Examiners Assigned — {thesis.topic_title}",
         body=(
-            f"Internal and External Examiners have been assigned to your thesis.\n\n"
+            f"Examiners have been assigned to your thesis.\n\n"
             f"Thesis Title: {thesis.topic_title}\n\n"
             f"Your thesis is currently under examination. You will be notified when examiner feedback is available."
         ),
@@ -2228,10 +2246,29 @@ def get_student_feedback(
     topic_title = thesis.topic_title if thesis else paper.title if paper else "Thesis"
     current_status = thesis.topic_status if thesis else paper.status if paper else "pending"
 
-    latest_hod_comment = db.query(HodComment).filter(HodComment.thesis_id == thesis_id).order_by(HodComment.sent_to_student_at.desc()).first()
-    compiled = latest_hod_comment.compiled_comment if latest_hod_comment else (paper.examiner_corrections if paper else None)
+    # Degree classification and examiner completion check
+    student_user = db.query(User).filter(User.id == student_id).first() if student_id else None
+    degree_level = classify_degree_level(thesis=thesis, paper=paper, student_user=student_user, db=db)
+    is_undergrad = (degree_level == "Undergraduate")
+
+    assignments = db.query(ExaminerAssignment).filter(ExaminerAssignment.thesis_id == thesis_id).all()
+    has_external_assigned = any(a.examiner_type == "external" for a in assignments) or (paper and paper.external_examiner_id is not None)
 
     exam_results = db.query(ExaminationResult).filter(ExaminationResult.thesis_id == thesis_id).all()
+    submitted_types = {res.examiner_type for res in exam_results if res.is_submitted}
+
+    if is_undergrad and not has_external_assigned:
+        all_examiners_marked = ("internal" in submitted_types) or (paper and paper.internal_score is not None)
+    else:
+        all_examiners_marked = (("internal" in submitted_types and "external" in submitted_types)
+                                or (paper and paper.internal_score is not None and paper.external_score is not None))
+
+    is_released_phase = (current_status in ["phase5_corrections", "phase5_pending_supervisor", "phase5_approved", "approved", "published"]) or (thesis and thesis.phase >= 4)
+    is_student_caller = (current_user.id == student_id and not is_admin_like)
+
+    latest_hod_comment = db.query(HodComment).filter(HodComment.thesis_id == thesis_id).order_by(HodComment.sent_to_student_at.desc()).first()
+    raw_compiled = latest_hod_comment.compiled_comment if latest_hod_comment else (paper.examiner_corrections if paper else None)
+
     qual_list = []
     overall_rec = None
     for res in exam_results:
@@ -2247,7 +2284,14 @@ def get_student_feedback(
             if res.recommendation and not overall_rec:
                 overall_rec = res.recommendation
 
-    revision_str = overall_rec or ("Pending Revision" if current_status == "phase5_corrections" else "Under Review")
+    if is_student_caller and not (all_examiners_marked and is_released_phase):
+        # Gate examiner comments: student cannot see until ALL required examiners have marked & uploaded recommendations
+        compiled = None
+        qual_list = []
+        revision_str = "Under Examination — Awaiting examiner evaluations and recommendations"
+    else:
+        compiled = raw_compiled
+        revision_str = overall_rec or ("Pending Revision" if current_status == "phase5_corrections" else "Under Review")
 
     file_path = paper.file_path if paper else None
     file_name = paper.file_name if paper else None

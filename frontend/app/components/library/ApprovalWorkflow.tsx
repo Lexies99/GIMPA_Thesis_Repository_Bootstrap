@@ -950,6 +950,79 @@ export function ApprovalWorkflow() {
                 </div>
               )}
 
+              {/* Leadership Oversight: Student Submissions & Supervisor Comments History */}
+              {selectedPaper && (isHOD || isCoordinator || isDean || isAdmin || isSupervisor) && (
+                Boolean(selectedPaper.review_comments) || Boolean(selectedPaper.steps && selectedPaper.steps.length > 0) || Boolean(selectedPaper.examiner_corrections)
+              ) && (
+                <div className="border rounded-xl p-4 bg-muted/20 space-y-3" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="flex items-center justify-between gap-2 border-b pb-2" style={{ borderColor: 'var(--border-color)' }}>
+                    <h5 className="font-bold text-xs flex items-center gap-1.5 text-primary m-0">
+                      <MessageSquare className="size-4 text-primary" />
+                      Student Submission & Supervisor Feedback History
+                    </h5>
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      Institutional Oversight (HOD / Coord / Dean)
+                    </Badge>
+                  </div>
+
+                  {/* Supervisor Review Comments on Proposal */}
+                  {selectedPaper.review_comments && (
+                    <div className="rounded-lg border bg-background/80 p-3 space-y-1 text-xs">
+                      <span className="font-semibold text-muted-foreground flex items-center gap-1">
+                        <span>👨‍🏫 Supervisor / Reviewer Feedback:</span>
+                      </span>
+                      <p className="text-foreground whitespace-pre-wrap leading-relaxed m-0 font-medium">
+                        {selectedPaper.review_comments}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Dynamic Thesis Steps & Chapter Comments */}
+                  {selectedPaper.steps && selectedPaper.steps.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                        Dynamic Step Progress & Supervisor Remarks ({selectedPaper.steps.length} Steps):
+                      </span>
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                        {selectedPaper.steps.map((st) => (
+                          <div key={st.id} className="rounded-lg border bg-background p-2.5 text-xs space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-foreground">
+                                Step {st.step_number}: {st.title || `Chapter ${st.step_number}`}
+                              </span>
+                              <Badge
+                                variant={st.status === 'approved' ? 'default' : st.status === 'revise' ? 'destructive' : 'secondary'}
+                                className="capitalize text-[10px]"
+                              >
+                                {st.status}
+                              </Badge>
+                            </div>
+                            {st.supervisor_comment && (
+                              <div className="bg-primary/5 border border-primary/15 rounded p-2 text-[11px] text-foreground">
+                                <span className="font-semibold text-primary">Supervisor Feedback:</span> {st.supervisor_comment}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Examiner Feedback / Corrections (Leadership View) */}
+                  {selectedPaper.examiner_corrections && canViewScores && (
+                    <div className="rounded-lg border bg-purple-500/5 border-purple-500/20 p-3 space-y-1 text-xs">
+                      <span className="font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                        <Award className="size-3.5" />
+                        <span>Examiner Evaluations & Corrections:</span>
+                      </span>
+                      <p className="text-foreground whitespace-pre-wrap leading-relaxed m-0">
+                        {selectedPaper.examiner_corrections}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Custom Phase 1 Workflow Components */}
               {selectedPaper.status === 'phase1_proposal_submitted' && !selectedPaper.supervisor_id && (isHOD || isCoordinator || isAdmin) && (() => {
                 const paperDeptName = (selectedPaper.discipline || '').trim().toLowerCase()
@@ -1240,17 +1313,26 @@ export function ApprovalWorkflow() {
               )}
 
               {/* ====================================================
-               * PHASE 2 — SUPERVISOR: Dynamic Steps Review Panel
+               * PHASE 2 — Dynamic Steps Review & Oversight
                * Shows when proposal is accepted & student submits steps.
+               * Supervisor can take action; Coordinator, HOD, Dean, Admin have oversight!
                * ==================================================== */}
-              {(selectedPaper.status === 'phase3_chapters' || selectedPaper.status === 'phase3_steps_in_progress') && (isSupervisor || isAdmin) && (
+              {(selectedPaper.status === 'phase3_chapters' || selectedPaper.status === 'phase3_steps_in_progress' || (selectedPaper.steps && selectedPaper.steps.length > 0)) && (isSupervisor || isAdmin || isHOD || isCoordinator || isDean) && (
                 <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                  <h4 className="font-bold text-sm text-primary flex items-center gap-2">
-                    <CheckSquare className="size-4" />
-                    Phase 2: Dynamic Steps Review (Supervisor)
-                  </h4>
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-bold text-sm text-primary flex items-center gap-2 m-0">
+                      <CheckSquare className="size-4" />
+                      Phase 2: Dynamic Steps Review & Oversight
+                    </h4>
+                    {!(isSupervisor || isAdmin) && (
+                      <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">
+                        Leadership View (Coordinator / HOD / Dean)
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Review thesis steps/chapters submitted by the student. Approve or request revisions per step, and click <strong>Finish Steps</strong> when all required work is completed to advance to Phase 3 (Examination).
+                    Review thesis steps/chapters submitted by the student and supervisor feedback.
+                    {isSupervisor || isAdmin ? ' Approve or request revisions per step, and click Finish Steps when completed.' : ' Full oversight is granted to HOD, Coordinator, and Dean.'}
                   </p>
 
                   {/* List of Student Steps */}
@@ -1307,50 +1389,54 @@ export function ApprovalWorkflow() {
                             >
                               📝 View & Edit Step {st.step_number} in Editor
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={async () => {
-                                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                                if (!token) return
-                                setSubmittingReview(true)
-                                try {
-                                  await apiStepDecision(st.id, 'approved', reviewComments, token)
-                                  setReviewComments('')
-                                  await loadAll()
-                                } catch (err) {
-                                  setReviewError(err instanceof Error ? err.message : 'Step approval failed')
-                                } finally {
-                                  setSubmittingReview(false)
-                                }
-                              }}
-                              disabled={submittingReview}
-                              className="text-xs h-8 text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-700 dark:hover:bg-emerald-950/40 font-semibold"
-                            >
-                              ✓ Approve Step {st.step_number}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={async () => {
-                                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                                if (!token) return
-                                setSubmittingReview(true)
-                                try {
-                                  await apiStepDecision(st.id, 'revise', reviewComments || 'Revision requested on step', token)
-                                  setReviewComments('')
-                                  await loadAll()
-                                } catch (err) {
-                                  setReviewError(err instanceof Error ? err.message : 'Step revision failed')
-                                } finally {
-                                  setSubmittingReview(false)
-                                }
-                              }}
-                              disabled={submittingReview}
-                              className="text-xs h-8 text-amber-600 border-amber-200 hover:bg-amber-50 hover:text-amber-600 dark:hover:text-amber-300"
-                            >
-                              Request Step Revision
-                            </Button>
+                            {(isSupervisor || isAdmin) && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                    if (!token) return
+                                    setSubmittingReview(true)
+                                    try {
+                                      await apiStepDecision(st.id, 'approved', reviewComments, token)
+                                      setReviewComments('')
+                                      await loadAll()
+                                    } catch (err) {
+                                      setReviewError(err instanceof Error ? err.message : 'Step approval failed')
+                                    } finally {
+                                      setSubmittingReview(false)
+                                    }
+                                  }}
+                                  disabled={submittingReview}
+                                  className="text-xs h-8 text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-700 dark:hover:bg-emerald-950/40 font-semibold"
+                                >
+                                  ✓ Approve Step {st.step_number}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                    if (!token) return
+                                    setSubmittingReview(true)
+                                    try {
+                                      await apiStepDecision(st.id, 'revise', reviewComments || 'Revision requested on step', token)
+                                      setReviewComments('')
+                                      await loadAll()
+                                    } catch (err) {
+                                      setReviewError(err instanceof Error ? err.message : 'Step revision request failed')
+                                    } finally {
+                                      setSubmittingReview(false)
+                                    }
+                                  }}
+                                  disabled={submittingReview}
+                                  className="text-xs h-8 text-destructive border-destructive/30 hover:bg-destructive/10 font-semibold"
+                                >
+                                  Revise Step {st.step_number}
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1402,7 +1488,7 @@ export function ApprovalWorkflow() {
                 </div>
               )}
 
-              {selectedPaper.status === 'phase4_pending_examiners' && (isHOD || isCoordinator || isAdmin) && (() => {
+              {selectedPaper.status === 'phase4_pending_examiners' && (isHOD || isCoordinator || isDean || isAdmin) && (() => {
                 const isUndergradPaper = (selectedPaper.degree_level === 'Undergraduate') || 
                   (selectedPaper.publication_type?.toLowerCase().includes('undergrad') ?? false) ||
                   (selectedPaper.document_type?.toLowerCase().includes('undergrad') ?? false) ||
@@ -1524,7 +1610,7 @@ export function ApprovalWorkflow() {
               })()}
 
               {/* Phase 4: Official GIMPA Examiner Project Assessment & Marking Panel */}
-              {selectedPaper.status === 'phase4_marking' && (isSupervisor || isAdmin || isHOD || isCoordinator || selectedPaper.internal_examiner_id === user?.id || selectedPaper.external_examiner_id === user?.id) && (
+              {selectedPaper.status === 'phase4_marking' && (isSupervisor || isAdmin || isHOD || isCoordinator || isDean || selectedPaper.internal_examiner_id === user?.id || selectedPaper.external_examiner_id === user?.id) && (
                 <div className="border rounded-xl p-5 space-y-4" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
                     <div>
@@ -1548,53 +1634,75 @@ export function ApprovalWorkflow() {
                   </div>
 
                   {/* Summary of Examiner Scores */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Internal Examiner Score</span>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                          {selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined
-                            ? `${selectedPaper.internal_score} / 100`
-                            : 'Pending Evaluation'}
-                        </span>
-                        {selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined && (
-                          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                            Evaluated
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
+                  {(() => {
+                    const isUndergradPaper = (selectedPaper.degree_level === 'Undergraduate') || 
+                      (selectedPaper.publication_type?.toLowerCase().includes('undergrad') ?? false) ||
+                      (selectedPaper.document_type?.toLowerCase().includes('undergrad') ?? false) ||
+                      (Boolean(selectedPaper.discipline?.toLowerCase().includes('b.sc')) || Boolean(selectedPaper.discipline?.toLowerCase().includes('bsc')));
+                    const hasExternal = Boolean(selectedPaper.external_examiner_id);
 
-                    <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">External Examiner Score</span>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                          {selectedPaper.external_score !== null && selectedPaper.external_score !== undefined
-                            ? `${selectedPaper.external_score} / 100`
-                            : 'Pending Evaluation'}
-                        </span>
-                        {selectedPaper.external_score !== null && selectedPaper.external_score !== undefined && (
-                          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                            Evaluated
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            {isUndergradPaper && !hasExternal ? 'Supervisor / Internal Examiner Score' : 'Internal Examiner Score'}
+                          </span>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                              {selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined
+                                ? `${selectedPaper.internal_score} / 100`
+                                : 'Pending Evaluation'}
+                            </span>
+                            {selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined && (
+                              <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                                Evaluated
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
 
-                    <div className="p-3 rounded-lg border bg-muted/20 space-y-1 sm:col-span-2 lg:col-span-1" style={{ borderColor: 'var(--border-color)' }}>
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Overall Status</span>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold">
-                          {selectedPaper.internal_score !== null && selectedPaper.external_score !== null
-                            ? `Average: ${((Number(selectedPaper.internal_score) + Number(selectedPaper.external_score)) / 2).toFixed(1)}%`
-                            : 'Awaiting Examiner Submissions'}
-                        </span>
-                        <Badge variant="outline" className="text-[10px] border-purple-500/30 text-purple-600">
-                          Phase 4
-                        </Badge>
+                        <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">External Examiner Score</span>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                              {isUndergradPaper && !hasExternal
+                                ? 'Not Required (Undergrad)'
+                                : selectedPaper.external_score !== null && selectedPaper.external_score !== undefined
+                                ? `${selectedPaper.external_score} / 100`
+                                : 'Pending Evaluation'}
+                            </span>
+                            {selectedPaper.external_score !== null && selectedPaper.external_score !== undefined ? (
+                              <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                                Evaluated
+                              </Badge>
+                            ) : isUndergradPaper && !hasExternal ? (
+                              <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground border-border">
+                                Optional
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="p-3 rounded-lg border bg-muted/20 space-y-1 sm:col-span-2 lg:col-span-1" style={{ borderColor: 'var(--border-color)' }}>
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Overall Status</span>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold">
+                              {isUndergradPaper && !hasExternal
+                                ? selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined
+                                  ? `Score: ${selectedPaper.internal_score}% (Single Examiner)`
+                                  : 'Awaiting Evaluation'
+                                : selectedPaper.internal_score !== null && selectedPaper.external_score !== null
+                                ? `Average: ${((Number(selectedPaper.internal_score) + Number(selectedPaper.external_score)) / 2).toFixed(1)}%`
+                                : 'Awaiting Both Submissions'}
+                            </span>
+                            <Badge variant="outline" className="text-[10px] border-purple-500/30 text-purple-600">
+                              Phase 4
+                            </Badge>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Primary Action: Open Project Assessment Report Dialog */}
                   <div className="p-4 rounded-xl border border-purple-500/30 bg-purple-500/5 space-y-3">
@@ -1724,7 +1832,7 @@ export function ApprovalWorkflow() {
                 </div>
               )}
 
-              {(selectedPaper.status === 'phase5_pending_supervisor' || selectedPaper.status === 'phase5_corrections') && (isSupervisor || isAdmin || isHOD || isCoordinator) && (
+              {(selectedPaper.status === 'phase5_pending_supervisor' || selectedPaper.status === 'phase5_corrections') && (isSupervisor || isAdmin || isHOD || isCoordinator || isDean) && (
                 <div className="border border-primary/20 rounded-xl p-5 bg-primary/5 space-y-4">
                   <h4 className="font-bold text-sm text-primary flex items-center gap-2">
                     <CheckCircle className="size-4" />
@@ -1856,7 +1964,7 @@ export function ApprovalWorkflow() {
                 </div>
               )}
 
-              {(selectedPaper.status === 'phase5_pending_coordinator' || selectedPaper.status === 'phase5_pending_hod') && (isHOD || isCoordinator || isAdmin) && (
+              {(selectedPaper.status === 'phase5_pending_coordinator' || selectedPaper.status === 'phase5_pending_hod') && (isHOD || isCoordinator || isDean || isAdmin) && (
                 <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
                   <h4 className="font-bold text-sm text-primary flex items-center gap-2">
                     <Shield className="size-4" />
