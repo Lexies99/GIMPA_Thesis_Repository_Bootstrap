@@ -50,6 +50,23 @@ VALID_STUDENT_BLOCK_CODES: dict[str, str] = {
     "X2": "SESSION 2 (FEBRUARY INTAKE)",
 }
 
+# Add project group codes A1 to A50 for postgraduate & thesis research groups
+for _i in range(1, 51):
+    _k = f"A{_i}"
+    if _k not in VALID_STUDENT_BLOCK_CODES:
+        VALID_STUDENT_BLOCK_CODES[_k] = f"PROJECT GROUP / COHORT {_k}"
+
+
+def is_valid_student_block_code(code: str) -> bool:
+    if not code:
+        return True
+    code_upper = code.strip().upper()
+    if code_upper in VALID_STUDENT_BLOCK_CODES:
+        return True
+    import re
+    return bool(re.match(r"^[A-Z]{1,3}\d{1,3}$", code_upper))
+
+
 
 def _normalize_key(value: str) -> str:
     return "".join(ch for ch in (value or "").strip().lower() if ch.isalnum())
@@ -205,7 +222,7 @@ def _upsert_student(db: Session, row: dict[str, str]) -> tuple[bool, str, bool, 
     )
     block_code_raw = _map_value(row, ["block code", "block", "session code", "intake block"])
     block_code = block_code_raw.strip().upper() if block_code_raw else ""
-    if block_code and block_code not in VALID_STUDENT_BLOCK_CODES:
+    if block_code and not is_valid_student_block_code(block_code):
         return False, f"{student_id}: invalid block code '{block_code}'", False, False
 
     year_raw = _map_value(row, ["year"])
