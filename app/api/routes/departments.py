@@ -23,6 +23,8 @@ from app.services.department_service import (
     list_departments,
 )
 from app.services.user_service import has_role
+from app.services.email_service import send_notification_email
+from app.services.notification_service import create_notification
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
@@ -100,24 +102,55 @@ def assign_dean_endpoint(
 def add_supervisors_endpoint(
     department_id: int,
     payload: AddSupervisorRequest,
-    current_user: User = Depends(require_any_role("project_coordinator", "system_admin")),
+    current_user: User = Depends(require_any_role("project_coordinator", "hod", "system_admin")),
     db: Session = Depends(get_db),
 ) -> list[DepartmentSupervisorRead]:
-    """Add project supervisors to a department. Requires Project Coordinator or Admin role."""
+    """Add project supervisors to a department. Requires HOD, Project Coordinator, or Admin role."""
     department = get_department(db, department_id)
     if not department:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
     if not has_role(db, current_user, "system_admin") and not current_user.is_admin:
-        if (current_user.department or "").strip().lower() != (department.name or "").strip().lower():
+        is_dept_hod = (
+            has_role(db, current_user, "hod")
+            and (
+                department.hod_user_id == current_user.id
+                or (current_user.department or "").strip().lower() == (department.name or "").strip().lower()
+            )
+        )
+        is_dept_coord = (
+            has_role(db, current_user, "project_coordinator")
+            and (current_user.department or "").strip().lower() == (department.name or "").strip().lower()
+        )
+        if not is_dept_hod and not is_dept_coord:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only project coordinators in the same department can appoint supervisors for this department",
+                detail="Only project coordinators or HODs in this department can appoint supervisors",
             )
     try:
         supervisors = []
         for supervisor_id in payload.supervisor_user_ids:
             supervisor = add_department_supervisor(db, department_id, supervisor_id)
             supervisors.append(supervisor)
+            sup_user = db.query(User).filter(User.id == supervisor_id).first()
+            if sup_user:
+                create_notification(
+                    db,
+                    user_id=supervisor_id,
+                    ntype="workflow_update",
+                    message=f"You have been appointed as a Project Supervisor in the {department.name} department.",
+                )
+                if sup_user.email:
+                    send_notification_email(
+                        to_email=sup_user.email,
+                        to_name=sup_user.full_name or sup_user.email,
+                        subject=f"Appointed as Project Supervisor - {department.name}",
+                        message=(
+                            f"You have been appointed as a Project Supervisor in the {department.name} department.\n\n"
+                            f"Appointed by: {current_user.full_name or current_user.email} ({current_user.role.replace('_', ' ').title()})\n\n"
+                            f"You can now be assigned to supervise student theses and research projects. "
+                            f"Please sign in to the GIMPA Thesis Management System to view your dashboard."
+                        ),
+                    )
         return [DepartmentSupervisorRead.model_validate(s) for s in supervisors]
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -127,18 +160,29 @@ def add_supervisors_endpoint(
 def remove_supervisor_endpoint(
     department_id: int,
     supervisor_user_id: int,
-    current_user: User = Depends(require_any_role("project_coordinator", "system_admin")),
+    current_user: User = Depends(require_any_role("project_coordinator", "hod", "system_admin")),
     db: Session = Depends(get_db),
 ) -> Response:
-    """Remove a project supervisor from a department. Requires Project Coordinator or Admin role."""
+    """Remove a project supervisor from a department. Requires HOD, Project Coordinator, or Admin role."""
     department = get_department(db, department_id)
     if not department:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
     if not has_role(db, current_user, "system_admin") and not current_user.is_admin:
-        if (current_user.department or "").strip().lower() != (department.name or "").strip().lower():
+        is_dept_hod = (
+            has_role(db, current_user, "hod")
+            and (
+                department.hod_user_id == current_user.id
+                or (current_user.department or "").strip().lower() == (department.name or "").strip().lower()
+            )
+        )
+        is_dept_coord = (
+            has_role(db, current_user, "project_coordinator")
+            and (current_user.department or "").strip().lower() == (department.name or "").strip().lower()
+        )
+        if not is_dept_hod and not is_dept_coord:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only project coordinators in the same department can remove supervisors for this department",
+                detail="Only project coordinators or HODs in this department can remove supervisors",
             )
     remove_department_supervisor(db, department_id, supervisor_user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

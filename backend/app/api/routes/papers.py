@@ -2983,17 +2983,41 @@ def assign_supervisors_endpoint(
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
     
-    # Check if user is HOD or Admin
+    # Check if user is HOD, Project Coordinator, or Admin
+    is_admin = current_user.is_admin or has_role(db, current_user, "system_admin")
     is_hod = has_role(db, current_user, "hod")
-    if not (is_hod or current_user.is_admin):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only HOD or Admin can assign supervisors")
-    if is_hod and not current_user.is_admin:
-        paper_department = (paper.created_by.department if paper.created_by else None) or ""
+    is_coord = has_role(db, current_user, "project_coordinator")
+    if not (is_admin or is_hod or is_coord):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only HOD, Project Coordinator, or Admin can assign supervisors")
+    if not is_admin:
+        paper_department = (paper.created_by.department if paper.created_by else None) or (paper.discipline or "")
         if (paper_department or "").strip().lower() != (current_user.department or "").strip().lower():
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="HOD can only assign supervisors for papers in their department")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only assign supervisors for papers in your department")
     
     try:
         supervisors = assign_supervisors_to_paper(db, paper_id, supervisor_user_ids, assigned_by_id=current_user.id)
+        for s in supervisors:
+            sup_user = db.query(User).filter(User.id == s.user_id).first()
+            if sup_user:
+                create_notification(
+                    db,
+                    user_id=s.user_id,
+                    paper_id=paper.id,
+                    ntype="workflow_update",
+                    message=f"You have been assigned to supervise student paper: '{paper.title}'",
+                )
+                if sup_user.email:
+                    send_notification_email(
+                        to_email=sup_user.email,
+                        to_name=sup_user.full_name or sup_user.email,
+                        subject=f"[GIMPA Thesis] You have been assigned as Supervisor — {paper.title}",
+                        message=(
+                            f"You have been assigned as supervisor for a thesis.\n\n"
+                            f"Student: {paper.created_by.full_name if paper.created_by else 'Student'} ({paper.created_by.email if paper.created_by else ''})\n"
+                            f"Thesis Title: {paper.title}\n\n"
+                            f"Please log in to review the student's proposal."
+                        ),
+                    )
         return [
             {
                 "id": s.id,
@@ -3130,6 +3154,18 @@ def assign_supervisor(
         ntype="workflow_update",
         message=f"You have been assigned to supervise student paper: '{paper.title}'"
     )
+    if supervisor_user.email:
+        send_notification_email(
+            to_email=supervisor_user.email,
+            to_name=supervisor_user.full_name or supervisor_user.email,
+            subject=f"[GIMPA Thesis] You have been assigned as Supervisor — {paper.title}",
+            message=(
+                f"You have been assigned as supervisor for a thesis.\n\n"
+                f"Student: {paper.created_by.full_name if paper.created_by else 'Student'} ({paper.created_by.email if paper.created_by else ''})\n"
+                f"Thesis Title: {paper.title}\n\n"
+                f"Please log in to review the student's proposal."
+            ),
+        )
     
     return _to_paper_read(paper, db, current_user)
 

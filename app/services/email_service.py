@@ -75,6 +75,7 @@ def send_notification_email(
                     host=settings.smtp_host,
                     port=settings.smtp_port,
                     timeout=settings.smtp_timeout_seconds,
+                    local_hostname="localhost",
                 ) as smtp:
                     if settings.smtp_use_tls:
                         smtp.starttls()

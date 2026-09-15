@@ -137,7 +137,7 @@ export function AccountManagement() {
   const canAssignDean = hasRole('system_admin')
   const canAssignHod = hasRole('dean')
   const canAssignCoordinators = hasRole('hod')
-  const canAssignSupervisors = hasRole('project_coordinator')
+  const canAssignSupervisors = hasRole('project_coordinator') || hasRole('hod') || hasRole('system_admin')
   const canManageAssignments = canAssignDean || canAssignHod || canAssignCoordinators || canAssignSupervisors
   const canViewAssignments = hasRole('system_admin') || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator') || hasRole('lecturer')
   const canManage = canManageAccounts || canManageAssignments || canViewAssignments || canBatchAssignExaminers
