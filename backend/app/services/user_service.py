@@ -198,7 +198,13 @@ def create_user(
     )
     db.add(user)
     db.flush()
-    db.add(UserRole(user_id=user.id, role=normalized_role))
+    existing_role = (
+        db.query(UserRole)
+        .filter(UserRole.user_id == user.id, func.lower(UserRole.role) == normalized_role)
+        .first()
+    )
+    if not existing_role:
+        db.add(UserRole(user_id=user.id, role=normalized_role))
     db.commit()
     db.refresh(user)
     return user
