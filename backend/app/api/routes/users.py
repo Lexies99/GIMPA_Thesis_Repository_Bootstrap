@@ -16,6 +16,7 @@ from app.schemas.user import (
     UserRoleUpdate,
     UserUpdate,
 )
+from app.models.user import User
 from app.models.student import Student
 from app.models.department import Department
 from app.models.institution import Institution
@@ -488,6 +489,75 @@ async def import_accounts_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return summary
+
+
+@router.post("/admin/resend-credentials-emails")
+def resend_credentials_emails(
+    role: str | None = Query(None, description="Filter by role: student, lecturer, or leave empty for all"),
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+) -> dict:
+    """Resend temporary password and login credentials to active imported accounts."""
+    from app.services.import_service import generate_default_password
+    from app.core.security import hash_password
+
+    query = db.query(User).filter(User.is_active.is_(True))
+    if role:
+        query = query.filter(User.role == role.lower().strip())
+    else:
+        query = query.filter(User.role.in_(["student", "lecturer", "project_supervisor", "staff"]))
+
+    # Exclude system admin accounts
+    users = [
+        u for u in query.all()
+        if not u.is_admin and u.email.lower() not in ("admin@gimpa.edu.gh", "admin@murrs.edu")
+    ]
+
+    sent_count = 0
+    failed_count = 0
+    details = []
+
+    for u in users:
+        temp_pass = generate_default_password()
+        u.hashed_password = hash_password(temp_pass)
+        u.must_change_password = True
+        db.add(u)
+
+        is_student = u.role == "student"
+        subject = (
+            "Welcome to GIMPA Thesis Management System - Student Account Credentials"
+            if is_student
+            else "Welcome to GIMPA Thesis Management System - Staff Account Credentials"
+        )
+        msg = (
+            f"Your account credentials for the GIMPA Thesis Management System:\n\n"
+            f"- Role: {u.role.replace('_', ' ').title()}\n"
+            f"- Email: {u.email}\n"
+            f"- School ID: {u.school_id or 'N/A'}\n"
+            f"- Temporary Password: {temp_pass}\n\n"
+            f"Please sign in at: https://thesis.manamatechnologies.com/login\n\n"
+            f"For security purposes, you will be required to change your temporary password immediately upon first login."
+        )
+        sent = send_notification_email(
+            to_email=u.email,
+            to_name=u.full_name or u.email,
+            subject=subject,
+            message=msg,
+        )
+        if sent:
+            sent_count += 1
+            details.append(f"{u.email}: delivered")
+        else:
+            failed_count += 1
+            details.append(f"{u.email}: delivery failed")
+
+    db.commit()
+    return {
+        "total_targeted": len(users),
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+        "details": details[:30],
+    }
 
 
 @router.get("/notifications", response_model=list[NotificationRead])

@@ -55,21 +55,25 @@ def _normalize_key(value: str) -> str:
     return "".join(ch for ch in (value or "").strip().lower() if ch.isalnum())
 
 
-def generate_default_password(length: int = 16) -> str:
+def generate_default_password(length: int = 14) -> str:
     if length < 12:
         length = 12
     rng = secrets.SystemRandom()
     lowers = string.ascii_lowercase
     uppers = string.ascii_uppercase
     digits = string.digits
-    specials = "!@#$%^&*()_-+=[]{}:;,.?"
-    pool = lowers + uppers + digits + specials
+    specials = "!@#$%*?"
     chars = [
         rng.choice(lowers),
+        rng.choice(lowers),
+        rng.choice(uppers),
         rng.choice(uppers),
         rng.choice(digits),
+        rng.choice(digits),
+        rng.choice(specials),
         rng.choice(specials),
     ]
+    pool = lowers + uppers + digits + specials
     chars.extend(rng.choice(pool) for _ in range(length - len(chars)))
     rng.shuffle(chars)
     return "".join(chars)
