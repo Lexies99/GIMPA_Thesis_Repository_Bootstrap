@@ -49,7 +49,7 @@ def classify_degree_level(
         return "MPhil"
     if any(k in combined for k in ["master", "msc", "mba", "ma ", "med", "mpa", "mph"]):
         return "Masters"
-    if any(k in combined for k in ["undergraduate", "bsc", "b.sc", "ba ", "b.a", "llb", "ll.b", "bachelor", "degree", "diploma", "beng", "b.eng"]):
+    if any(k in combined for k in ["undergraduate", "bsc", "ba ", "llb", "bachelor", "degree", "diploma"]):
         return "Undergraduate"
 
     return "Masters"
@@ -63,8 +63,8 @@ def calculate_thesis_examination_score(
     Calculates final average score based on degree level rules and 3rd examiner caveat.
 
     Rules:
-    - Undergraduate: 1 examiner (Supervisor / Internal). Average = S1.
-    - Master's: 2 Internal Examiners (or 1 Internal + 1 External). Formula: (S1 + S2) / 2.
+    - Undergraduate: 1 examiner (Supervisor). Average = S1.
+    - Master's: 2 Internal Examiners. Formula: (S1 + S2) / 2.
     - MPhil: 1 Internal, 1 External. Formula: (S1 + S2) / 2.
     - Caveat: If |S1 - S2| > 20, 3rd examiner is required.
       When S3 is submitted: (S1 + S2 + S3) / 3.

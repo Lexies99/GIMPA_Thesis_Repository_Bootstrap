@@ -37,12 +37,14 @@ def send_notification_email(
 
     greeting_name = (to_name or "").strip() or "User"
     email.set_content(
-        f"Hello {greeting_name},\n\n"
+        f"Dear {greeting_name},\n\n"
         f"{message}\n\n"
-        "This is an automated message from Gimpa Research Repository.\n"
-        "If you need help, please contact your system administrator.\n\n"
-        "Regards,\n"
-        "Gimpa Research Repository Team"
+        "----------------------------------------------------------------------\n"
+        "This is an automated notification from the GIMPA Thesis Management System.\n"
+        "If you have any questions, please contact your department Project Coordinator, HOD, or System Administrator.\n\n"
+        "Best regards,\n"
+        "GIMPA Thesis Management System\n"
+        "Ghana Institute of Management and Public Administration (GIMPA)"
     )
 
     for item in attachments or []:

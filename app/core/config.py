@@ -11,7 +11,7 @@ ENV_FILE_PATH = Path(__file__).resolve().parents[2] / ".env"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(ENV_FILE_PATH), extra="ignore")
 
-    app_name: str = "Gimpa Research Repository API"
+    app_name: str = "GIMPA Thesis Management System API"
     env: str = "development"
     api_prefix: str = "/api"
 
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
     smtp_from_email: str | None = None
-    smtp_from_name: str = "Gimpa Research Repository"
+    smtp_from_name: str = "GIMPA Thesis Management System"
     smtp_timeout_seconds: int = 30
     smtp_max_retries: int = 3
     smtp_retry_backoff_seconds: float = 1.5
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # OnlyOffice integration
     onlyoffice_doc_server_url: str | None = None
     # Publicly reachable backend base URL for OnlyOffice callbacks/file fetch
-    public_api_base_url: str = "http://127.0.0.1:8001"
+    public_api_base_url: str = "http://127.0.0.1:8011"
     # Optional dedicated callback base URL used by OnlyOffice server container.
     # Use this when browser and container need different backend hostnames.
     onlyoffice_callback_base_url: str | None = None

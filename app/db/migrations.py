@@ -213,3 +213,51 @@ def ensure_paper_audit_tables() -> None:
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_workflow_events_id ON paper_workflow_events (id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_workflow_events_paper_id ON paper_workflow_events (paper_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_workflow_events_actor_id ON paper_workflow_events (actor_id)"))
+
+
+def ensure_correction_columns() -> None:
+    inspector = inspect(engine)
+    if "corrections" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("corrections")}
+    if "coordinator_status" in columns:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE corrections ADD COLUMN coordinator_status VARCHAR(32) NOT NULL DEFAULT 'pending'"))
+
+
+def ensure_examination_results_table() -> None:
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "examination_results" in table_names:
+        return
+
+    is_sqlite = engine.dialect.name == "sqlite"
+    id_type = "INTEGER PRIMARY KEY AUTOINCREMENT" if is_sqlite else "SERIAL PRIMARY KEY"
+    timestamp_type = "DATETIME DEFAULT CURRENT_TIMESTAMP" if is_sqlite else "TIMESTAMPTZ DEFAULT now()"
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE examination_results (
+                    id {id_type},
+                    thesis_id INTEGER NOT NULL REFERENCES theses(id) ON DELETE CASCADE,
+                    examiner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    examiner_type VARCHAR(32) NOT NULL DEFAULT 'internal',
+                    score FLOAT,
+                    recommendation VARCHAR(64),
+                    general_comments TEXT,
+                    annotated_file_path VARCHAR(1024),
+                    is_submitted BOOLEAN NOT NULL DEFAULT false,
+                    submitted_at {timestamp_type}
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_examination_results_id ON examination_results (id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_examination_results_thesis_id ON examination_results (thesis_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_examination_results_examiner_id ON examination_results (examiner_id)"))
+
+

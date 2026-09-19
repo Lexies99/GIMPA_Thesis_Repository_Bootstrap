@@ -7,6 +7,8 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.db.migrations import (
     ensure_paper_audit_tables,
+    ensure_correction_columns,
+    ensure_examination_results_table,
     ensure_user_must_change_password_column,
     ensure_student_extended_columns,
     ensure_paper_workflow_columns,
@@ -18,6 +20,21 @@ from app.db.migrations import (
 
 
 def create_app() -> FastAPI:
+    from app.db.session import engine
+    from app.models.base import Base
+    import app.models.user
+    import app.models.department
+    import app.models.institution
+    import app.models.paper
+    import app.models.paper_workflow
+    import app.models.user_role
+    import app.models.student
+    import app.models.refresh_token
+    import app.models.notification
+    import app.models.tag
+    import app.models.thesis_system
+
+    Base.metadata.create_all(bind=engine)
     ensure_user_role_column()
     ensure_user_department_column()
     ensure_user_school_id_column()
@@ -26,6 +43,8 @@ def create_app() -> FastAPI:
     ensure_student_extended_columns()
     ensure_paper_workflow_columns()
     ensure_paper_audit_tables()
+    ensure_correction_columns()
+    ensure_examination_results_table()
     app = FastAPI(title=settings.app_name)
     app.add_middleware(
         CORSMiddleware,
@@ -38,8 +57,11 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:3000",
             "http://localhost:8082",
             "http://127.0.0.1:8082",
+            "http://localhost:8011",
+            "http://127.0.0.1:8011",
             "null",
         ],
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
