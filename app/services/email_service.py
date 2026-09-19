@@ -4,6 +4,7 @@ import logging
 import smtplib
 import time
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 
 from app.core.config import settings
 
@@ -25,11 +26,14 @@ def send_notification_email(
         logger.warning("SMTP is enabled but SMTP_HOST or SMTP_FROM_EMAIL is missing")
         return False
 
+    from_label = (settings.smtp_from_name or "GIMPA Thesis Management System").strip()
     email = EmailMessage()
-    from_label = settings.smtp_from_name.strip() if settings.smtp_from_name else "Gimpa Research Repository"
     email["From"] = f"{from_label} <{settings.smtp_from_email}>"
     email["To"] = to_email
     email["Subject"] = subject
+    email["Date"] = formatdate(localtime=True)
+    domain = settings.smtp_from_email.partition("@")[2] or "thesis.manamatechnologies.com"
+    email["Message-ID"] = make_msgid(domain=domain)
 
     greeting_name = (to_name or "").strip() or "User"
     email.set_content(
