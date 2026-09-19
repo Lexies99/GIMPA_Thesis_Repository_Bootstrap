@@ -131,9 +131,8 @@ export default function SignupPage() {
       setError('School email must be a GIMPA email (@gimpa.edu.gh or subdomains)')
       return
     }
-    const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{12,128}$/.test(finalPassword)
-    if (!strongPassword) {
-      setError('Password must be 12+ chars with uppercase, lowercase, number, and special character')
+    if (finalPassword.length < 5) {
+      setError('Password must not be less than 5 characters')
       return
     }
 

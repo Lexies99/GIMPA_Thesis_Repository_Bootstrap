@@ -58,9 +58,8 @@ export function Profile() {
       return
     }
 
-    const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{12,128}$/.test(newPassword)
-    if (!strongPassword) {
-      setPasswordError('Password must be 12-128 chars with uppercase, lowercase, number, and special character')
+    if (newPassword.length < 5) {
+      setPasswordError('Password must not be less than 5 characters')
       return
     }
 
@@ -332,7 +331,7 @@ export function Profile() {
                       </button>
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Password must be 12-128 characters and include uppercase, lowercase, number, and special character.
+                      Password must be at least 5 characters.
                     </p>
                   </div>
 

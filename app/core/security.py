@@ -11,17 +11,10 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-PASSWORD_POLICY_REGEX = re.compile(
-    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{12,128}$"
-)
-
-
 def validate_password_requirements(password: str) -> None:
-    value = (password or "").strip()
-    if not PASSWORD_POLICY_REGEX.match(value):
-        raise ValueError(
-            "Password must be 12-128 characters and include uppercase, lowercase, number, and special character"
-        )
+    value = password or ""
+    if len(value) < 5:
+        raise ValueError("Password must not be less than 5 characters")
 
 
 def hash_password(password: str) -> str:
