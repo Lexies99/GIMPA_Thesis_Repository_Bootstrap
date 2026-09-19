@@ -206,7 +206,11 @@ def load_rows_from_upload(filename: str, raw: bytes) -> list[dict[str, str]]:
     raise ValueError("Only .csv and .xlsx files are supported")
 
 
-def _upsert_student(db: Session, row: dict[str, str]) -> tuple[bool, str, bool, bool]:
+def _upsert_student(
+    db: Session,
+    row: dict[str, str],
+    pending_emails: list[dict[str, str]] | None = None,
+) -> tuple[bool, str, bool, bool]:
     student_id = _map_value(row, ["student id", "student_id", "id"])
     email = _map_value(row, ["school email", "email", "student email"])
     if not student_id:
@@ -270,18 +274,23 @@ def _upsert_student(db: Session, row: dict[str, str]) -> tuple[bool, str, bool, 
             ),
         )
         assign_role(db, updated_user, "student")
-        sent = send_notification_email(
-            to_email=updated_user.email,
-            to_name=updated_user.full_name,
-            subject="GIMPA Thesis Management System Account Update Confirmation",
-            message=(
+        email_data = {
+            "to_email": updated_user.email,
+            "to_name": updated_user.full_name,
+            "subject": "GIMPA Thesis Management System Account Update Confirmation",
+            "message": (
                 "Your student account details have been updated successfully in GIMPA Thesis Management System.\n\n"
                 "Updated details:\n"
                 f"- Email: {updated_user.email}\n"
                 f"- School ID: {updated_user.school_id or student_id}\n\n"
                 "If any of these details are incorrect, please contact your administrator."
             ),
-        )
+        }
+        if pending_emails is not None:
+            pending_emails.append(email_data)
+            return True, student_id, True, False
+
+        sent = send_notification_email(**email_data)
         if not sent:
             return True, f"{student_id}: student updated but email notification failed", False, True
         return True, student_id, True, False
@@ -308,28 +317,38 @@ def _upsert_student(db: Session, row: dict[str, str]) -> tuple[bool, str, bool, 
     db.commit()
     db.refresh(user)
 
-    sent = send_notification_email(
-        to_email=user.email,
-        to_name=user.full_name,
-        subject="Welcome to GIMPA Thesis Management System - Student Account Created",
-        message=(
+    email_data = {
+        "to_email": user.email,
+        "to_name": user.full_name,
+        "subject": "Welcome to GIMPA Thesis Management System - Student Account Created",
+        "message": (
             "Your student account has been created successfully in GIMPA Thesis Management System.\n\n"
             "Account details:\n"
             f"- Email: {user.email}\n"
             f"- School ID: {user.school_id or student_id}\n"
             f"- Temporary Password: {generated_password}\n\n"
             "Next steps:\n"
-            "1. Sign in to your account.\n"
+            "1. Sign in at https://thesis.manamatechnologies.com\n"
             "2. Change your temporary password immediately.\n"
             "3. Complete your profile if needed."
         ),
-    )
+    }
+    if pending_emails is not None:
+        pending_emails.append(email_data)
+        return True, student_id, True, False
+
+    sent = send_notification_email(**email_data)
     if not sent:
         return True, f"{student_id}: account created but email could not be delivered", False, True
     return True, student_id, True, False
 
 
-def _upsert_staff_user(db: Session, row: dict[str, str], default_role: str) -> tuple[bool, str, bool, bool]:
+def _upsert_staff_user(
+    db: Session,
+    row: dict[str, str],
+    default_role: str,
+    pending_emails: list[dict[str, str]] | None = None,
+) -> tuple[bool, str, bool, bool]:
     name = _map_value(row, ["lecturer name", "name", "full name"])
     school_id = _map_value(row, ["lecturer id", "lecture id", "staff id", "school id", "id"])
     email = _map_value(row, ["lecturer email", "lecture email", "school email", "email"])
@@ -383,11 +402,11 @@ def _upsert_staff_user(db: Session, row: dict[str, str], default_role: str) -> t
     for role in roles[1:]:
         assign_role(db, user, role)
 
-    sent = send_notification_email(
-        to_email=user.email,
-        to_name=user.full_name,
-        subject="Welcome to GIMPA Thesis Management System - Account Created",
-        message=(
+    email_data = {
+        "to_email": user.email,
+        "to_name": user.full_name,
+        "subject": "Welcome to GIMPA Thesis Management System - Account Created",
+        "message": (
             "Your account has been created successfully in GIMPA Thesis Management System.\n\n"
             "Account details:\n"
             f"- Email: {user.email}\n"
@@ -397,19 +416,28 @@ def _upsert_staff_user(db: Session, row: dict[str, str], default_role: str) -> t
             "2. Change your temporary password immediately.\n"
             "3. Review your assigned role and profile information."
         ),
-    )
+    }
+    if pending_emails is not None:
+        pending_emails.append(email_data)
+        return True, email, True, False
+
+    sent = send_notification_email(**email_data)
     if not sent:
         return True, f"{email}: account created but email could not be delivered (check SMTP settings)", False, True
     return True, email, True, False
 
 
-def import_students(db: Session, rows: list[dict[str, str]]) -> StudentImportSummary:
+def import_students(
+    db: Session,
+    rows: list[dict[str, str]],
+    pending_emails: list[dict[str, str]] | None = None,
+) -> StudentImportSummary:
     ok = 0
     emailed_sent = 0
     emailed_failed = 0
     errors: list[str] = []
     for row in rows:
-        success, info, mail_sent, mail_failed = _upsert_student(db, row)
+        success, info, mail_sent, mail_failed = _upsert_student(db, row, pending_emails=pending_emails)
         if success:
             ok += 1
             if mail_sent:
@@ -433,13 +461,16 @@ def import_staff_accounts(
     rows: list[dict[str, str]],
     *,
     default_role: str,
+    pending_emails: list[dict[str, str]] | None = None,
 ) -> StudentImportSummary:
     ok = 0
     emailed_sent = 0
     emailed_failed = 0
     errors: list[str] = []
     for row in rows:
-        success, info, mail_sent, mail_failed = _upsert_staff_user(db, row, default_role=default_role)
+        success, info, mail_sent, mail_failed = _upsert_staff_user(
+            db, row, default_role=default_role, pending_emails=pending_emails
+        )
         if success:
             ok += 1
             if mail_sent:

@@ -115,11 +115,18 @@ function roleChipLabel(role: ApiUserRole): string {
 
 function extractErrorMessage(err: unknown): string {
   if (!(err instanceof Error)) return 'Request failed'
+  const msg = err.message || ''
+  if (msg.includes('524') || msg.includes('timeout occurred') || msg.toLowerCase().includes('<!doctype') || msg.toLowerCase().includes('<html')) {
+    return 'The request timed out waiting for the server (Cloudflare 524). Background operations may still be running. Please refresh the page in a moment to see updated records.'
+  }
+  if (msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('504')) {
+    return 'The server is temporarily unavailable. Please check back shortly.'
+  }
   try {
-    const parsed = JSON.parse(err.message) as { detail?: string }
-    return parsed.detail || err.message
+    const parsed = JSON.parse(msg) as { detail?: string }
+    return parsed.detail || msg
   } catch {
-    return err.message
+    return msg
   }
 }
 

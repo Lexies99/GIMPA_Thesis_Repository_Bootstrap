@@ -275,12 +275,20 @@ async function handleResponse<T>(response: Response): Promise<T> {
     const text = await response.text()
     let message = text || response.statusText
     if (text) {
-      try {
-        const parsed = JSON.parse(text) as { detail?: string }
-        if (parsed?.detail) {
-          message = parsed.detail
-        }
-      } catch {}
+      if (response.status === 524 || text.includes("524: A timeout occurred") || text.includes("Error code 524")) {
+        message = "The server took too long to respond (Cloudflare Error 524: Timeout). Background tasks may still be processing. Please refresh your page in a moment."
+      } else if (response.status === 504 || response.status === 502) {
+        message = `Server gateway error (${response.status} ${response.statusText || ""}). Please try again shortly.`
+      } else if (text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html")) {
+        message = `Server returned an unexpected HTML response (${response.status} ${response.statusText || ""}).`
+      } else {
+        try {
+          const parsed = JSON.parse(text) as { detail?: string }
+          if (parsed?.detail) {
+            message = parsed.detail
+          }
+        } catch {}
+      }
     }
     throw new Error(message)
   }

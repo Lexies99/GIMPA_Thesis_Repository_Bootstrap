@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status, Response
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user, get_db
@@ -23,7 +21,7 @@ from app.models.student import Student
 from app.models.department import Department
 from app.models.institution import Institution
 from app.services.import_service import import_staff_accounts, import_students, load_rows_from_upload
-from app.services.email_service import send_notification_email
+from app.services.email_service import send_batch_emails, send_notification_email
 from app.services.notification_service import create_notification, get_notification, list_notifications, mark_notification_read
 from app.services.import_service import generate_default_password
 from app.services.user_service import (
@@ -235,7 +233,7 @@ def activate_user(
         db,
         user_id=updated.id,
         ntype="account_activated",
-        message="Your account has been activated by the librarian. You can now sign in to Gimpa Research Repository.",
+        message="Your account has been activated by the librarian. You can now sign in to GIMPA Thesis Management System.",
     )
     return _to_user_read(db, updated)
 
@@ -310,9 +308,9 @@ def admin_create_user(
     email_sent = send_notification_email(
         to_email=created.email,
         to_name=created.full_name,
-        subject="Welcome to Gimpa Research Repository - Account Created",
+        subject="Welcome to GIMPA Thesis Management System - Account Created",
         message=(
-            "Your account has been created successfully in Gimpa Research Repository by an administrator.\n\n"
+            "Your account has been created successfully in GIMPA Thesis Management System by an administrator.\n\n"
             "Account details:\n"
             f"- Email: {created.email}\n"
             f"- Temporary Password: {temporary_password}\n\n"
@@ -331,38 +329,6 @@ def admin_create_user(
         )
 
     return AdminUserCreateResult(user=_to_user_read(db, created), email_sent=email_sent)
-
-
-@router.get("/users/students-template")
-def download_students_template(
-    format: str = Query("csv"),
-):
-    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
-    if format == "xlsx":
-        file_path = templates_dir / "students_template.xlsx"
-        if file_path.exists():
-            return FileResponse(file_path, filename="students_template.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    file_path = templates_dir / "students_template.csv"
-    if file_path.exists():
-        return FileResponse(file_path, filename="students_template.csv", media_type="text/csv")
-    csv_content = "Student Name,Student ID,School Email,School,Department,Certification Type,Block Code,Year\nKwame Mensah,2210045678,kwame.mensah@st.gimpa.edu.gh,School of Technology and Social Sciences,Computer Science,Degree,A1,2026\n"
-    return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=students_template.csv"})
-
-
-@router.get("/users/lecturers-template")
-def download_lecturers_template(
-    format: str = Query("csv"),
-):
-    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
-    if format == "xlsx":
-        file_path = templates_dir / "lecturers_template.xlsx"
-        if file_path.exists():
-            return FileResponse(file_path, filename="lecturers_template.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    file_path = templates_dir / "lecturers_template.csv"
-    if file_path.exists():
-        return FileResponse(file_path, filename="lecturers_template.csv", media_type="text/csv")
-    csv_content = "Lecturer Name,Lecturer ID,Lecturer Email,Adjunct Email,School,Department,Year\nDr. Abena Osei,STF-9021,abena.osei@gimpa.edu.gh,,School of Technology and Social Sciences,Computer Science,2026\n"
-    return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=lecturers_template.csv"})
 
 
 @router.post("/users/external-examiner", response_model=AdminUserCreateResult, status_code=status.HTTP_201_CREATED)
@@ -410,9 +376,9 @@ def create_external_examiner_account(
     email_sent = send_notification_email(
         to_email=created.email,
         to_name=created.full_name,
-        subject="Welcome to Gimpa Research Repository - External Examiner Account Created",
+        subject="Welcome to GIMPA Thesis Management System - External Examiner Account Created",
         message=(
-            "Your External Examiner account has been created successfully in Gimpa Research Repository.\n\n"
+            "Your External Examiner account has been created successfully in GIMPA Thesis Management System.\n\n"
             "Account details:\n"
             f"- Email: {created.email}\n"
             f"- Temporary Password: {temporary_password}\n\n"
@@ -489,6 +455,7 @@ def read_students(
 
 @router.post("/admin/import-accounts", response_model=ImportAccountsSummary)
 async def import_accounts_endpoint(
+    background_tasks: BackgroundTasks,
     students_file: UploadFile | None = File(default=None),
     lecturers_file: UploadFile | None = File(default=None),
     library_file: UploadFile | None = File(default=None),
@@ -499,10 +466,11 @@ async def import_accounts_endpoint(
     if not students_file and not lecturers_file and not library_file:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload at least one file")
 
+    pending_emails: list[dict[str, str]] = []
     try:
         if students_file:
             student_rows = load_rows_from_upload(students_file.filename or "", await students_file.read())
-            summary.students = import_students(db, student_rows)
+            summary.students = import_students(db, student_rows, pending_emails=pending_emails)
 
         if lecturers_file:
             lecturer_rows = load_rows_from_upload(lecturers_file.filename or "", await lecturers_file.read())
@@ -510,6 +478,7 @@ async def import_accounts_endpoint(
                 db,
                 lecturer_rows,
                 default_role="lecturer",
+                pending_emails=pending_emails,
             )
 
         if library_file:
@@ -518,20 +487,25 @@ async def import_accounts_endpoint(
                 db,
                 library_rows,
                 default_role="librarian",
+                pending_emails=pending_emails,
             )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if pending_emails:
+        background_tasks.add_task(send_batch_emails, pending_emails)
 
     return summary
 
 
 @router.post("/admin/resend-credentials-emails")
 def resend_credentials_emails(
+    background_tasks: BackgroundTasks,
     role: str | None = Query(None, description="Filter by role: student, lecturer, or leave empty for all"),
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ) -> dict:
-    """Resend temporary password and login credentials to active imported accounts."""
+    """Resend temporary password and login credentials to active imported accounts in background."""
     from app.services.import_service import generate_default_password
     from app.core.security import hash_password
 
@@ -547,10 +521,7 @@ def resend_credentials_emails(
         if not u.is_admin and u.email.lower() not in ("admin@gimpa.edu.gh", "admin@murrs.edu")
     ]
 
-    sent_count = 0
-    failed_count = 0
-    details = []
-
+    pending_emails: list[dict[str, str]] = []
     for u in users:
         temp_pass = generate_default_password()
         u.hashed_password = hash_password(temp_pass)
@@ -572,25 +543,23 @@ def resend_credentials_emails(
             f"Please sign in at: https://thesis.manamatechnologies.com/login\n\n"
             f"For security purposes, you will be required to change your temporary password immediately upon first login."
         )
-        sent = send_notification_email(
-            to_email=u.email,
-            to_name=u.full_name or u.email,
-            subject=subject,
-            message=msg,
-        )
-        if sent:
-            sent_count += 1
-            details.append(f"{u.email}: delivered")
-        else:
-            failed_count += 1
-            details.append(f"{u.email}: delivery failed")
+        pending_emails.append({
+            "to_email": u.email,
+            "to_name": u.full_name or u.email,
+            "subject": subject,
+            "message": msg,
+        })
 
     db.commit()
+
+    if pending_emails:
+        background_tasks.add_task(send_batch_emails, pending_emails)
+
     return {
         "total_targeted": len(users),
-        "sent_count": sent_count,
-        "failed_count": failed_count,
-        "details": details[:30],
+        "sent_count": len(pending_emails),
+        "failed_count": 0,
+        "details": [f"{item['to_email']}: queued for delivery" for item in pending_emails[:30]],
     }
 
 
@@ -615,40 +584,3 @@ def mark_my_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     updated = mark_notification_read(db, notification)
     return NotificationRead.model_validate(updated)
-
-
-@router.get("/students-template")
-def download_students_template(
-    format: str = Query("csv"),
-):
-    from fastapi.responses import FileResponse
-    ext = "xlsx" if format.lower() == "xlsx" else "csv"
-    filename = f"students_template.{ext}"
-    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if ext == "xlsx" else "text/csv"
-    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
-    file_path = templates_dir / filename
-    if not file_path.exists():
-        templates_dir = Path(__file__).resolve().parents[2] / "frontend" / "public" / "templates"
-        file_path = templates_dir / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Template {filename} not found")
-    return FileResponse(path=str(file_path), media_type=media_type, filename=filename)
-
-
-@router.get("/lecturers-template")
-def download_lecturers_template(
-    format: str = Query("csv"),
-):
-    from fastapi.responses import FileResponse
-    ext = "xlsx" if format.lower() == "xlsx" else "csv"
-    filename = f"lecturers_template.{ext}"
-    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if ext == "xlsx" else "text/csv"
-    templates_dir = Path(__file__).resolve().parents[3] / "frontend" / "public" / "templates"
-    file_path = templates_dir / filename
-    if not file_path.exists():
-        templates_dir = Path(__file__).resolve().parents[2] / "frontend" / "public" / "templates"
-        file_path = templates_dir / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Template {filename} not found")
-    return FileResponse(path=str(file_path), media_type=media_type, filename=filename)
-

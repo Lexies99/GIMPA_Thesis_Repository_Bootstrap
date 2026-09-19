@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user, get_db
@@ -21,7 +21,7 @@ from app.models.student import Student
 from app.models.department import Department
 from app.models.institution import Institution
 from app.services.import_service import import_staff_accounts, import_students, load_rows_from_upload
-from app.services.email_service import send_notification_email
+from app.services.email_service import send_batch_emails, send_notification_email
 from app.services.notification_service import create_notification, get_notification, list_notifications, mark_notification_read
 from app.services.import_service import generate_default_password
 from app.services.user_service import (
@@ -455,6 +455,7 @@ def read_students(
 
 @router.post("/admin/import-accounts", response_model=ImportAccountsSummary)
 async def import_accounts_endpoint(
+    background_tasks: BackgroundTasks,
     students_file: UploadFile | None = File(default=None),
     lecturers_file: UploadFile | None = File(default=None),
     library_file: UploadFile | None = File(default=None),
@@ -465,10 +466,11 @@ async def import_accounts_endpoint(
     if not students_file and not lecturers_file and not library_file:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload at least one file")
 
+    pending_emails: list[dict[str, str]] = []
     try:
         if students_file:
             student_rows = load_rows_from_upload(students_file.filename or "", await students_file.read())
-            summary.students = import_students(db, student_rows)
+            summary.students = import_students(db, student_rows, pending_emails=pending_emails)
 
         if lecturers_file:
             lecturer_rows = load_rows_from_upload(lecturers_file.filename or "", await lecturers_file.read())
@@ -476,6 +478,7 @@ async def import_accounts_endpoint(
                 db,
                 lecturer_rows,
                 default_role="lecturer",
+                pending_emails=pending_emails,
             )
 
         if library_file:
@@ -484,20 +487,25 @@ async def import_accounts_endpoint(
                 db,
                 library_rows,
                 default_role="librarian",
+                pending_emails=pending_emails,
             )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if pending_emails:
+        background_tasks.add_task(send_batch_emails, pending_emails)
 
     return summary
 
 
 @router.post("/admin/resend-credentials-emails")
 def resend_credentials_emails(
+    background_tasks: BackgroundTasks,
     role: str | None = Query(None, description="Filter by role: student, lecturer, or leave empty for all"),
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ) -> dict:
-    """Resend temporary password and login credentials to active imported accounts."""
+    """Resend temporary password and login credentials to active imported accounts in background."""
     from app.services.import_service import generate_default_password
     from app.core.security import hash_password
 
@@ -513,10 +521,7 @@ def resend_credentials_emails(
         if not u.is_admin and u.email.lower() not in ("admin@gimpa.edu.gh", "admin@murrs.edu")
     ]
 
-    sent_count = 0
-    failed_count = 0
-    details = []
-
+    pending_emails: list[dict[str, str]] = []
     for u in users:
         temp_pass = generate_default_password()
         u.hashed_password = hash_password(temp_pass)
@@ -538,25 +543,23 @@ def resend_credentials_emails(
             f"Please sign in at: https://thesis.manamatechnologies.com/login\n\n"
             f"For security purposes, you will be required to change your temporary password immediately upon first login."
         )
-        sent = send_notification_email(
-            to_email=u.email,
-            to_name=u.full_name or u.email,
-            subject=subject,
-            message=msg,
-        )
-        if sent:
-            sent_count += 1
-            details.append(f"{u.email}: delivered")
-        else:
-            failed_count += 1
-            details.append(f"{u.email}: delivery failed")
+        pending_emails.append({
+            "to_email": u.email,
+            "to_name": u.full_name or u.email,
+            "subject": subject,
+            "message": msg,
+        })
 
     db.commit()
+
+    if pending_emails:
+        background_tasks.add_task(send_batch_emails, pending_emails)
+
     return {
         "total_targeted": len(users),
-        "sent_count": sent_count,
-        "failed_count": failed_count,
-        "details": details[:30],
+        "sent_count": len(pending_emails),
+        "failed_count": 0,
+        "details": [f"{item['to_email']}: queued for delivery" for item in pending_emails[:30]],
     }
 
 
