@@ -796,17 +796,21 @@ def get_pipeline_metrics(
         is_ug = deg == "undergraduate" or (doc_type not in {"master_thesis", "doctoral_thesis"} and "phd" not in deg and "master" not in deg)
 
         # Filtering logic
-        if program:
-            if program == "undergraduate_combined":
-                if not is_ug:
-                    continue
-            elif program.lower() != "all":
-                if program.lower() != p_prog.lower() and program.lower() not in p_prog.lower():
-                    continue
+        if program and program.lower() != "all":
+            if program.lower() != p_prog.lower() and program.lower() not in p_prog.lower():
+                continue
 
         if degree_level and degree_level.lower() != "all":
             dl = degree_level.lower()
-            if dl == "undergraduate" and not is_ug:
+            if dl in {"bsc", "ba", "diploma", "msc", "mba", "ma", "meng", "mphil", "phd"}:
+                combined_deg_str = f"{deg} {doc_type} {p_prog}".lower()
+                if dl == "ba" and not ("ba " in combined_deg_str or "b.a" in combined_deg_str or "bachelor of arts" in combined_deg_str):
+                    continue
+                elif dl == "ma" and not ("ma " in combined_deg_str or "m.a" in combined_deg_str or "master of arts" in combined_deg_str):
+                    continue
+                elif dl not in {"ba", "ma"} and dl not in combined_deg_str:
+                    continue
+            elif dl == "undergraduate" and not is_ug:
                 continue
             elif dl == "masters" and doc_type != "master_thesis" and "master" not in deg:
                 continue
@@ -4582,8 +4586,26 @@ def export_academic_report(
         filtered_papers = []
         for p in papers:
             stu = db.query(User).filter(User.id == p.created_by_id).first() if p.created_by_id else None
-            p_deg = classify_degree_level(paper=p, student_user=stu, db=db).lower()
-            if target_deg in p_deg or p_deg in target_deg:
+            paper_deg_text = " ".join(filter(None, [
+                getattr(p, "degree_level", ""),
+                getattr(p, "document_type", ""),
+                getattr(p, "discipline", ""),
+                getattr(stu, "program", "") if stu else "",
+            ])).lower()
+
+            match = False
+            if target_deg in {"bsc", "ba", "diploma", "msc", "mba", "ma", "meng", "mphil", "phd"}:
+                if target_deg == "ba":
+                    match = "ba " in paper_deg_text or "b.a" in paper_deg_text or "bachelor of arts" in paper_deg_text
+                elif target_deg == "ma":
+                    match = "ma " in paper_deg_text or "m.a" in paper_deg_text or "master of arts" in paper_deg_text
+                else:
+                    match = target_deg in paper_deg_text
+            else:
+                p_deg = classify_degree_level(paper=p, student_user=stu, db=db).lower()
+                match = target_deg in p_deg or p_deg in target_deg
+
+            if match:
                 filtered_papers.append(p)
         papers = filtered_papers
 

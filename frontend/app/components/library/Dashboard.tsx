@@ -1080,13 +1080,13 @@ export function Dashboard({ userRole }: DashboardProps) {
                     </span>
                   </h3>
                   <p className="text-xs m-0 mt-0.5" style={{color:'var(--text-muted)'}}>
-                    Filter by degree discipline or aggregate all undergraduate programmes together to analyze pipeline progress.
+                    Filter by specific academic degree programme to inspect milestone progress.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2.5">
                   {/* Programme Filter Dropdown */}
                   <div className="flex items-center gap-1.5 text-xs">
-                    <span className="font-semibold text-slate-600">Filter:</span>
+                    <span className="font-semibold text-slate-600">Programme:</span>
                     <select
                       value={pipelineProgram}
                       onChange={(e) => {
@@ -1097,7 +1097,6 @@ export function Dashboard({ userRole }: DashboardProps) {
                       className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-purple-500/30 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
                     >
                       <option value="ALL">All Programmes</option>
-                      <option value="undergraduate_combined">🎓 All Undergraduate Programmes (Combined)</option>
                       {(pipelineMetrics?.available_programs || []).map((prog) => (
                         <option key={prog} value={prog}>
                           {prog}
@@ -1126,44 +1125,6 @@ export function Dashboard({ userRole }: DashboardProps) {
                   )}
                 </div>
               </div>
-
-              {/* Undergraduate Aggregate Banner & Breakdown */}
-              {pipelineProgram === 'undergraduate_combined' && (
-                <div className="p-4 rounded-xl bg-purple-50/80 border border-purple-200/80 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-xl">🎓</span>
-                      <div>
-                        <h4 className="text-xs font-black uppercase tracking-wider text-purple-900 m-0">
-                          Combined Undergraduate Analysis (All Programmes)
-                        </h4>
-                        <p className="text-[11px] text-purple-700 m-0">
-                          Summing all undergraduate degrees (BSc Computer Science, ICT, MIS, Business, etc.)
-                        </p>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 rounded-full bg-purple-600 text-white font-mono font-bold text-xs shadow-sm self-start sm:self-auto">
-                      {pipelineMetrics?.undergraduate_combined_count ?? 0} Total Undergraduate Students in Pipeline
-                    </span>
-                  </div>
-
-                  {pipelineMetrics?.program_breakdown && Object.keys(pipelineMetrics.program_breakdown).length > 0 && (
-                    <div className="pt-2 border-t border-purple-200/80 flex flex-wrap gap-2">
-                      {Object.entries(pipelineMetrics.program_breakdown).map(([progName, count]) => (
-                        <div
-                          key={progName}
-                          className="px-3 py-1.5 rounded-lg bg-white border border-purple-200 shadow-xs flex items-center gap-2 text-xs"
-                        >
-                          <span className="font-medium text-slate-700">{progName}:</span>
-                          <span className="font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full text-[11px]">
-                            {count}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* 5 Phase Summary Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">

@@ -160,8 +160,13 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">🎓 All Degree Levels (All Tracks)</SelectItem>
-                  <SelectItem value="undergraduate">📘 Undergraduate (BSc / BA / Diploma)</SelectItem>
-                  <SelectItem value="masters">📙 Masters (MSc / MBA / MA / MEng)</SelectItem>
+                  <SelectItem value="bsc">📘 BSc (Bachelor of Science)</SelectItem>
+                  <SelectItem value="ba">📘 BA (Bachelor of Arts)</SelectItem>
+                  <SelectItem value="diploma">📘 Diploma</SelectItem>
+                  <SelectItem value="msc">📙 MSc (Master of Science)</SelectItem>
+                  <SelectItem value="mba">📙 MBA (Master of Business Administration)</SelectItem>
+                  <SelectItem value="ma">📙 MA (Master of Arts)</SelectItem>
+                  <SelectItem value="meng">📙 MEng (Master of Engineering)</SelectItem>
                   <SelectItem value="mphil">📗 MPhil (Master of Philosophy)</SelectItem>
                   <SelectItem value="phd">📕 PhD / Doctorate</SelectItem>
                 </SelectContent>
