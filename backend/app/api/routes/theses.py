@@ -2491,6 +2491,7 @@ class SupervisorMessageAdviseesRequest(BaseModel):
 
 
 @router.get("/supervisor/advisees")
+@router.get("/theses/supervisor/advisees")
 def get_supervisor_advisees(
     program: str | None = Query(None, description="Optional program/discipline filter"),
     db: Session = Depends(get_db),
@@ -2555,6 +2556,7 @@ def get_supervisor_advisees(
 
 
 @router.post("/supervisor/message-advisees")
+@router.post("/theses/supervisor/message-advisees")
 def message_supervisor_advisees(
     payload: SupervisorMessageAdviseesRequest,
     background_tasks: BackgroundTasks,
