@@ -279,10 +279,12 @@ def _upsert_student(
             "to_name": updated_user.full_name,
             "subject": "GIMPA Thesis Management System Account Update Confirmation",
             "message": (
-                "Your student account details have been updated successfully in GIMPA Thesis Management System.\n\n"
+                "Your student account details have been updated successfully in the GIMPA Thesis Management System.\n\n"
                 "Updated details:\n"
                 f"- Email: {updated_user.email}\n"
                 f"- School ID: {updated_user.school_id or student_id}\n\n"
+                "You can log in to your account here:\n"
+                "https://thesis.manamatechnologies.com/login\n\n"
                 "If any of these details are incorrect, please contact your administrator."
             ),
         }
