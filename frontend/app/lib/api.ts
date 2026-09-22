@@ -1219,6 +1219,7 @@ export async function apiSupervisorRejectCorrections(
 export async function apiExportAcademicReport(
   params: {
     degree_level?: string
+    program?: string
     department?: string
     lecturer_id?: number
     student_id?: number
@@ -1230,6 +1231,7 @@ export async function apiExportAcademicReport(
 ): Promise<{ blob: Blob; filename: string }> {
   const q = new URLSearchParams()
   if (params.degree_level && params.degree_level !== 'all') q.set('degree_level', params.degree_level)
+  if (params.program && params.program !== 'all') q.set('program', params.program)
   if (params.department && params.department !== 'all') q.set('department', params.department)
   if (params.lecturer_id && params.lecturer_id > 0) q.set('lecturer_id', String(params.lecturer_id))
   if (params.student_id && params.student_id > 0) q.set('student_id', String(params.student_id))
@@ -1268,6 +1270,7 @@ export interface ApiReportPreviewRow {
 export async function apiGetReportPreview(
   params: {
     degree_level?: string
+    program?: string
     department?: string
     lecturer_id?: number
     student_id?: number
@@ -1277,6 +1280,7 @@ export async function apiGetReportPreview(
 ): Promise<ApiReportPreviewRow[]> {
   const q = new URLSearchParams()
   if (params.degree_level && params.degree_level !== 'all') q.set('degree_level', params.degree_level)
+  if (params.program && params.program !== 'all') q.set('program', params.program)
   if (params.department && params.department !== 'all') q.set('department', params.department)
   if (params.lecturer_id && params.lecturer_id > 0) q.set('lecturer_id', String(params.lecturer_id))
   if (params.student_id && params.student_id > 0) q.set('student_id', String(params.student_id))

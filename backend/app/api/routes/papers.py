@@ -4606,6 +4606,7 @@ def dean_dashboard_alias(
 @router.get("/papers/reports/export")
 def export_academic_report(
     degree_level: str | None = Query(None),
+    program: str | None = Query(None),
     department: str | None = Query(None),
     lecturer_id: int | None = Query(None),
     student_id: int | None = Query(None),
@@ -4637,6 +4638,12 @@ def export_academic_report(
                 | (Paper.internal_examiner_id == current_user.id)
                 | (Paper.external_examiner_id == current_user.id)
             )
+
+    if program and program.strip().lower() not in {"all", ""}:
+        p_val = program.strip().lower()
+        query = query.filter(
+            func.lower(func.coalesce(Paper.discipline, "")).contains(p_val)
+        )
             
     if department and department.strip().lower() not in {"all", ""}:
         d_val = department.strip().lower()

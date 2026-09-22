@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../ui/badge'
 import {
   FileSpreadsheet, Download, Filter, GraduationCap, Users, UserCheck, BookOpen,
-  Loader2, Eye, RefreshCw, AlertCircle,
+  Loader2, Eye, RefreshCw, AlertCircle, Layers
 } from 'lucide-react'
 import { apiExportAcademicReport, apiGetReportPreview, apiListUsers, type ApiUser, type ApiReportPreviewRow } from '../../lib/api'
 
@@ -23,9 +23,21 @@ function statusLabel(s: string): string {
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export function ReportExportModal({ open, onOpenChange, userDepartment }: ReportExportModalProps) {
+const DEFAULT_PROGRAMMES = [
+  'MSc Information Technology and Law',
+  'MSc. Digital Forensics and Cybersecurity',
+  'MSc. Management Information Systems',
+  'BSc. Computer Science',
+  'BSc. Information Technology',
+  'Master of Science in Information Technology',
+  'Business Administration',
+  'Public Administration',
+]
+
+export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps) {
   const [degreeLevel, setDegreeLevel] = useState<string>('all')
-  const [department, setDepartment] = useState<string>(userDepartment || 'all')
+  const [program, setProgram] = useState<string>('all')
+  const [department, setDepartment] = useState<string>('all')
   const [lecturerId, setLecturerId] = useState<string>('all')
   const [studentSearch, setStudentSearch] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -66,6 +78,17 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
       })
   }, [open])
 
+  // Extract distinct available programs
+  const availablePrograms = useMemo(() => {
+    const progs = new Set<string>(DEFAULT_PROGRAMMES)
+    students.forEach((s) => {
+      if (s.program && s.program.trim()) {
+        progs.add(s.program.trim())
+      }
+    })
+    return Array.from(progs).sort()
+  }, [students])
+
   const filteredStudents = students.filter((s) => {
     if (!studentSearch.trim()) return true
     const term = studentSearch.toLowerCase()
@@ -88,6 +111,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
       const rows = await apiGetReportPreview(
         {
           degree_level: degreeLevel !== 'all' ? degreeLevel : undefined,
+          program: program !== 'all' ? program : undefined,
           department: department !== 'all' ? department : undefined,
           lecturer_id: parsedLecId,
           student_id: parsedStuId,
@@ -95,7 +119,6 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
         },
         token,
       )
-      // The backend returns the same shape as report_rows (list of dicts)
       const mapped: ApiReportPreviewRow[] = (Array.isArray(rows) ? rows : []).map((r: any) => ({
         index_number: r.student_id || '-',
         student_name: r.student_name || '-',
@@ -117,14 +140,14 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
     } finally {
       setPreviewing(false)
     }
-  }, [degreeLevel, department, lecturerId, selectedStudentId, statusFilter])
+  }, [degreeLevel, program, department, lecturerId, selectedStudentId, statusFilter])
 
-  // Automatically load preview on modal open and whenever filters change
+  // Automatically load preview on modal open and whenever any filter changes
   useEffect(() => {
     if (open) {
       void handlePreview()
     }
-  }, [open, degreeLevel, department, lecturerId, selectedStudentId, statusFilter, handlePreview])
+  }, [open, degreeLevel, program, department, lecturerId, selectedStudentId, statusFilter, handlePreview])
 
   const handleDownload = async (format: 'xlsx' | 'csv') => {
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -140,6 +163,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
       const { blob, filename } = await apiExportAcademicReport(
         {
           degree_level: degreeLevel !== 'all' ? degreeLevel : undefined,
+          program: program !== 'all' ? program : undefined,
           department: department !== 'all' ? department : undefined,
           lecturer_id: parsedLecId,
           student_id: parsedStuId,
@@ -169,6 +193,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
 
   const handleResetFilters = () => {
     setDegreeLevel('all')
+    setProgram('all')
     setDepartment('all')
     setLecturerId('all')
     setSelectedStudentId('all')
@@ -192,7 +217,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
             <div>
               <DialogTitle className="text-lg font-bold">Academic Evaluation &amp; Reports Hub</DialogTitle>
               <DialogDescription className="text-xs">
-                Filter and preview student thesis assessments, then export as Excel or CSV.
+                Filter and preview student thesis assessments by programme, then export as Excel or CSV.
               </DialogDescription>
             </div>
           </div>
@@ -212,19 +237,40 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
           )}
 
           {/* Filter Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl border bg-muted/30">
-            {/* Filter 1: Degree Level */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 p-4 rounded-xl border bg-muted/30">
+            {/* Filter 1: Academic Programme */}
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+              <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
+                <Layers className="size-3.5 text-purple-600" />
+                Academic Programme
+              </Label>
+              <Select value={program} onValueChange={setProgram}>
+                <SelectTrigger className="text-xs h-9 bg-background border-purple-500/30 focus:ring-purple-600">
+                  <SelectValue placeholder="All Programmes" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  <SelectItem value="all">📚 All Programmes (All Disciplines)</SelectItem>
+                  {availablePrograms.map((prog) => (
+                    <SelectItem key={prog} value={prog}>
+                      {prog}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filter 2: Degree Level */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
                 <GraduationCap className="size-3.5 text-primary" />
-                Degree Level / Certification
+                Degree Level / Track
               </Label>
               <Select value={degreeLevel} onValueChange={setDegreeLevel}>
                 <SelectTrigger className="text-xs h-9 bg-background">
                   <SelectValue placeholder="All Degree Levels" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">🎓 All Degree Levels (All Tracks)</SelectItem>
+                  <SelectItem value="all">🎓 All Degree Levels</SelectItem>
                   <SelectItem value="bsc">📘 BSc (Bachelor of Science)</SelectItem>
                   <SelectItem value="ba">📘 BA (Bachelor of Arts)</SelectItem>
                   <SelectItem value="diploma">📘 Diploma</SelectItem>
@@ -238,7 +284,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
               </Select>
             </div>
 
-            {/* Filter 2: Workflow Stage / Phase */}
+            {/* Filter 3: Workflow Stage / Phase */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
                 <Filter className="size-3.5 text-primary" />
@@ -251,22 +297,23 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
                 <SelectContent>
                   <SelectItem value="all">📋 All Workflow Stages</SelectItem>
                   <SelectItem value="phase1_proposal_submitted">Phase 1: Topic Submitted</SelectItem>
+                  <SelectItem value="phase2_proposal_submitted">Phase 2: Supervisor Allocated</SelectItem>
                   <SelectItem value="phase2_pending_supervisor">Phase 2: Proposal In Review</SelectItem>
-                  <SelectItem value="phase3_chapters">Phase 2: Chapter Steps Progress</SelectItem>
-                  <SelectItem value="phase4_marking">Phase 3: Under Examination (Marking)</SelectItem>
-                  <SelectItem value="phase5_corrections">Phase 4: Post-Exam Corrections</SelectItem>
-                  <SelectItem value="phase5_pending_coordinator">Phase 4: Final Sign-off</SelectItem>
+                  <SelectItem value="phase3_chapters">Phase 3: Chapter Steps Progress</SelectItem>
+                  <SelectItem value="phase4_marking">Phase 4: Under Examination (Marking)</SelectItem>
+                  <SelectItem value="phase5_corrections">Phase 5: Post-Exam Corrections</SelectItem>
+                  <SelectItem value="phase5_pending_coordinator">Phase 5: Final Sign-off</SelectItem>
                   <SelectItem value="phase5_approved_for_library">Phase 5: Approved for Library</SelectItem>
                   <SelectItem value="approved">Phase 5: Published in Catalog</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Filter 3: Lecturer / Supervisor */}
+            {/* Filter 4: Lecturer / Supervisor */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
                 <UserCheck className="size-3.5 text-primary" />
-                Lecturer / Supervisor / Examiner
+                Lecturer / Supervisor
               </Label>
               <Select value={lecturerId} onValueChange={setLecturerId}>
                 <SelectTrigger className="text-xs h-9 bg-background">
@@ -279,26 +326,6 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
                       {lec.full_name} ({lec.email})
                     </SelectItem>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Filter 4: Department / Program */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
-                <BookOpen className="size-3.5 text-primary" />
-                Department / Discipline
-              </Label>
-              <Select value={department} onValueChange={setDepartment}>
-                <SelectTrigger className="text-xs h-9 bg-background">
-                  <SelectValue placeholder="All Departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">🏢 All Departments</SelectItem>
-                  <SelectItem value="computer science">Computer Science &amp; Information Systems</SelectItem>
-                  <SelectItem value="business">Business Administration</SelectItem>
-                  <SelectItem value="public administration">Public Administration</SelectItem>
-                  <SelectItem value="technology">School of Technology</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -333,7 +360,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
                   </SelectTrigger>
                   <SelectContent className="max-h-56">
                     <SelectItem value="all">🎓 All Students (Batch Report)</SelectItem>
-                    {filteredStudents.slice(0, 30).map((stu) => (
+                    {filteredStudents.slice(0, 50).map((stu) => (
                       <SelectItem key={stu.id} value={String(stu.id)}>
                         {stu.full_name} ({stu.school_id || stu.email})
                       </SelectItem>
@@ -347,6 +374,11 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
           {/* Active Filter Summary Tags */}
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-muted-foreground font-medium">Applied Filters:</span>
+            {program !== 'all' && (
+              <Badge variant="outline" className="text-[11px] font-semibold bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400">
+                Programme: <strong className="ml-1">{program}</strong>
+              </Badge>
+            )}
             <Badge variant="outline" className="text-[11px] font-normal">
               Degree: <strong className="ml-1 uppercase">{degreeLevel}</strong>
             </Badge>
@@ -381,7 +413,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
                 <span className="text-xs font-semibold text-foreground">
                   Data Preview
                   {previewLoaded && (
-                    <span className="ml-2 text-muted-foreground font-normal">
+                    <span className="ml-2 text-purple-700 dark:text-purple-400 font-bold">
                       — {previewRows.length} record{previewRows.length !== 1 ? 's' : ''} found
                     </span>
                   )}
@@ -399,7 +431,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
                 ) : (
                   <RefreshCw className="size-3" />
                 )}
-                {previewing ? 'Loading...' : previewLoaded ? 'Refresh Preview' : 'Load Preview'}
+                {previewing ? 'Loading...' : 'Refresh Preview'}
               </Button>
             </div>
 
@@ -409,12 +441,6 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
                 <div className="flex items-center gap-2 p-4 text-xs text-destructive">
                   <AlertCircle className="size-4 flex-shrink-0" />
                   {previewError}
-                </div>
-              )}
-              {!previewLoaded && !previewing && !previewError && (
-                <div className="flex flex-col items-center justify-center h-28 text-xs text-muted-foreground gap-1.5">
-                  <Eye className="size-5 opacity-40" />
-                  <span>Click <strong>Load Preview</strong> to see data before downloading</span>
                 </div>
               )}
               {previewing && (
@@ -431,9 +457,9 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
               )}
               {previewLoaded && !previewing && previewRows.length > 0 && (
                 <table className="w-full text-[11px] border-collapse">
-                  <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                  <thead className="sticky top-0 bg-muted/90 backdrop-blur z-10">
                     <tr>
-                      {['#', 'Index No.', 'Student Name', 'Program', 'Degree', 'Supervisor', 'Status', 'Grade', 'Submitted'].map((h) => (
+                      {['#', 'Index No.', 'Student Name', 'Programme', 'Degree', 'Supervisor', 'Status', 'Grade', 'Submitted'].map((h) => (
                         <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap border-b">
                           {h}
                         </th>
@@ -446,7 +472,7 @@ export function ReportExportModal({ open, onOpenChange, userDepartment }: Report
                         <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                         <td className="px-3 py-2 font-mono">{row.index_number}</td>
                         <td className="px-3 py-2 font-medium max-w-[140px] truncate" title={row.student_name}>{row.student_name}</td>
-                        <td className="px-3 py-2 max-w-[120px] truncate" title={row.program}>{row.program}</td>
+                        <td className="px-3 py-2 max-w-[140px] truncate font-medium text-purple-700 dark:text-purple-300" title={row.program}>{row.program}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <Badge variant="outline" className="text-[10px] font-normal">{row.degree_level}</Badge>
                         </td>

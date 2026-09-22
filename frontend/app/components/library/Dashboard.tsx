@@ -1091,27 +1091,6 @@ export function Dashboard({ userRole }: DashboardProps) {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2.5">
-                  {/* Programme Filter Dropdown */}
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className="font-semibold text-slate-600">Programme:</span>
-                    <select
-                      value={pipelineProgram}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setPipelineProgram(val)
-                        void loadPipelineFiltered(val, pipelineDegreeLevel)
-                      }}
-                      className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-purple-500/30 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
-                    >
-                      <option value="ALL">All Programmes</option>
-                      {(pipelineAllPrograms.length > 0 ? pipelineAllPrograms : (pipelineMetrics?.available_programs || [])).map((prog) => (
-                        <option key={prog} value={prog}>
-                          {prog}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
                   <Button
                     type="button"
                     onClick={() => setExportModalOpen(true)}
