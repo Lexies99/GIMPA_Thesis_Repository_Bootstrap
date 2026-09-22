@@ -24,6 +24,7 @@ from app.models.paper import Paper
 from app.models.paper_workflow import PaperVersion, PaperReviewLog, PaperWorkflowEvent
 from app.models.department import Department
 from app.models.department_supervisor import DepartmentSupervisor
+from app.models.thesis_system import Thesis
 from app.models.user import User
 from app.models.user_role import UserRole
 from app.schemas.paper import PaperCreate, PaperRead, PaperReview, PaperStats, SupervisorReviewSummary
@@ -746,33 +747,75 @@ def get_pipeline_metrics(
 ):
     """Returns Phase 1 to Phase 5 metrics and student lists for HOD, Coordinator, Dean, Admin, with program & degree level filters."""
     reviewer_department = (current_user.department or "").strip().lower()
-
-    query = db.query(Paper).join(User, Paper.created_by_id == User.id, isouter=True)
-
-    # Departmental Isolation Rule: HOD and Coordinator only see their department
     is_hod_or_coord = has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+
+    # 1. Fetch papers
+    paper_query = db.query(Paper).join(User, Paper.created_by_id == User.id, isouter=True)
     if is_hod_or_coord and not current_user.is_admin and reviewer_department:
-        query = query.filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
+        paper_query = paper_query.filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
+    all_dept_papers = paper_query.all()
 
-    all_dept_papers = query.all()
+    # 2. Fetch theses
+    thesis_query = db.query(Thesis).join(User, Thesis.student_id == User.id, isouter=True)
+    if is_hod_or_coord and not current_user.is_admin and reviewer_department:
+        thesis_query = thesis_query.filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
+    all_dept_theses = thesis_query.all()
 
-    # Calculate overall available programs and program breakdowns
+    # 3. Fetch registered students
+    user_query = db.query(User).filter(User.role.in_(["student", "member"]))
+    if is_hod_or_coord and not current_user.is_admin and reviewer_department:
+        user_query = user_query.filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
+    all_students = user_query.all()
+
+    # Map existing student ids to paper / thesis
+    papers_by_user: dict[int, Paper] = {}
+    for p in all_dept_papers:
+        if p.created_by_id:
+            papers_by_user[p.created_by_id] = p
+
+    theses_by_user: dict[int, Thesis] = {}
+    for t in all_dept_theses:
+        if t.student_id:
+            theses_by_user[t.student_id] = t
+
+    # Gather available programs across all sources
     available_programs = set()
     program_breakdown: dict[str, int] = {}
     undergraduate_combined_count = 0
 
-    for p in all_dept_papers:
-        student_user = p.created_by
-        prog = p.discipline or ((student_user.program or student_user.department) if student_user else "Computer Science")
-        prog = prog.strip() if prog else "Computer Science"
-        available_programs.add(prog)
-        program_breakdown[prog] = program_breakdown.get(prog, 0) + 1
+    # Collect from students
+    for st in all_students:
+        prog = (st.program or "").strip()
+        if prog:
+            available_programs.add(prog)
 
-        doc_type = (p.document_type or "").lower()
-        deg = (p.degree_level or "").lower()
-        is_ug = deg == "undergraduate" or (doc_type not in {"master_thesis", "doctoral_thesis"} and "phd" not in deg and "master" not in deg)
-        if is_ug:
-            undergraduate_combined_count += 1
+    # Collect from papers
+    for p in all_dept_papers:
+        prog = (p.discipline or "").strip()
+        if prog:
+            available_programs.add(prog)
+
+    # Build student pipeline items
+    seen_student_ids = set()
+    student_records = []
+
+    for st in all_students:
+        seen_student_ids.add(st.id)
+        p = papers_by_user.get(st.id)
+        t = theses_by_user.get(st.id)
+        student_records.append((st, p, t))
+
+    for p in all_dept_papers:
+        if p.created_by and p.created_by.id not in seen_student_ids:
+            seen_student_ids.add(p.created_by.id)
+            t = theses_by_user.get(p.created_by.id)
+            student_records.append((p.created_by, p, t))
+
+    for t in all_dept_theses:
+        if t.student and t.student.id not in seen_student_ids:
+            seen_student_ids.add(t.student.id)
+            p = papers_by_user.get(t.student.id)
+            student_records.append((t.student, p, t))
 
     phases = {
         "phase1_proposals": {"count": 0, "students": []},
@@ -782,18 +825,30 @@ def get_pipeline_metrics(
         "phase5_signoff": {"count": 0, "students": []},
     }
 
-    # Filter papers according to program / degree_level
-    for p in all_dept_papers:
-        student_user = p.created_by
-        student_id = student_user.school_id if student_user else f"GIMPA-ST-{p.id:03d}"
-        student_name = student_user.full_name if student_user else (p.authors[0].name if p.authors else "Unknown Student")
-        p_prog = p.discipline or ((student_user.program or student_user.department) if student_user else "Computer Science")
-        p_prog = p_prog.strip() if p_prog else "Computer Science"
-        supervisor_name = p.supervisor.full_name if p.supervisor else "Unassigned"
+    for st, p, t in student_records:
+        st_id = st.school_id if (st and st.school_id) else (f"STU-{st.id}" if st else "Unknown")
+        st_name = (st.full_name or st.email) if st else "Unknown Student"
+        p_prog = (st.program or (p.discipline if p else "") or (st.department if st else "") or "General").strip() if st else "General"
+        if p_prog:
+            program_breakdown[p_prog] = program_breakdown.get(p_prog, 0) + 1
+            available_programs.add(p_prog)
 
-        doc_type = (p.document_type or "").lower()
-        deg = (p.degree_level or "").lower()
-        is_ug = deg == "undergraduate" or (doc_type not in {"master_thesis", "doctoral_thesis"} and "phd" not in deg and "master" not in deg)
+        sup_user = None
+        if p and p.supervisor:
+            sup_user = p.supervisor
+        elif t and t.supervisor:
+            sup_user = t.supervisor
+
+        supervisor_name = sup_user.full_name if sup_user else "Unassigned"
+
+        doc_type = (p.document_type if p else "").lower()
+        deg = (p.degree_level if p else "").lower()
+        prog_lower = p_prog.lower()
+        is_ug = "bsc" in prog_lower or "bachelor" in prog_lower or "b.a" in prog_lower or "diploma" in prog_lower or deg == "undergraduate"
+        is_phd = "phd" in prog_lower or "doctor" in prog_lower or "phd" in deg or doc_type == "doctoral_thesis"
+
+        if is_ug:
+            undergraduate_combined_count += 1
 
         # Filtering logic
         if program and program.lower() != "all":
@@ -802,8 +857,8 @@ def get_pipeline_metrics(
 
         if degree_level and degree_level.lower() != "all":
             dl = degree_level.lower()
+            combined_deg_str = f"{deg} {doc_type} {p_prog}".lower()
             if dl in {"bsc", "ba", "diploma", "msc", "mba", "ma", "meng", "mphil", "phd"}:
-                combined_deg_str = f"{deg} {doc_type} {p_prog}".lower()
                 if dl == "ba" and not ("ba " in combined_deg_str or "b.a" in combined_deg_str or "bachelor of arts" in combined_deg_str):
                     continue
                 elif dl == "ma" and not ("ma " in combined_deg_str or "m.a" in combined_deg_str or "master of arts" in combined_deg_str):
@@ -812,60 +867,84 @@ def get_pipeline_metrics(
                     continue
             elif dl == "undergraduate" and not is_ug:
                 continue
-            elif dl == "masters" and doc_type != "master_thesis" and "master" not in deg:
+            elif dl == "masters" and (is_ug or is_phd):
                 continue
-            elif dl == "phd" and doc_type != "doctoral_thesis" and "phd" not in deg:
+            elif dl == "phd" and not is_phd:
                 continue
 
-        status = (p.status or "").lower()
+        title = (p.title if p else (t.topic_title if t else f"{p_prog} Project / Thesis"))
+        status = (p.status if p else (f"phase{t.phase}" if t else "phase1_proposal_submitted")).lower()
+
+        degree_label = "Undergraduate" if is_ug else ("PhD" if is_phd else "Masters")
 
         item = {
-            "paper_id": p.id,
-            "index_number": student_id or f"GIMPA-ST-{p.id:03d}",
-            "student_name": student_name,
+            "paper_id": p.id if p else (t.id if t else (st.id if st else 0)),
+            "index_number": st_id,
+            "student_name": st_name,
             "program": p_prog,
-            "degree_level": "Undergraduate" if is_ug else ("PhD" if "phd" in deg or doc_type == "doctoral_thesis" else "Masters"),
+            "degree_level": degree_label,
             "supervisor_name": supervisor_name,
-            "title": p.title,
-            "status": p.status,
+            "title": title,
+            "status": p.status if p else ("Allocation Pending" if (t and t.phase == 2) else "Registered"),
         }
 
-        if status in {"draft", "pending", "pending_hod", "phase1_proposal_submitted", "phase1_proposal_rejected"}:
-            item["milestone_status"] = "Phase 1 — Proposal Submitted"
+        # Determine phase
+        if p:
+            if status in {"draft", "pending", "pending_hod", "phase1_proposal_submitted", "phase1_proposal_rejected"}:
+                item["milestone_status"] = "Phase 1 — Proposal Submitted"
+                phases["phase1_proposals"]["students"].append(item)
+                phases["phase1_proposals"]["count"] += 1
+            elif status in {"phase1_topic_accepted", "phase2_proposal_submitted", "phase2_proposal_accepted", "pending_coordinator", "pending_hod_and_coordinator", "phase2_pending_coordinator", "phase2_pending_supervisor"}:
+                item["milestone_status"] = "Phase 2 — Proposal & Allocation"
+                phases["phase2_allocation"]["students"].append(item)
+                phases["phase2_allocation"]["count"] += 1
+            elif status in {"pending_lecturer", "revision", "phase3_chapters", "phase3_steps_in_progress"}:
+                item["milestone_status"] = "Phase 3 — Chapter Writing & Review"
+                phases["phase3_chapters"]["students"].append(item)
+                phases["phase3_chapters"]["count"] += 1
+            elif status in {"pending_examiner", "phase4_pending_examiners", "phase4_marking"}:
+                item["milestone_status"] = "Phase 4 — Examination & Marking"
+                phases["phase4_examination"]["students"].append(item)
+                phases["phase4_examination"]["count"] += 1
+            elif status in {
+                "approved_for_library", "approved", "phase5_corrections", "phase5_pending_supervisor",
+                "phase5_pending_coordinator", "phase5_pending_hod", "phase5_pending_hod_and_coordinator",
+                "phase5_approved_for_library", "phase5_published"
+            }:
+                item["milestone_status"] = "Phase 5 — Corrections & Final Sign-off"
+                phases["phase5_signoff"]["students"].append(item)
+                phases["phase5_signoff"]["count"] += 1
+            else:
+                item["milestone_status"] = f"In Progress ({p.status})"
+                phases["phase3_chapters"]["students"].append(item)
+                phases["phase3_chapters"]["count"] += 1
+        elif t:
+            if t.phase == 1:
+                item["milestone_status"] = "Phase 1 — Topic & Proposal"
+                phases["phase1_proposals"]["students"].append(item)
+                phases["phase1_proposals"]["count"] += 1
+            elif t.phase == 2:
+                item["milestone_status"] = "Phase 2 — Supervisor Allocated"
+                phases["phase2_allocation"]["students"].append(item)
+                phases["phase2_allocation"]["count"] += 1
+            elif t.phase == 3:
+                item["milestone_status"] = "Phase 3 — Chapter Submission"
+                phases["phase3_chapters"]["students"].append(item)
+                phases["phase3_chapters"]["count"] += 1
+            elif t.phase == 4:
+                item["milestone_status"] = "Phase 4 — Examination & Marking"
+                phases["phase4_examination"]["students"].append(item)
+                phases["phase4_examination"]["count"] += 1
+            else:
+                item["milestone_status"] = "Phase 5 — Corrections & Final Sign-off"
+                phases["phase5_signoff"]["students"].append(item)
+                phases["phase5_signoff"]["count"] += 1
+        else:
+            item["milestone_status"] = "Phase 1 — Proposal Pending"
             phases["phase1_proposals"]["students"].append(item)
             phases["phase1_proposals"]["count"] += 1
-        elif status in {"phase1_topic_accepted", "phase2_proposal_submitted", "phase2_proposal_accepted", "pending_coordinator", "pending_hod_and_coordinator", "phase2_pending_coordinator", "phase2_pending_supervisor"}:
-            item["milestone_status"] = "Phase 2 — Proposal & Allocation"
-            phases["phase2_allocation"]["students"].append(item)
-            phases["phase2_allocation"]["count"] += 1
-        elif status in {"pending_lecturer", "revision", "phase3_chapters", "phase3_steps_in_progress"}:
-            item["milestone_status"] = "Phase 3 — Chapter Writing & Review"
-            phases["phase3_chapters"]["students"].append(item)
-            phases["phase3_chapters"]["count"] += 1
-        elif status in {"pending_examiner", "phase4_pending_examiners", "phase4_marking"}:
-            item["milestone_status"] = "Phase 4 — Examination & Marking"
-            phases["phase4_examination"]["students"].append(item)
-            phases["phase4_examination"]["count"] += 1
-        elif status in {
-            "approved_for_library",
-            "approved",
-            "phase5_corrections",
-            "phase5_pending_supervisor",
-            "phase5_pending_coordinator",
-            "phase5_pending_hod",
-            "phase5_pending_hod_and_coordinator",
-            "phase5_approved_for_library",
-            "phase5_published",
-        }:
-            item["milestone_status"] = "Phase 5 — Corrections & Final Sign-off"
-            phases["phase5_signoff"]["students"].append(item)
-            phases["phase5_signoff"]["count"] += 1
-        else:
-            item["milestone_status"] = f"In Progress ({p.status})"
-            phases["phase3_chapters"]["students"].append(item)
-            phases["phase3_chapters"]["count"] += 1
 
-    phases["available_programs"] = sorted(list(available_programs))
+    phases["available_programs"] = sorted([pr for pr in available_programs if pr])
     phases["available_degree_levels"] = ["All Programs", "Undergraduate (Combined)", "Masters", "PhD"]
     phases["undergraduate_combined_count"] = undergraduate_combined_count
     phases["program_breakdown"] = program_breakdown

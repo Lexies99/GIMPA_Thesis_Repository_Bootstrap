@@ -2501,6 +2501,7 @@ def get_supervisor_advisees(
     is_admin = current_user.is_admin or has_role(db, current_user, "system_admin")
     is_hod_or_coord = has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
 
+    # 1. Query papers
     query = db.query(Paper)
     if not (is_admin or is_hod_or_coord):
         query = query.filter(
@@ -2515,42 +2516,81 @@ def get_supervisor_advisees(
             query = query.join(User, Paper.created_by_id == User.id, isouter=True).filter(
                 func.lower(func.coalesce(User.department, "")) == dept_name
             )
-
     papers = query.all()
-    advisees_dict: dict[int, dict] = {}
+
+    # 2. Query theses
+    theses_q = db.query(Thesis)
+    if not (is_admin or is_hod_or_coord):
+        theses_q = theses_q.filter(Thesis.supervisor_id == current_user.id)
+    elif is_hod_or_coord and not is_admin:
+        if current_user.department:
+            dept_name = current_user.department.strip().lower()
+            theses_q = theses_q.join(User, Thesis.student_id == User.id, isouter=True).filter(
+                func.lower(func.coalesce(User.department, "")) == dept_name
+            )
+    theses = theses_q.all()
+
+    # Combine all advisee candidates
+    all_advisee_items = []
     available_programs = set()
 
+    # From papers
     for p in papers:
         student_user = p.created_by
         if not student_user:
             continue
+        prog = (student_user.program or p.discipline or student_user.department or "General").strip()
+        if prog:
+            available_programs.add(prog)
+        all_advisee_items.append({
+            "user_id": student_user.id,
+            "student_id": student_user.school_id or f"GIMPA-ST-{p.id:03d}",
+            "full_name": student_user.full_name or student_user.email,
+            "email": student_user.email,
+            "program": prog,
+            "degree_level": p.degree_level or ("PhD" if p.document_type == "doctoral_thesis" else "Undergraduate"),
+            "paper_id": p.id,
+            "paper_title": p.title,
+            "status": p.status,
+        })
 
-        prog = p.discipline or student_user.program or student_user.department or "General"
-        available_programs.add(prog)
+    # From theses
+    seen_student_ids = {item["user_id"] for item in all_advisee_items}
+    for t in theses:
+        student_user = t.student
+        if not student_user or student_user.id in seen_student_ids:
+            continue
+        prog = (student_user.program or student_user.department or "General").strip()
+        if prog:
+            available_programs.add(prog)
+        seen_student_ids.add(student_user.id)
+        prog_l = prog.lower()
+        all_advisee_items.append({
+            "user_id": student_user.id,
+            "student_id": student_user.school_id or f"STU-{student_user.id}",
+            "full_name": student_user.full_name or student_user.email,
+            "email": student_user.email,
+            "program": prog,
+            "degree_level": "Masters" if "msc" in prog_l or "mba" in prog_l or "master" in prog_l else ("PhD" if "phd" in prog_l else "Undergraduate"),
+            "paper_id": t.id,
+            "paper_title": t.topic_title,
+            "status": f"phase{t.phase}",
+        })
 
+    # Apply program filter if specified
+    filtered_advisees = []
+    for item in all_advisee_items:
+        prog = item["program"]
         if program and program.lower() != "all":
             if prog.lower() != program.lower() and program.lower() not in prog.lower():
                 continue
+        filtered_advisees.append(item)
 
-        if student_user.id not in advisees_dict:
-            advisees_dict[student_user.id] = {
-                "user_id": student_user.id,
-                "student_id": student_user.school_id or f"GIMPA-ST-{p.id:03d}",
-                "full_name": student_user.full_name or student_user.email,
-                "email": student_user.email,
-                "program": prog,
-                "degree_level": p.degree_level or ("PhD" if p.document_type == "doctoral_thesis" else "Undergraduate"),
-                "paper_id": p.id,
-                "paper_title": p.title,
-                "status": p.status,
-            }
-
-    advisees = list(advisees_dict.values())
-    advisees.sort(key=lambda x: (x["program"], x["full_name"]))
+    filtered_advisees.sort(key=lambda x: (x["program"], x["full_name"]))
 
     return {
-        "advisees": advisees,
-        "total_count": len(advisees),
+        "advisees": filtered_advisees,
+        "total_count": len(filtered_advisees),
         "available_programs": sorted(list(available_programs)),
     }
 
@@ -2567,6 +2607,7 @@ def message_supervisor_advisees(
     is_admin = current_user.is_admin or has_role(db, current_user, "system_admin")
     is_hod_or_coord = has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
 
+    # Papers query
     query = db.query(Paper)
     if not (is_admin or is_hod_or_coord):
         query = query.filter(
@@ -2581,15 +2622,39 @@ def message_supervisor_advisees(
             query = query.join(User, Paper.created_by_id == User.id, isouter=True).filter(
                 func.lower(func.coalesce(User.department, "")) == dept_name
             )
-
     papers = query.all()
+
+    # Theses query
+    theses_q = db.query(Thesis)
+    if not (is_admin or is_hod_or_coord):
+        theses_q = theses_q.filter(Thesis.supervisor_id == current_user.id)
+    elif is_hod_or_coord and not is_admin:
+        if current_user.department:
+            dept_name = current_user.department.strip().lower()
+            theses_q = theses_q.join(User, Thesis.student_id == User.id, isouter=True).filter(
+                func.lower(func.coalesce(User.department, "")) == dept_name
+            )
+    theses = theses_q.all()
+
     target_users: dict[int, User] = {}
 
     for p in papers:
         st_user = p.created_by
         if not st_user:
             continue
-        prog = p.discipline or st_user.program or st_user.department or "General"
+        prog = (st_user.program or p.discipline or st_user.department or "General").strip()
+        if payload.program and payload.program.lower() != "all":
+            if payload.program.lower() != prog.lower() and payload.program.lower() not in prog.lower():
+                continue
+        if payload.student_user_ids and st_user.id not in payload.student_user_ids:
+            continue
+        target_users[st_user.id] = st_user
+
+    for t in theses:
+        st_user = t.student
+        if not st_user or st_user.id in target_users:
+            continue
+        prog = (st_user.program or st_user.department or "General").strip()
         if payload.program and payload.program.lower() != "all":
             if payload.program.lower() != prog.lower() and payload.program.lower() not in prog.lower():
                 continue

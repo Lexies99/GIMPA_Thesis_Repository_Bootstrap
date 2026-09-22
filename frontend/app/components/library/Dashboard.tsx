@@ -681,6 +681,7 @@ export function Dashboard({ userRole }: DashboardProps) {
   // Pipeline Filter States
   const [pipelineProgram, setPipelineProgram] = useState<string>('ALL')
   const [pipelineDegreeLevel, setPipelineDegreeLevel] = useState<string>('ALL')
+  const [pipelineAllPrograms, setPipelineAllPrograms] = useState<string[]>([])
 
   // Advisee Broadcast Messaging States
   const [adviseeModalOpen, setAdviseeModalOpen] = useState(false)
@@ -716,7 +717,9 @@ export function Dashboard({ userRole }: DashboardProps) {
       const targetProg = prog !== undefined ? prog : adviseeProgramFilter
       const res = await apiGetSupervisorAdvisees(accessToken, targetProg)
       setAdvisees(res.advisees || [])
-      setAdviseePrograms(res.programs || [])
+      // Backend returns `available_programs`; support both field names for safety
+      const progs = (res as any).available_programs || res.programs || []
+      setAdviseePrograms(progs)
     } catch {}
   }
 
@@ -791,6 +794,10 @@ export function Dashboard({ userRole }: DashboardProps) {
         )
         if (pipe) {
           setPipelineMetrics(pipe)
+          // Cache the full program list from the unfiltered load
+          if ((pipe.available_programs || []).length > 0) {
+            setPipelineAllPrograms(pipe.available_programs || [])
+          }
           const phaseKeys: (keyof ApiPipelineMetrics)[] = ['phase1_proposals', 'phase2_allocation', 'phase3_chapters', 'phase4_examination', 'phase5_signoff']
           const activeKey = phaseKeys.find((k) => (pipe[k]?.count ?? 0) > 0)
           if (activeKey) {
@@ -1097,7 +1104,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                       className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-purple-500/30 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
                     >
                       <option value="ALL">All Programmes</option>
-                      {(pipelineMetrics?.available_programs || []).map((prog) => (
+                      {(pipelineAllPrograms.length > 0 ? pipelineAllPrograms : (pipelineMetrics?.available_programs || [])).map((prog) => (
                         <option key={prog} value={prog}>
                           {prog}
                         </option>
