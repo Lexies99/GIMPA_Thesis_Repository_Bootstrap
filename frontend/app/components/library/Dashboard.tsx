@@ -16,6 +16,8 @@ import {
   apiListStudents,
   apiListUsers,
   apiGetPipelineMetrics,
+  apiGetSupervisorAdvisees,
+  apiSupervisorMessageAdvisees,
   apiStudentUpdateChecklist,
   apiUploadCombinedThesis,
   apiUploadDraft,
@@ -36,11 +38,13 @@ import type {
   ApiUser,
   ApiPipelineMetrics,
   ApiPipelineStudent,
+  ApiSupervisorAdvisee,
+  ApiSupervisorMessagePayload,
 } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentCommentViewer } from './DocumentCommentViewer'
 import { ReportExportModal } from './ReportExportModal'
-import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download, FileEdit, MessageSquare, FileSpreadsheet } from 'lucide-react'
+import { Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2, Download, FileEdit, MessageSquare, FileSpreadsheet, Send, Mail, Users, Filter } from 'lucide-react'
 
 interface StudentPaperWorkflowProps {
   paper: ApiPaper
@@ -656,6 +660,14 @@ export function Dashboard({ userRole }: DashboardProps) {
     userRoles.includes('project_coordinator') ||
     userRoles.includes('dean')
   const showPipeline = isAdmin || isHodOrCoordinator
+  const isSupervisor =
+    userRole === 'project_supervisor' ||
+    userRole === 'lecturer' ||
+    userRoles.includes('project_supervisor') ||
+    userRoles.includes('lecturer') ||
+    isAdmin ||
+    isHodOrCoordinator
+
   const [stats, setStats] = useState<ApiPaperStats | null>(null)
   const [myPapers, setMyPapers] = useState<ApiPaper[]>([])
   const [supervisorReviewSummary, setSupervisorReviewSummary] = useState<ApiSupervisorReviewSummary[]>([])
@@ -665,6 +677,81 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [users, setUsers] = useState<ApiUser[]>([])
   const [pipelineMetrics, setPipelineMetrics] = useState<ApiPipelineMetrics | null>(null)
   const [selectedPhaseKey, setSelectedPhaseKey] = useState<keyof ApiPipelineMetrics>('phase1_proposals')
+
+  // Pipeline Filter States
+  const [pipelineProgram, setPipelineProgram] = useState<string>('ALL')
+  const [pipelineDegreeLevel, setPipelineDegreeLevel] = useState<string>('ALL')
+
+  // Advisee Broadcast Messaging States
+  const [adviseeModalOpen, setAdviseeModalOpen] = useState(false)
+  const [advisees, setAdvisees] = useState<ApiSupervisorAdvisee[]>([])
+  const [adviseePrograms, setAdviseePrograms] = useState<string[]>([])
+  const [adviseeProgramFilter, setAdviseeProgramFilter] = useState<string>('ALL')
+  const [broadcastSubject, setBroadcastSubject] = useState('')
+  const [broadcastMessage, setBroadcastMessage] = useState('')
+  const [broadcastIncludeEmail, setBroadcastIncludeEmail] = useState(true)
+  const [sendingBroadcast, setSendingBroadcast] = useState(false)
+  const [broadcastSuccess, setBroadcastSuccess] = useState('')
+  const [broadcastError, setBroadcastError] = useState('')
+
+  const loadPipelineFiltered = async (prog?: string, deg?: string) => {
+    const accessToken = localStorage.getItem('murrs_access_token')
+    if (!accessToken || !showPipeline) return
+    const pProg = prog !== undefined ? prog : pipelineProgram
+    const pDeg = deg !== undefined ? deg : pipelineDegreeLevel
+    try {
+      const pipe = await apiGetPipelineMetrics(
+        accessToken,
+        pProg === 'ALL' ? undefined : pProg,
+        pDeg === 'ALL' ? undefined : pDeg,
+      )
+      setPipelineMetrics(pipe)
+    } catch {}
+  }
+
+  const loadAdvisees = async (prog?: string) => {
+    const accessToken = localStorage.getItem('murrs_access_token')
+    if (!accessToken || !isSupervisor) return
+    try {
+      const targetProg = prog !== undefined ? prog : adviseeProgramFilter
+      const res = await apiGetSupervisorAdvisees(accessToken, targetProg)
+      setAdvisees(res.advisees || [])
+      setAdviseePrograms(res.programs || [])
+    } catch {}
+  }
+
+  const handleSendAdviseeBroadcast = async () => {
+    if (!broadcastSubject.trim() || !broadcastMessage.trim()) {
+      setBroadcastError('Please provide both subject and message.')
+      return
+    }
+    const accessToken = localStorage.getItem('murrs_access_token')
+    if (!accessToken) return
+    setSendingBroadcast(true)
+    setBroadcastError('')
+    setBroadcastSuccess('')
+    try {
+      const res = await apiSupervisorMessageAdvisees(accessToken, {
+        subject: broadcastSubject.trim(),
+        message: broadcastMessage.trim(),
+        program_filter: adviseeProgramFilter === 'ALL' ? undefined : adviseeProgramFilter,
+        include_email: broadcastIncludeEmail,
+      })
+      setBroadcastSuccess(
+        `✓ Broadcast sent to ${res.recipients_count} advisee(s)! (${res.emails_queued} email(s) queued with portal link).`
+      )
+      setBroadcastSubject('')
+      setBroadcastMessage('')
+      setTimeout(() => {
+        setAdviseeModalOpen(false)
+        setBroadcastSuccess('')
+      }, 3000)
+    } catch (err) {
+      setBroadcastError(err instanceof Error ? err.message : 'Failed to send broadcast.')
+    } finally {
+      setSendingBroadcast(false)
+    }
+  }
 
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const loadData = () => setRefreshTrigger((prev) => prev + 1)
@@ -950,10 +1037,41 @@ export function Dashboard({ userRole }: DashboardProps) {
         {/* Primary Column (full width) */}
         <div className="space-y-6">
 
+          {/* Supervisor Broadcast Messaging Launcher Card */}
+          {isSupervisor && (
+            <div className="ta-card p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3" style={{borderColor:'var(--border-color)'}}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700 flex-shrink-0">
+                    <Send className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 m-0 flex items-center gap-2">
+                      Supervisor Advisee Broadcast Messaging
+                    </h3>
+                    <p className="text-xs text-slate-500 m-0 mt-0.5">
+                      Send in-app notifications and background emails with the portal login link to all your assigned students.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => {
+                    void loadAdvisees()
+                    setAdviseeModalOpen(true)
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-xl px-4 py-2 flex items-center gap-2 shadow-sm cursor-pointer"
+                >
+                  <Mail className="w-4 h-4" />
+                  Broadcast to Advisees
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Department Student Pipeline Section */}
           {showPipeline && (
             <div className="ta-card p-5 space-y-5">
-              <div className="flex items-center justify-between border-b pb-3" style={{borderColor:'var(--border-color)'}}>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b pb-4 gap-4" style={{borderColor:'var(--border-color)'}}>
                 <div>
                   <h3 className="text-base font-bold m-0 flex items-center gap-2" style={{color:'var(--text-main)'}}>
                     Department Student Pipeline
@@ -962,17 +1080,39 @@ export function Dashboard({ userRole }: DashboardProps) {
                     </span>
                   </h3>
                   <p className="text-xs m-0 mt-0.5" style={{color:'var(--text-muted)'}}>
-                    Click any phase card to inspect active student records in that milestone.
+                    Filter by degree discipline or aggregate all undergraduate programmes together to analyze pipeline progress.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Programme Filter Dropdown */}
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="font-semibold text-slate-600">Filter:</span>
+                    <select
+                      value={pipelineProgram}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setPipelineProgram(val)
+                        void loadPipelineFiltered(val, pipelineDegreeLevel)
+                      }}
+                      className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-purple-500/30 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
+                    >
+                      <option value="ALL">All Programmes</option>
+                      <option value="undergraduate_combined">🎓 All Undergraduate Programmes (Combined)</option>
+                      {(pipelineMetrics?.available_programs || []).map((prog) => (
+                        <option key={prog} value={prog}>
+                          {prog}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <Button
                     type="button"
                     onClick={() => setExportModalOpen(true)}
                     className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white transition-all shadow-sm cursor-pointer"
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5" />
-                    Filter & Export Reports (Excel/CSV)
+                    Filter & Export Reports
                   </Button>
                   {isHodOrCoordinator && (
                     <Button
@@ -986,6 +1126,44 @@ export function Dashboard({ userRole }: DashboardProps) {
                   )}
                 </div>
               </div>
+
+              {/* Undergraduate Aggregate Banner & Breakdown */}
+              {pipelineProgram === 'undergraduate_combined' && (
+                <div className="p-4 rounded-xl bg-purple-50/80 border border-purple-200/80 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">🎓</span>
+                      <div>
+                        <h4 className="text-xs font-black uppercase tracking-wider text-purple-900 m-0">
+                          Combined Undergraduate Analysis (All Programmes)
+                        </h4>
+                        <p className="text-[11px] text-purple-700 m-0">
+                          Summing all undergraduate degrees (BSc Computer Science, ICT, MIS, Business, etc.)
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-purple-600 text-white font-mono font-bold text-xs shadow-sm self-start sm:self-auto">
+                      {pipelineMetrics?.undergraduate_combined_count ?? 0} Total Undergraduate Students in Pipeline
+                    </span>
+                  </div>
+
+                  {pipelineMetrics?.program_breakdown && Object.keys(pipelineMetrics.program_breakdown).length > 0 && (
+                    <div className="pt-2 border-t border-purple-200/80 flex flex-wrap gap-2">
+                      {Object.entries(pipelineMetrics.program_breakdown).map(([progName, count]) => (
+                        <div
+                          key={progName}
+                          className="px-3 py-1.5 rounded-lg bg-white border border-purple-200 shadow-xs flex items-center gap-2 text-xs"
+                        >
+                          <span className="font-medium text-slate-700">{progName}:</span>
+                          <span className="font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full text-[11px]">
+                            {count}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 5 Phase Summary Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
@@ -1328,6 +1506,128 @@ export function Dashboard({ userRole }: DashboardProps) {
         onOpenChange={setExportModalOpen}
         userDepartment={user?.department}
       />
+
+      {/* Supervisor Advisee Broadcast Messaging Modal */}
+      {adviseeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-700">
+                  <Send className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 m-0">Broadcast to Assigned Advisees</h3>
+                  <p className="text-[11px] text-slate-500 m-0">Send instant in-app alerts and emails with the portal link.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdviseeModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-xs p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {broadcastSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                {broadcastSuccess}
+              </div>
+            )}
+
+            {broadcastError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
+                {broadcastError}
+              </div>
+            )}
+
+            <div className="space-y-3.5 text-xs">
+              {/* Program Filter */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Filter Advisees by Programme</label>
+                <select
+                  value={adviseeProgramFilter}
+                  onChange={(e) => {
+                    const prog = e.target.value
+                    setAdviseeProgramFilter(prog)
+                    void loadAdvisees(prog)
+                  }}
+                  className="w-full p-2 rounded-lg border border-slate-200 text-xs font-semibold bg-white"
+                >
+                  <option value="ALL">All Advisees (Across all programmes)</option>
+                  {adviseePrograms.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-purple-700 font-semibold mt-1">
+                  ✓ Target audience: {advisees.length} student(s) currently assigned to you.
+                </p>
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Message Subject</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chapter 3 Draft Submission & Progress Review Reminder"
+                  value={broadcastSubject}
+                  onChange={(e) => setBroadcastSubject(e.target.value)}
+                  className="w-full p-2 rounded-lg border border-slate-200 text-xs"
+                />
+              </div>
+
+              {/* Message Body */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Message Content</label>
+                <textarea
+                  rows={4}
+                  placeholder="Type your message to students here. They will receive this notification immediately in their thesis portal and via email..."
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  className="w-full p-2 rounded-lg border border-slate-200 text-xs"
+                />
+              </div>
+
+              {/* Include Email Checkbox */}
+              <div className="flex items-start gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="include-email-check"
+                  checked={broadcastIncludeEmail}
+                  onChange={(e) => setBroadcastIncludeEmail(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                />
+                <label htmlFor="include-email-check" className="text-slate-600 text-[11px] leading-tight cursor-pointer">
+                  <strong>Send automated email notifications</strong> with login portal link (<code>https://thesis.manamatechnologies.com/login</code>) in the email footer.
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t pt-3">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={sendingBroadcast}
+                onClick={() => setAdviseeModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={sendingBroadcast}
+                onClick={handleSendAdviseeBroadcast}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {sendingBroadcast ? 'Dispatching...' : `Send to ${advisees.length} Advisees`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

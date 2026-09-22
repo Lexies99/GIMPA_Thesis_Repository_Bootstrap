@@ -963,10 +963,23 @@ export interface ApiPipelineMetrics {
   phase3_chapters: ApiPipelinePhase
   phase4_examination: ApiPipelinePhase
   phase5_signoff: ApiPipelinePhase
+  available_programs?: string[]
+  selected_program?: string
+  selected_degree_level?: string
+  undergraduate_combined_count?: number
+  program_breakdown?: Record<string, number>
 }
 
-export async function apiGetPipelineMetrics(accessToken: string): Promise<ApiPipelineMetrics> {
-  const response = await fetch(`${apiBase}/papers/pipeline`, {
+export async function apiGetPipelineMetrics(
+  accessToken: string,
+  program?: string,
+  degreeLevel?: string,
+): Promise<ApiPipelineMetrics> {
+  const params = new URLSearchParams()
+  if (program) params.set("program", program)
+  if (degreeLevel) params.set("degree_level", degreeLevel)
+  const queryString = params.toString() ? `?${params.toString()}` : ""
+  const response = await fetch(`${apiBase}/papers/pipeline${queryString}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   return handleResponse<ApiPipelineMetrics>(response)
@@ -1751,6 +1764,433 @@ export async function apiBulkAssignExaminers(
   })
   return handleResponse<ApiBulkAssignSummary>(response)
 }
+
+// ----------------------------------------------------
+// Supervisor Advisee Messaging
+// ----------------------------------------------------
+
+export interface ApiSupervisorAdvisee {
+  student_id: number
+  full_name: string
+  email: string
+  program: string
+  degree_level: string
+  registration_number?: string | null
+  thesis_title?: string | null
+  thesis_status?: string | null
+}
+
+export interface ApiSupervisorAdviseesResponse {
+  total: number
+  program_filter: string
+  programs: string[]
+  advisees: ApiSupervisorAdvisee[]
+}
+
+export interface ApiSupervisorMessagePayload {
+  subject: string
+  message: string
+  program_filter?: string
+  include_email?: boolean
+  student_ids?: number[]
+}
+
+export interface ApiSupervisorMessageResult {
+  message: string
+  recipients_count: number
+  notifications_created: number
+  emails_queued: number
+}
+
+export async function apiGetSupervisorAdvisees(
+  accessToken: string,
+  program?: string,
+): Promise<ApiSupervisorAdviseesResponse> {
+  const query = program && program !== "ALL" ? `?program=${encodeURIComponent(program)}` : ""
+  const response = await fetch(`${apiBase}/theses/supervisor/advisees${query}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiSupervisorAdviseesResponse>(response)
+}
+
+export async function apiSupervisorMessageAdvisees(
+  accessToken: string,
+  payload: ApiSupervisorMessagePayload,
+): Promise<ApiSupervisorMessageResult> {
+  const response = await fetch(`${apiBase}/theses/supervisor/message-advisees`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiSupervisorMessageResult>(response)
+}
+
+// ----------------------------------------------------
+// PhD Degree Management & Reaccreditation Hub
+// ----------------------------------------------------
+
+export interface ApiPhDStudentDossier {
+  student_id: number
+  student_name: string
+  student_email: string
+  school_id?: number | null
+  specialization: string
+  program: string
+  research_stage: string
+  candidacy_status: string
+  comprehensive_result: string
+  seminars_attended_count: number
+  seminars_presented_count: number
+  teaching_completed: boolean
+  last_meeting_date?: string | null
+  days_since_last_meeting?: number | null
+  inactivity_alert: boolean
+  supervisors: string[]
+  recent_eval_rating?: string | null
+}
+
+export interface ApiPhDSupervisionLog {
+  id: number
+  student_id: number
+  supervisor_id: number
+  meeting_date: string
+  meeting_mode: string
+  research_stage: string
+  work_submitted?: string | null
+  feedback_given?: string | null
+  next_task?: string | null
+  progress_rating: string
+  supervisor_concerns?: string | null
+  action_required?: string | null
+  created_at: string
+  student_name?: string | null
+  student_email?: string | null
+  supervisor_name?: string | null
+}
+
+export interface ApiPhDSupervisionLogCreate {
+  student_id: number
+  meeting_date: string
+  meeting_mode?: string
+  research_stage: string
+  work_submitted?: string
+  feedback_given?: string
+  next_task?: string
+  progress_rating?: string
+  supervisor_concerns?: string
+  action_required?: string
+}
+
+export interface ApiPhDSeminar {
+  id: number
+  student_id: number
+  seminar_category: string
+  title: string
+  seminar_date: string
+  is_presenter: boolean
+  attended: boolean
+  venue_or_url?: string | null
+  evaluator_name?: string | null
+  evaluator_feedback?: string | null
+  score_or_verdict?: string | null
+  created_at: string
+  student_name?: string | null
+}
+
+export interface PhDSeminarCreate {
+  student_id: number
+  seminar_category: string
+  title: string
+  seminar_date: string
+  is_presenter?: boolean
+  attended?: boolean
+  venue_or_url?: string
+  evaluator_name?: string
+  evaluator_feedback?: string
+  score_or_verdict?: string
+}
+
+export interface ApiPhDComprehensiveExam {
+  id: number
+  student_id: number
+  attempt_number: number
+  exam_date: string
+  paper_part?: string | null
+  result: string
+  score?: number | null
+  committee_members?: string | null
+  remedial_instructions?: string | null
+  advanced_to_candidacy: boolean
+  created_at: string
+  student_name?: string | null
+}
+
+export interface PhDComprehensiveExamCreate {
+  student_id: number
+  attempt_number: number
+  exam_date: string
+  paper_part?: string
+  result: string
+  score?: number
+  committee_members?: string
+  remedial_instructions?: string
+}
+
+export interface ApiPhDTeachingRequirement {
+  id: number
+  student_id: number
+  course_code: string
+  course_title: string
+  academic_year: string
+  semester: string
+  duties_description?: string | null
+  contact_hours: number
+  supervising_faculty_id?: number | null
+  evaluation_rating?: string | null
+  faculty_feedback?: string | null
+  is_completed: boolean
+  created_at: string
+  student_name?: string | null
+  supervising_faculty_name?: string | null
+}
+
+export interface PhDTeachingRequirementCreate {
+  student_id: number
+  course_code: string
+  course_title: string
+  academic_year: string
+  semester: string
+  duties_description?: string
+  contact_hours?: number
+  supervising_faculty_id?: number
+  evaluation_rating?: string
+  faculty_feedback?: string
+  is_completed?: boolean
+}
+
+export interface ApiPhDProgressEvaluation {
+  id: number
+  student_id: number
+  evaluator_id: number
+  evaluation_period: string
+  evaluation_date: string
+  current_stage?: string | null
+  coursework_summary?: string | null
+  research_progress_summary?: string | null
+  seminar_summary?: string | null
+  teaching_summary?: string | null
+  overall_rating: string
+  action_plan?: string | null
+  follow_up_date?: string | null
+  created_at: string
+  student_name?: string | null
+  evaluator_name?: string | null
+}
+
+export interface PhDProgressEvaluationCreate {
+  student_id: number
+  evaluation_period: string
+  evaluation_date?: string
+  current_stage?: string
+  coursework_summary?: string
+  research_progress_summary?: string
+  seminar_summary?: string
+  teaching_summary?: string
+  overall_rating: string
+  action_plan?: string
+  follow_up_date?: string
+}
+
+export interface ApiPhDReaccreditationFolder {
+  id: number
+  folder_number: number
+  folder_name: string
+  academic_year?: string | null
+  file_name: string
+  file_url: string
+  description?: string | null
+  uploaded_by_id?: number | null
+  uploaded_by_name?: string | null
+  uploaded_at: string
+  status: string
+}
+
+export interface PhDReaccreditationFolderCreate {
+  folder_number: number
+  folder_name: string
+  academic_year?: string
+  file_name: string
+  file_url: string
+  description?: string
+  status?: string
+}
+
+export async function apiGetPhdDossiers(accessToken: string): Promise<ApiPhDStudentDossier[]> {
+  const response = await fetch(`${apiBase}/phd/dossiers`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPhDStudentDossier[]>(response)
+}
+
+export async function apiGetSupervisionLogs(
+  accessToken: string,
+  studentId?: number,
+): Promise<ApiPhDSupervisionLog[]> {
+  const query = studentId ? `?student_id=${studentId}` : ""
+  const response = await fetch(`${apiBase}/phd/supervision-logs${query}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPhDSupervisionLog[]>(response)
+}
+
+export async function apiCreateSupervisionLog(
+  accessToken: string,
+  payload: ApiPhDSupervisionLogCreate,
+): Promise<ApiPhDSupervisionLog> {
+  const response = await fetch(`${apiBase}/phd/supervision-logs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiPhDSupervisionLog>(response)
+}
+
+export async function apiGetPhdSeminars(
+  accessToken: string,
+  studentId?: number,
+): Promise<ApiPhDSeminar[]> {
+  const query = studentId ? `?student_id=${studentId}` : ""
+  const response = await fetch(`${apiBase}/phd/seminars${query}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPhDSeminar[]>(response)
+}
+
+export async function apiRecordPhdSeminar(
+  accessToken: string,
+  payload: PhDSeminarCreate,
+): Promise<ApiPhDSeminar> {
+  const response = await fetch(`${apiBase}/phd/seminars`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiPhDSeminar>(response)
+}
+
+export async function apiGetComprehensiveExams(
+  accessToken: string,
+  studentId?: number,
+): Promise<ApiPhDComprehensiveExam[]> {
+  const query = studentId ? `?student_id=${studentId}` : ""
+  const response = await fetch(`${apiBase}/phd/comprehensive-exams${query}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPhDComprehensiveExam[]>(response)
+}
+
+export async function apiRecordComprehensiveExam(
+  accessToken: string,
+  payload: PhDComprehensiveExamCreate,
+): Promise<ApiPhDComprehensiveExam> {
+  const response = await fetch(`${apiBase}/phd/comprehensive-exams`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiPhDComprehensiveExam>(response)
+}
+
+export async function apiGetTeachingRequirements(
+  accessToken: string,
+  studentId?: number,
+): Promise<ApiPhDTeachingRequirement[]> {
+  const query = studentId ? `?student_id=${studentId}` : ""
+  const response = await fetch(`${apiBase}/phd/teaching-requirements${query}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPhDTeachingRequirement[]>(response)
+}
+
+export async function apiRecordTeachingRequirement(
+  accessToken: string,
+  payload: PhDTeachingRequirementCreate,
+): Promise<ApiPhDTeachingRequirement> {
+  const response = await fetch(`${apiBase}/phd/teaching-requirements`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiPhDTeachingRequirement>(response)
+}
+
+export async function apiGetProgressEvaluations(
+  accessToken: string,
+  studentId?: number,
+): Promise<ApiPhDProgressEvaluation[]> {
+  const query = studentId ? `?student_id=${studentId}` : ""
+  const response = await fetch(`${apiBase}/phd/progress-evaluations${query}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPhDProgressEvaluation[]>(response)
+}
+
+export async function apiRecordProgressEvaluation(
+  accessToken: string,
+  payload: PhDProgressEvaluationCreate,
+): Promise<ApiPhDProgressEvaluation> {
+  const response = await fetch(`${apiBase}/phd/progress-evaluations`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiPhDProgressEvaluation>(response)
+}
+
+export async function apiGetReaccreditationFolders(
+  accessToken: string,
+  academicYear?: string,
+): Promise<ApiPhDReaccreditationFolder[]> {
+  const query = academicYear ? `?academic_year=${encodeURIComponent(academicYear)}` : ""
+  const response = await fetch(`${apiBase}/phd/reaccreditation-folders${query}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPhDReaccreditationFolder[]>(response)
+}
+
+export async function apiUploadReaccreditationFolderDoc(
+  accessToken: string,
+  payload: PhDReaccreditationFolderCreate,
+): Promise<ApiPhDReaccreditationFolder> {
+  const response = await fetch(`${apiBase}/phd/reaccreditation-folders`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiPhDReaccreditationFolder>(response)
+}
+
 
 
 

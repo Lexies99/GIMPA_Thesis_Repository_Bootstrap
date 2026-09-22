@@ -11,6 +11,16 @@ from app.models.notification import Notification
 from app.models.user_role import UserRole
 from app.models.student import Student
 
+from app.models.thesis_system import (
+    School, Thesis, Proposal, Step, StepFinalization, ExaminerAssignment,
+    ExaminerUpload, HodComment, Correction, Publication, DocumentComment,
+    AuditLog, ExaminationResult,
+)
+from app.models.phd_system import (
+    PhDSupervisionLog, PhDSeminar, PhDComprehensiveExam,
+    PhDTeachingRequirement, PhDProgressEvaluation, PhDReaccreditationFolder,
+)
+
 __all__ = [
     "User",
     "RefreshToken",
@@ -26,4 +36,23 @@ __all__ = [
     "Notification",
     "UserRole",
     "Student",
+    "School",
+    "Thesis",
+    "Proposal",
+    "Step",
+    "StepFinalization",
+    "ExaminerAssignment",
+    "ExaminerUpload",
+    "HodComment",
+    "Correction",
+    "Publication",
+    "DocumentComment",
+    "AuditLog",
+    "ExaminationResult",
+    "PhDSupervisionLog",
+    "PhDSeminar",
+    "PhDComprehensiveExam",
+    "PhDTeachingRequirement",
+    "PhDProgressEvaluation",
+    "PhDReaccreditationFolder",
 ]

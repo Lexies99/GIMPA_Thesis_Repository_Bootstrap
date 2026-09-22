@@ -10,6 +10,7 @@ import { DocumentUpload } from '../components/library/DocumentUpload';
 import { Dashboard } from '../components/library/Dashboard';
 import { AccountManagement } from '../components/library/AccountManagement';
 import { Profile } from '../components/library/Profile';
+import { PhdHub } from '../components/library/PhdHub';
 import { useAuth } from '../context/AuthContext';
 import {
   Book,
@@ -28,6 +29,7 @@ import {
   LogIn,
   Menu,
   X,
+  GraduationCap,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -165,11 +167,12 @@ export default function Home() {
 
   // Nav items
   const navItems = ([
-    { tab: 'catalog',   label: 'Catalog',           icon: Book,      show: true },
-    { tab: 'search',    label: 'Search & Discovery', icon: Search,    show: true },
-    { tab: 'dashboard', label: 'Dashboard',          icon: BarChart3, show: isAuthenticated && user?.role !== 'guest' },
-    { tab: 'approval',  label: 'Approval Workflow',  icon: BookOpen,  show: isReviewer,            badge: overdueCount > 0 ? overdueCount : null },
-    { tab: 'librarian', label: 'Administration',     icon: Settings,  show: isAdministrationUser },
+    { tab: 'catalog',   label: 'Catalog',           icon: Book,          show: true },
+    { tab: 'search',    label: 'Search & Discovery', icon: Search,        show: true },
+    { tab: 'dashboard', label: 'Dashboard',          icon: BarChart3,     show: isAuthenticated && user?.role !== 'guest' },
+    { tab: 'phd',       label: 'PhD Hub',            icon: GraduationCap, show: isAuthenticated && user?.role !== 'guest' },
+    { tab: 'approval',  label: 'Approval Workflow',  icon: BookOpen,      show: isReviewer,            badge: overdueCount > 0 ? overdueCount : null },
+    { tab: 'librarian', label: 'Administration',     icon: Settings,      show: isAdministrationUser },
   ] as Array<{tab:string;label:string;icon:React.ElementType;show:boolean|undefined;badge?:number|null}>).filter(item => item.show);
 
   const isSidebarExpanded = isMobile ? true : !sidebarCollapsed;
@@ -650,6 +653,7 @@ export default function Home() {
           {activeTab === 'dashboard' && isAuthenticated && user?.role !== 'guest' && (
             <Dashboard userRole={user?.role || 'student'} />
           )}
+          {activeTab === 'phd' && isAuthenticated && user?.role !== 'guest' && <PhdHub />}
           {activeTab === 'profile'  && isAuthenticated && user?.role !== 'guest' && <Profile />}
           {activeTab === 'approval' && isReviewer && <ApprovalWorkflow />}
           {activeTab === 'librarian' && isAdministrationUser && (

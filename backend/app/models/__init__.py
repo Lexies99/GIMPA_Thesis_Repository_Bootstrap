@@ -32,3 +32,11 @@ from app.models.thesis_system import (  # noqa: F401
     AuditLog,
     ExaminationResult,
 )
+from app.models.phd_system import (  # noqa: F401
+    PhDSupervisionLog,
+    PhDSeminar,
+    PhDComprehensiveExam,
+    PhDTeachingRequirement,
+    PhDProgressEvaluation,
+    PhDReaccreditationFolder,
+)

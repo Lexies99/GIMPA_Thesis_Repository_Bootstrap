@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import or_, func, case, text
 from sqlalchemy.orm import Session
@@ -45,7 +45,7 @@ from app.schemas.examination import (
     ExaminerQualitativeFeedback,
     StudentFeedbackResponse,
 )
-from app.services.email_service import send_notification_email
+from app.services.email_service import send_batch_emails, send_notification_email
 from app.services.import_service import load_rows_from_upload
 from app.services.notification_service import create_notification
 from app.services.user_service import get_user_roles, has_role
@@ -2478,6 +2478,168 @@ def submit_examination_marks(
             )
 
     return {"message": "Examination marks submitted successfully", "thesis_id": thesis_id}
+
+
+from pydantic import BaseModel
+
+class SupervisorMessageAdviseesRequest(BaseModel):
+    student_user_ids: list[int] | None = None
+    program: str | None = None
+    subject: str
+    message: str
+    send_email: bool = True
+
+
+@router.get("/supervisor/advisees")
+def get_supervisor_advisees(
+    program: str | None = Query(None, description="Optional program/discipline filter"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Returns all students assigned to the current supervisor with their program/discipline, paper info, and contact."""
+    is_admin = current_user.is_admin or has_role(db, current_user, "system_admin")
+    is_hod_or_coord = has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+
+    query = db.query(Paper)
+    if not (is_admin or is_hod_or_coord):
+        query = query.filter(
+            or_(
+                Paper.supervisor_id == current_user.id,
+                Paper.supervisors.contains([current_user.id]),
+            )
+        )
+    elif is_hod_or_coord and not is_admin:
+        if current_user.department:
+            dept_name = current_user.department.strip().lower()
+            query = query.join(User, Paper.created_by_id == User.id, isouter=True).filter(
+                func.lower(func.coalesce(User.department, "")) == dept_name
+            )
+
+    papers = query.all()
+    advisees_dict: dict[int, dict] = {}
+    available_programs = set()
+
+    for p in papers:
+        student_user = p.created_by
+        if not student_user:
+            continue
+
+        prog = p.discipline or student_user.program or student_user.department or "General"
+        available_programs.add(prog)
+
+        if program and program.lower() != "all":
+            if prog.lower() != program.lower() and program.lower() not in prog.lower():
+                continue
+
+        if student_user.id not in advisees_dict:
+            advisees_dict[student_user.id] = {
+                "user_id": student_user.id,
+                "student_id": student_user.school_id or f"GIMPA-ST-{p.id:03d}",
+                "full_name": student_user.full_name or student_user.email,
+                "email": student_user.email,
+                "program": prog,
+                "degree_level": p.degree_level or ("PhD" if p.document_type == "doctoral_thesis" else "Undergraduate"),
+                "paper_id": p.id,
+                "paper_title": p.title,
+                "status": p.status,
+            }
+
+    advisees = list(advisees_dict.values())
+    advisees.sort(key=lambda x: (x["program"], x["full_name"]))
+
+    return {
+        "advisees": advisees,
+        "total_count": len(advisees),
+        "available_programs": sorted(list(available_programs)),
+    }
+
+
+@router.post("/supervisor/message-advisees")
+def message_supervisor_advisees(
+    payload: SupervisorMessageAdviseesRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sends in-app notifications and background emails to assigned advisees, with optional program filtering."""
+    is_admin = current_user.is_admin or has_role(db, current_user, "system_admin")
+    is_hod_or_coord = has_role(db, current_user, "hod") or has_role(db, current_user, "project_coordinator")
+
+    query = db.query(Paper)
+    if not (is_admin or is_hod_or_coord):
+        query = query.filter(
+            or_(
+                Paper.supervisor_id == current_user.id,
+                Paper.supervisors.contains([current_user.id]),
+            )
+        )
+    elif is_hod_or_coord and not is_admin:
+        if current_user.department:
+            dept_name = current_user.department.strip().lower()
+            query = query.join(User, Paper.created_by_id == User.id, isouter=True).filter(
+                func.lower(func.coalesce(User.department, "")) == dept_name
+            )
+
+    papers = query.all()
+    target_users: dict[int, User] = {}
+
+    for p in papers:
+        st_user = p.created_by
+        if not st_user:
+            continue
+        prog = p.discipline or st_user.program or st_user.department or "General"
+        if payload.program and payload.program.lower() != "all":
+            if payload.program.lower() != prog.lower() and payload.program.lower() not in prog.lower():
+                continue
+        if payload.student_user_ids and st_user.id not in payload.student_user_ids:
+            continue
+        target_users[st_user.id] = st_user
+
+    if not target_users:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No assigned students matched the selected filter criteria.",
+        )
+
+    sender_name = current_user.full_name or current_user.email
+    pending_emails: list[dict[str, str]] = []
+    contacted_names = []
+
+    for st_id, st_user in target_users.items():
+        contacted_names.append(st_user.full_name or st_user.email)
+        # 1. In-App Notification
+        create_notification(
+            db,
+            user_id=st_user.id,
+            paper_id=None,
+            ntype="supervisor_message",
+            message=f"[Supervisor Message from {sender_name}] {payload.subject}: {payload.message}",
+        )
+        # 2. Email payload
+        if payload.send_email and st_user.email:
+            email_body = (
+                f"You have received a new message from your project supervisor, {sender_name}:\n\n"
+                f"Subject: {payload.subject}\n\n"
+                f"{payload.message}\n\n"
+                f"If you need to discuss this or review your submission, please log in to the system."
+            )
+            pending_emails.append({
+                "to_email": st_user.email,
+                "to_name": st_user.full_name or st_user.email,
+                "subject": f"[GIMPA Thesis] Message from Supervisor: {payload.subject}",
+                "message": email_body,
+            })
+
+    if pending_emails:
+        background_tasks.add_task(send_batch_emails, pending_emails)
+
+    return {
+        "success": True,
+        "recipients_count": len(target_users),
+        "recipients": contacted_names,
+        "message": f"Successfully sent announcement to {len(target_users)} student(s).",
+    }
+
 
 
 

@@ -739,10 +739,12 @@ def read_paper_stats(
 
 @router.get("/papers/pipeline")
 def get_pipeline_metrics(
+    program: str | None = Query(None, description="Filter by program name or 'undergraduate_combined'"),
+    degree_level: str | None = Query(None, description="Filter by degree level: undergraduate, masters, phd"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Returns Phase 1 to Phase 5 metrics and student lists for HOD, Coordinator, Dean, Admin."""
+    """Returns Phase 1 to Phase 5 metrics and student lists for HOD, Coordinator, Dean, Admin, with program & degree level filters."""
     reviewer_department = (current_user.department or "").strip().lower()
 
     query = db.query(Paper).join(User, Paper.created_by_id == User.id, isouter=True)
@@ -752,7 +754,25 @@ def get_pipeline_metrics(
     if is_hod_or_coord and not current_user.is_admin and reviewer_department:
         query = query.filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
 
-    papers = query.all()
+    all_dept_papers = query.all()
+
+    # Calculate overall available programs and program breakdowns
+    available_programs = set()
+    program_breakdown: dict[str, int] = {}
+    undergraduate_combined_count = 0
+
+    for p in all_dept_papers:
+        student_user = p.created_by
+        prog = p.discipline or ((student_user.program or student_user.department) if student_user else "Computer Science")
+        prog = prog.strip() if prog else "Computer Science"
+        available_programs.add(prog)
+        program_breakdown[prog] = program_breakdown.get(prog, 0) + 1
+
+        doc_type = (p.document_type or "").lower()
+        deg = (p.degree_level or "").lower()
+        is_ug = deg == "undergraduate" or (doc_type not in {"master_thesis", "doctoral_thesis"} and "phd" not in deg and "master" not in deg)
+        if is_ug:
+            undergraduate_combined_count += 1
 
     phases = {
         "phase1_proposals": {"count": 0, "students": []},
@@ -762,12 +782,36 @@ def get_pipeline_metrics(
         "phase5_signoff": {"count": 0, "students": []},
     }
 
-    for p in papers:
+    # Filter papers according to program / degree_level
+    for p in all_dept_papers:
         student_user = p.created_by
         student_id = student_user.school_id if student_user else f"GIMPA-ST-{p.id:03d}"
         student_name = student_user.full_name if student_user else (p.authors[0].name if p.authors else "Unknown Student")
-        program = p.discipline or ((student_user.program or student_user.department) if student_user else "B.Sc. Computer Science")
+        p_prog = p.discipline or ((student_user.program or student_user.department) if student_user else "Computer Science")
+        p_prog = p_prog.strip() if p_prog else "Computer Science"
         supervisor_name = p.supervisor.full_name if p.supervisor else "Unassigned"
+
+        doc_type = (p.document_type or "").lower()
+        deg = (p.degree_level or "").lower()
+        is_ug = deg == "undergraduate" or (doc_type not in {"master_thesis", "doctoral_thesis"} and "phd" not in deg and "master" not in deg)
+
+        # Filtering logic
+        if program:
+            if program == "undergraduate_combined":
+                if not is_ug:
+                    continue
+            elif program.lower() != "all":
+                if program.lower() != p_prog.lower() and program.lower() not in p_prog.lower():
+                    continue
+
+        if degree_level and degree_level.lower() != "all":
+            dl = degree_level.lower()
+            if dl == "undergraduate" and not is_ug:
+                continue
+            elif dl == "masters" and doc_type != "master_thesis" and "master" not in deg:
+                continue
+            elif dl == "phd" and doc_type != "doctoral_thesis" and "phd" not in deg:
+                continue
 
         status = (p.status or "").lower()
 
@@ -775,7 +819,8 @@ def get_pipeline_metrics(
             "paper_id": p.id,
             "index_number": student_id or f"GIMPA-ST-{p.id:03d}",
             "student_name": student_name,
-            "program": program or "Computer Science",
+            "program": p_prog,
+            "degree_level": "Undergraduate" if is_ug else ("PhD" if "phd" in deg or doc_type == "doctoral_thesis" else "Masters"),
             "supervisor_name": supervisor_name,
             "title": p.title,
             "status": p.status,
@@ -815,6 +860,11 @@ def get_pipeline_metrics(
             item["milestone_status"] = f"In Progress ({p.status})"
             phases["phase3_chapters"]["students"].append(item)
             phases["phase3_chapters"]["count"] += 1
+
+    phases["available_programs"] = sorted(list(available_programs))
+    phases["available_degree_levels"] = ["All Programs", "Undergraduate (Combined)", "Masters", "PhD"]
+    phases["undergraduate_combined_count"] = undergraduate_combined_count
+    phases["program_breakdown"] = program_breakdown
 
     return phases
 
