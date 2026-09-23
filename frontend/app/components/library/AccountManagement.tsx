@@ -1512,15 +1512,49 @@ export function AccountManagement() {
       <div className="space-y-4">
         {/* Search and Filters Header */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 rounded-xl border bg-card">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
+          <div
+            className="flex-1 flex items-center gap-2.5 px-3 rounded-lg border transition-all"
+            style={{
+              backgroundColor: '#ffffff',
+              borderColor: '#e2e8f0',
+              height: '38px',
+            }}
+          >
+            <Search style={{ width: 16, height: 16, color: '#94a3b8', flexShrink: 0 }} />
+            <input
+              type="text"
               placeholder="Search by name, email, school ID, department, or degree program..."
               value={accountSearchTerm}
               onChange={(e) => setAccountSearchTerm(e.target.value)}
-              className="pl-11 h-9 text-xs"
-              style={{ paddingLeft: '2.75rem' }}
+              style={{
+                flex: 1,
+                width: '100%',
+                border: 'none',
+                outline: 'none',
+                background: 'transparent',
+                fontSize: 12,
+                color: '#1e293b',
+                padding: '6px 0',
+                fontFamily: 'Inter, sans-serif',
+                boxShadow: 'none',
+              }}
             />
+            {accountSearchTerm && (
+              <button
+                type="button"
+                onClick={() => setAccountSearchTerm('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  padding: '2px 4px',
+                }}
+              >
+                ✕
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <Select value={accountRoleFilter} onValueChange={setAccountRoleFilter}>
@@ -2380,9 +2414,17 @@ export function AccountManagement() {
                 {/* Search Text Filter */}
                 <div className="space-y-1">
                   <Label className="text-xs">Search Name / Email / ID</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                    <Input
+                  <div
+                    className="flex items-center gap-2 px-2.5 rounded-lg border transition-all"
+                    style={{
+                      backgroundColor: '#ffffff',
+                      borderColor: '#e2e8f0',
+                      height: '32px',
+                    }}
+                  >
+                    <Search style={{ width: 14, height: 14, color: '#94a3b8', flexShrink: 0 }} />
+                    <input
+                      type="text"
                       value={broadcastFilter.search}
                       onChange={(e) => {
                         const updated = { ...broadcastFilter, search: e.target.value }
@@ -2390,9 +2432,39 @@ export function AccountManagement() {
                         void fetchBroadcastPreview(updated)
                       }}
                       placeholder="Type keyword..."
-                      className="h-8 pl-9 text-xs"
-                      style={{ paddingLeft: '2.25rem' }}
+                      style={{
+                        flex: 1,
+                        width: '100%',
+                        border: 'none',
+                        outline: 'none',
+                        background: 'transparent',
+                        fontSize: 12,
+                        color: '#1e293b',
+                        padding: '4px 0',
+                        fontFamily: 'Inter, sans-serif',
+                        boxShadow: 'none',
+                      }}
                     />
+                    {broadcastFilter.search && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = { ...broadcastFilter, search: '' }
+                          setBroadcastFilter(updated)
+                          void fetchBroadcastPreview(updated)
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#94a3b8',
+                          fontSize: 11,
+                          cursor: 'pointer',
+                          padding: '0 2px',
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
