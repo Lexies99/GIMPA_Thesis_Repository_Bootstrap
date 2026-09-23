@@ -115,6 +115,8 @@ class UserUpdate(BaseModel):
     is_admin: bool | None = None
     is_active: bool | None = None
     role: UserRole | None = None
+    roles: list[UserRole] | None = None
+    must_change_password: bool | None = None
 
 
 class UserRoleUpdate(BaseModel):
@@ -128,3 +130,62 @@ class UserRoleAssign(BaseModel):
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class AdminPasswordResetRequest(BaseModel):
+    new_password: str | None = None
+    must_change_password: bool = True
+    send_email: bool = True
+
+
+class AdminPasswordResetResponse(BaseModel):
+    user_id: int
+    email: str
+    new_password: str
+    must_change_password: bool
+    email_sent: bool
+    message: str
+
+
+class AdminBroadcastFilter(BaseModel):
+    roles: list[str] | None = None
+    schools: list[str] | None = None
+    departments: list[str] | None = None
+    programs: list[str] | None = None
+    phases: list[str] | None = None
+    user_ids: list[int] | None = None
+    search: str | None = None
+
+
+class BroadcastRecipientPreview(BaseModel):
+    id: int
+    full_name: str | None = None
+    email: str
+    school_id: str | None = None
+    role: str
+    school: str | None = None
+    department: str | None = None
+    program: str | None = None
+    phase: str | None = None
+    is_active: bool = True
+
+
+class AdminBroadcastPreviewResponse(BaseModel):
+    total_count: int
+    recipients: list[BroadcastRecipientPreview]
+
+
+class AdminBroadcastRequest(BaseModel):
+    filters: AdminBroadcastFilter | None = None
+    recipient_ids: list[int] | None = None
+    subject: str
+    message: str
+    announcement_type: str = "general"
+    include_email: bool = True
+
+
+class AdminBroadcastResponse(BaseModel):
+    recipients_count: int
+    notifications_created: int
+    emails_queued: int
+    message: str

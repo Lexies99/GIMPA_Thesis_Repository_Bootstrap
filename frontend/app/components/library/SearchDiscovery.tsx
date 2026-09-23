@@ -330,7 +330,7 @@ export function SearchDiscovery() {
                 <button
                   className="p-1.5 rounded-md transition-colors"
                   style={viewMode === 'list'
-                    ? {backgroundColor:'#8b5cf6',color:'#fff'}
+                    ? {backgroundColor:'#2A528A',color:'#fff'}
                     : {backgroundColor:'transparent',color:'var(--text-muted)'}}
                   onClick={() => setViewMode('list')}
                   title="List view"
@@ -340,7 +340,7 @@ export function SearchDiscovery() {
                 <button
                   className="p-1.5 rounded-md transition-colors"
                   style={viewMode === 'grid'
-                    ? {backgroundColor:'#8b5cf6',color:'#fff'}
+                    ? {backgroundColor:'#2A528A',color:'#fff'}
                     : {backgroundColor:'transparent',color:'var(--text-muted)'}}
                   onClick={() => setViewMode('grid')}
                   title="Grid view"

@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status, Response
+from sqlalchemy import func, or_, desc
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user, get_db
 from app.schemas.notification import NotificationRead
 from app.schemas.student import ImportAccountsSummary, StudentRead
 from app.schemas.user import (
+    AdminBroadcastFilter,
+    AdminBroadcastPreviewResponse,
+    AdminBroadcastRequest,
+    AdminBroadcastResponse,
+    AdminPasswordResetRequest,
+    AdminPasswordResetResponse,
     AdminUserCreate,
     AdminUserCreateResult,
+    BroadcastRecipientPreview,
     PasswordChangeRequest,
     UserRead,
     UserRole,
@@ -20,11 +28,14 @@ from app.models.user import User
 from app.models.student import Student
 from app.models.department import Department
 from app.models.institution import Institution
+from app.models.paper import Paper
+from app.models.user_role import UserRole as UserRoleModel
 from app.services.import_service import import_staff_accounts, import_students, load_rows_from_upload
 from app.services.email_service import send_batch_emails, send_notification_email
 from app.services.notification_service import create_notification, get_notification, list_notifications, mark_notification_read
 from app.services.import_service import generate_default_password
 from app.services.user_service import (
+    admin_reset_password,
     assign_role,
     create_user,
     change_password,
@@ -147,7 +158,13 @@ def update_user_endpoint(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> UserRead:
-    if current_user.id != user_id and not current_user.is_admin:
+    is_admin_actor = (
+        current_user.is_admin
+        or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "head_library")
+        or has_role(db, current_user, "librarian")
+    )
+    if current_user.id != user_id and not is_admin_actor:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
 
     user = get_user(db, user_id)
@@ -170,9 +187,17 @@ def update_user_endpoint(
         if existing_school_id and existing_school_id.id != user_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="School ID already registered")
 
-    if (payload.is_admin is not None or payload.is_active is not None or payload.role is not None) and not current_user.is_admin:
+    if (
+        payload.is_admin is not None
+        or payload.is_active is not None
+        or payload.role is not None
+        or payload.roles is not None
+        or payload.must_change_password is not None
+        or payload.program is not None
+    ) and not is_admin_actor:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    if payload.password and current_user.id == user_id and not current_user.is_admin:
+
+    if payload.password and current_user.id == user_id and not is_admin_actor:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Use /users/change-password to update your password",
@@ -584,3 +609,293 @@ def mark_my_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     updated = mark_notification_read(db, notification)
     return NotificationRead.model_validate(updated)
+
+
+@router.post("/users/{user_id}/reset-password", response_model=AdminPasswordResetResponse)
+def reset_user_password_endpoint(
+    user_id: int,
+    payload: AdminPasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> AdminPasswordResetResponse:
+    is_admin_actor = (
+        current_user.is_admin
+        or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "head_library")
+        or has_role(db, current_user, "librarian")
+    )
+    if not is_admin_actor:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    user = get_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    new_pass = (payload.new_password or "").strip()
+    if not new_pass:
+        new_pass = generate_default_password()
+
+    updated = admin_reset_password(
+        db=db,
+        user=user,
+        new_password=new_pass,
+        must_change_password=payload.must_change_password,
+    )
+
+    create_notification(
+        db,
+        user_id=updated.id,
+        ntype="account_security",
+        message="Your account password was reset by a system administrator. Please sign in with your temporary credentials.",
+    )
+
+    email_sent = False
+    if payload.send_email and user.email:
+        subject = "GIMPA Thesis Management System - Password Reset Credentials"
+        msg = (
+            f"Hello {user.full_name or user.email},\n\n"
+            f"An administrator has reset your password for the GIMPA Thesis Management System.\n\n"
+            f"- Role: {user.role.replace('_', ' ').title()}\n"
+            f"- Email: {user.email}\n"
+            f"- School ID: {user.school_id or 'N/A'}\n"
+            f"- Temporary Password: {new_pass}\n\n"
+            f"Please sign in at: https://thesis.manamatechnologies.com/login\n\n"
+            f"{'Note: You will be required to update your password immediately upon login.' if payload.must_change_password else ''}\n\n"
+            f"Best regards,\nGIMPA Academic Management System"
+        )
+        background_tasks.add_task(
+            send_batch_emails,
+            [{
+                "to_email": user.email,
+                "to_name": user.full_name or user.email,
+                "subject": subject,
+                "message": msg,
+            }]
+        )
+        email_sent = True
+
+    return AdminPasswordResetResponse(
+        user_id=updated.id,
+        email=updated.email,
+        new_password=new_pass,
+        must_change_password=updated.must_change_password,
+        email_sent=email_sent,
+        message=f"Password for {updated.email} successfully reset."
+    )
+
+
+def _get_student_phase(db: Session, student_id: int) -> str:
+    paper = db.query(Paper).filter(Paper.created_by_id == student_id).order_by(desc(Paper.id)).first()
+    if not paper:
+        return "Phase 1: Proposals"
+    st = (paper.status or "").lower()
+    if st in ["draft", "proposal_submitted", "proposal_under_review"]:
+        return "Phase 1: Proposals"
+    if st in ["proposal_approved", "supervisor_assigned"]:
+        return "Phase 2: Allocation"
+    if st in ["chapters_in_progress", "chapters_submitted", "ready_for_examination"]:
+        return "Phase 3: Chapters"
+    if st in ["under_examination", "examination_completed"]:
+        return "Phase 4: Examination"
+    if st in ["corrections_approved", "dean_signoff", "published"]:
+        return "Phase 5: Sign-Off"
+    return "Phase 1: Proposals"
+
+
+def _resolve_broadcast_recipients(
+    db: Session,
+    filters: AdminBroadcastFilter | None = None,
+    recipient_ids: list[int] | None = None,
+) -> list[User]:
+    if recipient_ids and len(recipient_ids) > 0:
+        return db.query(User).filter(User.id.in_(recipient_ids)).all()
+
+    query = db.query(User)
+
+    if filters:
+        if filters.user_ids and len(filters.user_ids) > 0:
+            return query.filter(User.id.in_(filters.user_ids)).all()
+
+        if filters.roles and len(filters.roles) > 0 and "all" not in [r.lower() for r in filters.roles]:
+            norm_roles = [r.strip().lower() for r in filters.roles]
+            user_ids_with_role = (
+                db.query(UserRoleModel.user_id)
+                .filter(func.lower(UserRoleModel.role).in_(norm_roles))
+                .distinct()
+                .all()
+            )
+            role_user_ids = {r[0] for r in user_ids_with_role}
+            query = query.filter(
+                or_(
+                    func.lower(User.role).in_(norm_roles),
+                    User.id.in_(role_user_ids),
+                )
+            )
+
+        if filters.schools and len(filters.schools) > 0 and "all" not in [s.lower() for s in filters.schools]:
+            norm_schools = [s.strip().lower() for s in filters.schools]
+            query = query.filter(func.lower(User.school).in_(norm_schools))
+
+        if filters.departments and len(filters.departments) > 0 and "all" not in [d.lower() for d in filters.departments]:
+            norm_depts = [d.strip().lower() for d in filters.departments]
+            query = query.filter(func.lower(User.department).in_(norm_depts))
+
+        if filters.programs and len(filters.programs) > 0 and "all" not in [p.lower() for p in filters.programs]:
+            prog_clauses = [User.program.ilike(f"%{p}%") for p in filters.programs]
+            query = query.filter(or_(*prog_clauses))
+
+        if filters.search and filters.search.strip():
+            s = f"%{filters.search.strip()}%"
+            query = query.filter(
+                or_(
+                    User.full_name.ilike(s),
+                    User.email.ilike(s),
+                    User.school_id.ilike(s),
+                )
+            )
+
+    matched_users = query.all()
+
+    # Filter by phases if specified
+    if filters and filters.phases and len(filters.phases) > 0 and "all" not in [p.lower() for p in filters.phases]:
+        filtered_by_phase = []
+        target_phases = [p.strip().lower() for p in filters.phases]
+        
+        for u in matched_users:
+            phase_label = _get_student_phase(db, u.id).lower()
+            if any(tp in phase_label for tp in target_phases):
+                filtered_by_phase.append(u)
+        return filtered_by_phase
+
+    return matched_users
+
+
+@router.post("/admin/broadcast-preview", response_model=AdminBroadcastPreviewResponse)
+@router.post("/users/broadcast-preview", response_model=AdminBroadcastPreviewResponse)
+def preview_broadcast_recipients_endpoint(
+    payload: AdminBroadcastFilter,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> AdminBroadcastPreviewResponse:
+    is_admin_actor = (
+        current_user.is_admin
+        or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "head_library")
+        or has_role(db, current_user, "librarian")
+        or has_role(db, current_user, "dean")
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "project_coordinator")
+    )
+    if not is_admin_actor:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to broadcast messages")
+
+    recipients = _resolve_broadcast_recipients(db, filters=payload)
+    items = []
+    for u in recipients:
+        phase = _get_student_phase(db, u.id) if u.role == "student" else None
+        items.append(
+            BroadcastRecipientPreview(
+                id=u.id,
+                full_name=u.full_name,
+                email=u.email,
+                school_id=u.school_id,
+                role=u.role,
+                school=u.school,
+                department=u.department,
+                program=u.program,
+                phase=phase,
+                is_active=u.is_active,
+            )
+        )
+    return AdminBroadcastPreviewResponse(
+        total_count=len(items),
+        recipients=items,
+    )
+
+
+@router.post("/admin/broadcast", response_model=AdminBroadcastResponse)
+@router.post("/users/broadcast", response_model=AdminBroadcastResponse)
+def send_admin_broadcast_endpoint(
+    payload: AdminBroadcastRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> AdminBroadcastResponse:
+    is_admin_actor = (
+        current_user.is_admin
+        or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "head_library")
+        or has_role(db, current_user, "librarian")
+        or has_role(db, current_user, "dean")
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "project_coordinator")
+    )
+    if not is_admin_actor:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to broadcast messages")
+
+    subject = (payload.subject or "").strip()
+    body = (payload.message or "").strip()
+    if not subject or not body:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subject and message are required")
+
+    recipients = _resolve_broadcast_recipients(
+        db,
+        filters=payload.filters,
+        recipient_ids=payload.recipient_ids,
+    )
+
+    if not recipients:
+        return AdminBroadcastResponse(
+            recipients_count=0,
+            notifications_created=0,
+            emails_queued=0,
+            message="No recipients matched the specified criteria.",
+        )
+
+    sender_title = current_user.full_name or current_user.email
+    notif_msg = f"[{subject}] {body}"
+    notifications_created = 0
+
+    for u in recipients:
+        create_notification(
+            db,
+            user_id=u.id,
+            ntype=f"broadcast_{payload.announcement_type}",
+            message=notif_msg,
+        )
+        notifications_created += 1
+
+    emails_queued = 0
+    if payload.include_email:
+        email_items = []
+        for u in recipients:
+            if not u.email:
+                continue
+            email_body = (
+                f"Hello {u.full_name or u.email},\n\n"
+                f"You have received a message from {sender_title}:\n\n"
+                f"{body}\n\n"
+                f"----------------------------------------\n"
+                f"Access the GIMPA Portal: https://thesis.manamatechnologies.com/login\n\n"
+                f"Ghana Institute of Management and Public Administration (GIMPA)"
+            )
+            email_items.append({
+                "to_email": u.email,
+                "to_name": u.full_name or u.email,
+                "subject": f"[GIMPA Notice] {subject}",
+                "message": email_body,
+            })
+            emails_queued += 1
+
+        if email_items:
+            background_tasks.add_task(send_batch_emails, email_items)
+
+    db.commit()
+
+    return AdminBroadcastResponse(
+        recipients_count=len(recipients),
+        notifications_created=notifications_created,
+        emails_queued=emails_queued,
+        message=f"Broadcast successfully dispatched to {len(recipients)} recipient(s)."
+    )

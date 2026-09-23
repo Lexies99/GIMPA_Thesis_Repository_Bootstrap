@@ -34,6 +34,7 @@ export interface ApiUser {
   school: string | null
   full_name: string | null
   department: string | null
+  program?: string | null
   is_active: boolean
   is_admin: boolean
   role: ApiUserRole
@@ -447,6 +448,142 @@ export async function apiActivateUser(userId: number, accessToken: string): Prom
     },
   })
   return handleResponse<ApiUser>(response)
+}
+
+export interface ApiUserUpdatePayload {
+  email?: string
+  school_id?: string
+  school?: string
+  full_name?: string
+  department?: string
+  program?: string
+  password?: string
+  is_admin?: boolean
+  is_active?: boolean
+  role?: ApiUserRole
+  roles?: ApiUserRole[]
+  must_change_password?: boolean
+}
+
+export interface ApiAdminPasswordResetPayload {
+  new_password?: string
+  must_change_password?: boolean
+  send_email?: boolean
+}
+
+export interface ApiAdminPasswordResetResponse {
+  user_id: number
+  email: string
+  new_password: string
+  must_change_password: boolean
+  email_sent: boolean
+  message: string
+}
+
+export interface ApiAdminBroadcastFilter {
+  roles?: string[]
+  schools?: string[]
+  departments?: string[]
+  programs?: string[]
+  phases?: string[]
+  user_ids?: number[]
+  search?: string
+}
+
+export interface ApiBroadcastRecipientPreview {
+  id: number
+  full_name: string | null
+  email: string
+  school_id: string | null
+  role: string
+  school: string | null
+  department: string | null
+  program: string | null
+  phase: string | null
+  is_active: boolean
+}
+
+export interface ApiAdminBroadcastPreviewResponse {
+  total_count: number
+  recipients: ApiBroadcastRecipientPreview[]
+}
+
+export interface ApiAdminBroadcastRequest {
+  filters?: ApiAdminBroadcastFilter
+  recipient_ids?: number[]
+  subject: string
+  message: string
+  announcement_type?: string
+  include_email?: boolean
+}
+
+export interface ApiAdminBroadcastResponse {
+  recipients_count: number
+  notifications_created: number
+  emails_queued: number
+  message: string
+}
+
+export async function apiAdminUpdateUser(
+  userId: number,
+  payload: ApiUserUpdatePayload,
+  accessToken: string
+): Promise<ApiUser> {
+  const response = await fetch(`${apiBase}/users/${userId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiUser>(response)
+}
+
+export async function apiAdminResetPassword(
+  userId: number,
+  payload: ApiAdminPasswordResetPayload,
+  accessToken: string
+): Promise<ApiAdminPasswordResetResponse> {
+  const response = await fetch(`${apiBase}/users/${userId}/reset-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiAdminPasswordResetResponse>(response)
+}
+
+export async function apiAdminBroadcastPreview(
+  filter: ApiAdminBroadcastFilter,
+  accessToken: string
+): Promise<ApiAdminBroadcastPreviewResponse> {
+  const response = await fetch(`${apiBase}/users/broadcast-preview`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(filter),
+  })
+  return handleResponse<ApiAdminBroadcastPreviewResponse>(response)
+}
+
+export async function apiAdminSendBroadcast(
+  payload: ApiAdminBroadcastRequest,
+  accessToken: string
+): Promise<ApiAdminBroadcastResponse> {
+  const response = await fetch(`${apiBase}/users/broadcast`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return handleResponse<ApiAdminBroadcastResponse>(response)
 }
 
 export async function apiListPapers(params: {
@@ -956,6 +1093,13 @@ export interface ApiPipelinePhase {
   count: number
   students: ApiPipelineStudent[]
 }
+
+export type ApiPipelinePhaseKey =
+  | 'phase1_proposals'
+  | 'phase2_allocation'
+  | 'phase3_chapters'
+  | 'phase4_examination'
+  | 'phase5_signoff'
 
 export interface ApiPipelineMetrics {
   phase1_proposals: ApiPipelinePhase

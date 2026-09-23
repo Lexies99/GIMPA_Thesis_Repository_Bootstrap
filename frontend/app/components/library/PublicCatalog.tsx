@@ -7,7 +7,7 @@ import { Input } from '../ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
 import { useAuth } from '../../context/AuthContext'
-import { Bookmark, Download, Eye, Grid3x3, List, Search, Star, TrendingUp } from 'lucide-react'
+import { Bookmark, BookOpen, Download, Eye, Grid3x3, List, LogIn, Search, Star, TrendingUp } from 'lucide-react'
 import { apiDownloadPaperFile, apiListPapers, apiTrackPaperView } from '../../lib/api'
 import { convertTextOrTopicToPdf } from '../../lib/pdfGenerator'
 import type { ApiPaper } from '../../lib/api'
@@ -207,20 +207,135 @@ export function PublicCatalog() {
     </Card>
   )
 
+  const FACULTIES = [
+    { id: 'all', label: 'All Faculties' },
+    { id: 'gbs', label: 'GIMPA Business School (GBS)', shortLabel: 'GBS' },
+    { id: 'spsg', label: 'Public Service & Governance', shortLabel: 'SPSG' },
+    { id: 'law', label: 'Faculty of Law', shortLabel: 'Law' },
+    { id: 'sotss', label: 'Technology & Social Sciences', shortLabel: 'SOTSS' },
+  ]
+
+  const [activeFaculty, setActiveFaculty] = useState('all')
+
+  const filteredPapers = useMemo(() => {
+    if (activeFaculty === 'all') return papers
+    const facultyMap: Record<string, string[]> = {
+      gbs: ['business', 'management', 'finance', 'accounting', 'marketing', 'gbs'],
+      spsg: ['public', 'governance', 'administration', 'policy', 'spsg'],
+      law: ['law', 'legal', 'jurisprudence'],
+      sotss: ['technology', 'social', 'science', 'computing', 'it', 'sotss'],
+    }
+    const keywords = facultyMap[activeFaculty] || []
+    return papers.filter((p) => {
+      const disc = (p.discipline || '').toLowerCase()
+      return keywords.some((kw) => disc.includes(kw))
+    })
+  }, [papers, activeFaculty])
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-2xl font-bold">Public Catalog</h2>
-          <p className="text-sm text-muted-foreground mt-1">Browse and discover research papers</p>
+      {/* ── HERO BANNER ─────────────────────────────────── */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #2A528A 0%, #5D6EC7 50%, #9F71DB 100%)',
+          borderRadius: '16px',
+          padding: '36px 32px 32px',
+          position: 'relative',
+          overflow: 'hidden',
+          color: '#fff',
+        }}
+      >
+        {/* Decorative circles */}
+        <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '200px', height: '200px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+        <div style={{ position: 'absolute', bottom: '-50px', right: '200px', width: '160px', height: '160px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
+
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 16px',
+              background: 'rgba(233,212,152,0.2)',
+              borderRadius: '999px',
+              border: '1px solid rgba(233,212,152,0.3)',
+              marginBottom: '16px',
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase' as const,
+              color: '#E9D498',
+            }}
+          >
+            🎓 Ghana Institute of Management and Public Administration (GIMPA)
+          </div>
+
+          <h1 style={{ fontWeight: 800, fontSize: '28px', lineHeight: 1.25, margin: '0 0 10px', color: '#fff' }}>
+            Institutional Thesis & Research Repository
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.78)', fontSize: '14px', lineHeight: 1.65, margin: '0 0 20px', maxWidth: '700px' }}>
+            Explore peer-reviewed doctoral dissertations, postgraduate theses, and scholarly research publications across all GIMPA academic faculties and departments.
+          </p>
+
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' as const }}>
+            {[
+              { icon: '🎓', label: '4 Academic Faculties' },
+              { icon: '📄', label: 'PhD & Masters Theses' },
+              { icon: '🏛️', label: 'Open Academic Access' },
+            ].map((badge) => (
+              <div
+                key={badge.label}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  background: 'rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  backdropFilter: 'blur(8px)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#fff',
+                }}
+              >
+                <span>{badge.icon}</span>
+                <span>{badge.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border p-0.5" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
+      </div>
+
+      {/* ── SEARCH + VIEW TOGGLE ───────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{
+          flex: 1,
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: '#fff', border: '1.5px solid #e2e8f0',
+          borderRadius: 10, padding: '0 14px',
+          boxShadow: '0 1px 4px rgba(42,82,138,0.06)',
+        }}>
+          <Search style={{ width: 16, height: 16, color: '#94a3b8', flexShrink: 0 }} />
+          <input
+            type="text"
+            placeholder="Search by title, author, keyword, discipline, or year..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              flex: 1, width: '100%', border: 'none', outline: 'none',
+              background: 'transparent', fontSize: 14, color: '#1e293b',
+              padding: '12px 0', fontFamily: 'Inter, sans-serif',
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border p-0.5" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
           <button
             onClick={() => setViewMode('grid')}
             className="p-2 rounded-md transition-colors"
             style={viewMode === 'grid'
-              ? {backgroundColor:'#8b5cf6',color:'#fff'}
-              : {backgroundColor:'transparent',color:'var(--text-muted)'}}
+              ? { backgroundColor: '#5D6EC7', color: '#fff' }
+              : { backgroundColor: 'transparent', color: '#94a3b8' }}
             title="Grid view"
           >
             <Grid3x3 className="h-4 w-4" />
@@ -229,8 +344,8 @@ export function PublicCatalog() {
             onClick={() => setViewMode('list')}
             className="p-2 rounded-md transition-colors"
             style={viewMode === 'list'
-              ? {backgroundColor:'#8b5cf6',color:'#fff'}
-              : {backgroundColor:'transparent',color:'var(--text-muted)'}}
+              ? { backgroundColor: '#5D6EC7', color: '#fff' }
+              : { backgroundColor: 'transparent', color: '#94a3b8' }}
             title="List view"
           >
             <List className="h-4 w-4" />
@@ -238,40 +353,69 @@ export function PublicCatalog() {
         </div>
       </div>
 
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        background: '#fff', border: '1.5px solid #e2e8f0',
-        borderRadius: 10, padding: '0 14px',
-        boxShadow: '0 1px 4px rgba(42,82,138,0.06)',
-      }}>
-        <Search style={{ width: 16, height: 16, color: '#94a3b8', flexShrink: 0 }} />
-        <input
-          type="text"
-          placeholder="Search papers, authors, disciplines..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            flex: 1, width: '100%', border: 'none', outline: 'none',
-            background: 'transparent', fontSize: 14, color: '#1e293b',
-            padding: '12px 0', fontFamily: 'Inter, sans-serif',
-          }}
-        />
+      {/* ── FACULTY FILTER CHIPS ───────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' as const }}>
+        <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' as const, letterSpacing: '0.04em' }}>
+          Faculty:
+        </span>
+        {FACULTIES.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setActiveFaculty(f.id)}
+            style={{
+              padding: '6px 14px',
+              fontSize: '12px',
+              fontWeight: activeFaculty === f.id ? 700 : 500,
+              color: activeFaculty === f.id ? '#2A528A' : '#64748b',
+              background: activeFaculty === f.id ? '#fff' : 'transparent',
+              border: activeFaculty === f.id ? '1.5px solid #5D6EC7' : '1px solid #e2e8f0',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              boxShadow: activeFaculty === f.id ? '0 1px 4px rgba(93,110,199,0.15)' : 'none',
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
+      {/* ── TABS + PUBLICATION COUNT ───────────────────── */}
       <Tabs value={activeCategory} onValueChange={setActiveCategory} defaultValue="all">
-        <TabsList className="flex w-full overflow-x-auto justify-start sm:grid sm:grid-cols-4 gap-1 p-1 h-auto min-h-[42px] scrollbar-none">
-          {categories.map((cat) => (
-            <TabsTrigger key={cat.id} value={cat.id} className="shrink-0 flex-1 sm:flex-initial py-2 px-3 text-xs sm:text-sm whitespace-nowrap">
-              <span>
-                {cat.label}
-                {cat.id === 'all' && ` (${categoryCounts.all})`}
-                {cat.id === 'trending' && ` (${categoryCounts.trending})`}
-                {cat.id === 'highest-rated' && ` (${categoryCounts.highest})`}
-                {cat.id === 'most-downloaded' && ` (${categoryCounts.downloads})`}
-              </span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: '8px' }}>
+          <TabsList className="flex overflow-x-auto justify-start gap-1 p-1 h-auto min-h-[42px] scrollbar-none" style={{ background: 'transparent', border: 'none' }}>
+            {categories.map((cat) => {
+              const count = cat.id === 'all' ? categoryCounts.all
+                : cat.id === 'trending' ? categoryCounts.trending
+                : cat.id === 'highest-rated' ? categoryCounts.highest
+                : categoryCounts.downloads
+              return (
+                <TabsTrigger key={cat.id} value={cat.id} className="shrink-0 py-2 px-3 text-xs sm:text-sm whitespace-nowrap" style={{
+                  border: activeCategory === cat.id ? '1.5px solid #5D6EC7' : '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  background: activeCategory === cat.id ? '#fff' : 'transparent',
+                }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {cat.icon && <TrendingUp style={{ width: 14, height: 14 }} />}
+                    {cat.label}
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      minWidth: '20px', height: '20px', padding: '0 6px',
+                      borderRadius: '999px', fontSize: '11px', fontWeight: 700,
+                      background: activeCategory === cat.id ? 'rgba(93,110,199,0.12)' : '#f1f5f9',
+                      color: activeCategory === cat.id ? '#2A528A' : '#94a3b8',
+                    }}>
+                      {count}
+                    </span>
+                  </span>
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+          <span style={{ fontSize: '13px', color: '#94a3b8', whiteSpace: 'nowrap' as const, flexShrink: 0 }}>
+            Showing {filteredPapers.length} publication{filteredPapers.length !== 1 ? 's' : ''}
+          </span>
+        </div>
 
         <TabsContent value={activeCategory} className="space-y-4">
           {loading ? (
@@ -282,21 +426,60 @@ export function PublicCatalog() {
             <Card>
               <CardContent className="pt-6 text-center text-destructive">{error}</CardContent>
             </Card>
-          ) : papers.length === 0 ? (
-            <Card>
-              <CardContent className="pt-6 text-center text-muted-foreground">
-                <p>No papers found matching your criteria</p>
-              </CardContent>
-            </Card>
+          ) : filteredPapers.length === 0 ? (
+            /* ── ENHANCED EMPTY STATE ─────────────────── */
+            <div style={{
+              textAlign: 'center',
+              padding: '48px 24px',
+              background: '#f8fafc',
+              borderRadius: '16px',
+              border: '1px solid #e2e8f0',
+            }}>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: '64px', height: '64px', borderRadius: '16px',
+                background: 'linear-gradient(135deg, rgba(42,82,138,0.08), rgba(93,110,199,0.12))',
+                marginBottom: '16px',
+              }}>
+                <BookOpen style={{ width: 28, height: 28, color: '#5D6EC7' }} />
+              </div>
+              <h3 style={{ fontWeight: 700, fontSize: '18px', color: '#1e293b', margin: '0 0 8px' }}>
+                Welcome to the GIMPA Research Catalog
+              </h3>
+              <p style={{ color: '#94a3b8', fontSize: '14px', lineHeight: 1.6, maxWidth: '480px', margin: '0 auto 24px' }}>
+                The GIMPA Thesis Repository hosts approved academic works, doctoral dissertations, and research monographs across our academic faculties.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' as const }}>
+                {!isAuthenticated && (
+                  <Button
+                    className="btn-ta-primary"
+                    onClick={() => navigate('/login')}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <LogIn style={{ width: 14, height: 14 }} /> Sign In to Submit Theses & Proposals
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setActiveCategory('all')
+                    setActiveFaculty('all')
+                  }}
+                >
+                  Refresh Catalog
+                </Button>
+              </div>
+            </div>
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {papers.map((paper) => (
+              {filteredPapers.map((paper) => (
                 <PaperCard key={paper.id} paper={paper} />
               ))}
             </div>
           ) : (
             <div className="space-y-3">
-              {papers.map((paper, idx) => (
+              {filteredPapers.map((paper, idx) => (
                 <Card key={paper.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => openAbstract(paper)}>
                   <CardContent className="pt-6">
                     <div className="flex items-start gap-4 justify-between">
@@ -366,6 +549,55 @@ export function PublicCatalog() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* ── BROWSE BY ACADEMIC FACULTY PORTALS ──────── */}
+      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '28px' }}>
+        <h3 style={{
+          textAlign: 'center', fontSize: '12px', fontWeight: 700,
+          color: '#2A528A', letterSpacing: '0.08em', textTransform: 'uppercase' as const,
+          margin: '0 0 20px',
+        }}>
+          Browse by Academic Faculty Portals
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+          {[
+            { code: 'GBS', name: 'GIMPA Business School (GBS)', faculty: 'gbs' },
+            { code: 'SPSG', name: 'Public Service & Governance', faculty: 'spsg' },
+            { code: 'Law', name: 'Faculty of Law', faculty: 'law' },
+            { code: 'SOTSS', name: 'Technology & Social Sciences', faculty: 'sotss' },
+          ].map((portal) => (
+            <button
+              key={portal.code}
+              onClick={() => {
+                setActiveFaculty(portal.faculty)
+                setActiveCategory('all')
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '12px',
+                padding: '16px 20px', background: '#fff',
+                border: activeFaculty === portal.faculty ? '1.5px solid #5D6EC7' : '1px solid #e2e8f0',
+                borderRadius: '12px', cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                textAlign: 'left' as const,
+                boxShadow: activeFaculty === portal.faculty ? '0 2px 8px rgba(93,110,199,0.15)' : '0 1px 3px rgba(0,0,0,0.04)',
+              }}
+            >
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '8px',
+                background: 'linear-gradient(135deg, rgba(42,82,138,0.08), rgba(93,110,199,0.12))',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: '16px' }}>🏛️</span>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '14px', color: '#1e293b' }}>{portal.code}</div>
+                <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>{portal.name}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <Dialog open={abstractOpen} onOpenChange={setAbstractOpen}>
         <DialogContent className="max-w-2xl">

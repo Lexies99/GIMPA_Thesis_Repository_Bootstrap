@@ -34,7 +34,7 @@ const SelectValue = ({ placeholder, children }: { placeholder?: string; children
   return <option value="">{placeholder || "Select option"}</option>
 }
 
-const SelectContent = ({ children }: { children: React.ReactNode }) => (
+const SelectContent = ({ children }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) => (
   <>{children}</>
 )
 

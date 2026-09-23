@@ -48,9 +48,9 @@ def list_phd_dossiers(
     # Find all users who are students with degree_level == 'PhD' or in PhD papers
     phd_papers = db.query(Paper).filter(
         or_(
-            Paper.degree_level.ilike("%phd%"),
-            Paper.degree_level.ilike("%doctor%"),
             Paper.document_type == "doctoral_thesis",
+            Paper.title.ilike("%phd%"),
+            Paper.title.ilike("%doctor%"),
         )
     ).all()
     student_ids = {p.created_by_id for p in phd_papers if p.created_by_id}

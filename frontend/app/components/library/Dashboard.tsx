@@ -37,6 +37,7 @@ import type {
   ApiSupervisorReviewSummary,
   ApiUser,
   ApiPipelineMetrics,
+  ApiPipelinePhaseKey,
   ApiPipelineStudent,
   ApiSupervisorAdvisee,
   ApiSupervisorMessagePayload,
@@ -676,7 +677,7 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [students, setStudents] = useState<ApiStudent[]>([])
   const [users, setUsers] = useState<ApiUser[]>([])
   const [pipelineMetrics, setPipelineMetrics] = useState<ApiPipelineMetrics | null>(null)
-  const [selectedPhaseKey, setSelectedPhaseKey] = useState<keyof ApiPipelineMetrics>('phase1_proposals')
+  const [selectedPhaseKey, setSelectedPhaseKey] = useState<ApiPipelinePhaseKey>('phase1_proposals')
 
   // Pipeline Filter States
   const [pipelineProgram, setPipelineProgram] = useState<string>('ALL')
@@ -798,7 +799,7 @@ export function Dashboard({ userRole }: DashboardProps) {
           if ((pipe.available_programs || []).length > 0) {
             setPipelineAllPrograms(pipe.available_programs || [])
           }
-          const phaseKeys: (keyof ApiPipelineMetrics)[] = ['phase1_proposals', 'phase2_allocation', 'phase3_chapters', 'phase4_examination', 'phase5_signoff']
+          const phaseKeys: ApiPipelinePhaseKey[] = ['phase1_proposals', 'phase2_allocation', 'phase3_chapters', 'phase4_examination', 'phase5_signoff']
           const activeKey = phaseKeys.find((k) => (pipe[k]?.count ?? 0) > 0)
           if (activeKey) {
             setSelectedPhaseKey(activeKey)
@@ -833,7 +834,7 @@ export function Dashboard({ userRole }: DashboardProps) {
       ['Index Number', 'Student Name', 'Program', 'Supervisor', 'Thesis Title', 'Phase Milestone', 'Current Status']
     ]
 
-    const phaseKeys: (keyof ApiPipelineMetrics)[] = [
+    const phaseKeys: ApiPipelinePhaseKey[] = [
       'phase1_proposals',
       'phase2_allocation',
       'phase3_chapters',
@@ -844,7 +845,7 @@ export function Dashboard({ userRole }: DashboardProps) {
     phaseKeys.forEach((key) => {
       const phase = pipelineMetrics[key]
       if (phase && phase.students) {
-        phase.students.forEach((st) => {
+        phase.students.forEach((st: ApiPipelineStudent) => {
           rows.push([
             st.index_number || '',
             st.student_name || '',
@@ -1121,14 +1122,14 @@ export function Dashboard({ userRole }: DashboardProps) {
                   { key: 'phase4_examination', label: 'P4: Examination' },
                   { key: 'phase5_signoff', label: 'P5: Sign-off' },
                 ].map((phase) => {
-                  const phaseData = pipelineMetrics?.[phase.key as keyof ApiPipelineMetrics]
+                  const phaseData = pipelineMetrics?.[phase.key as ApiPipelinePhaseKey]
                   const count = phaseData?.count ?? 0
                   const isSelected = selectedPhaseKey === phase.key
                   return (
                     <button
                       key={phase.key}
                       type="button"
-                      onClick={() => setSelectedPhaseKey(phase.key as keyof ApiPipelineMetrics)}
+                      onClick={() => setSelectedPhaseKey(phase.key as ApiPipelinePhaseKey)}
                       className="p-3 rounded-xl border text-left transition-all cursor-pointer"
                       style={{
                         backgroundColor: isSelected ? 'rgba(139, 92, 246, 0.12)' : 'var(--bg-input)',
@@ -1157,7 +1158,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                     }
                   </h4>
                   <span className="badge-ta-purple text-xs px-3 py-1 rounded-full font-mono font-bold">
-                    {pipelineMetrics?.[selectedPhaseKey]?.students.length ?? 0} Active
+                    {pipelineMetrics?.[selectedPhaseKey]?.students?.length ?? 0} Active
                   </span>
                 </div>
 
@@ -1178,7 +1179,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                         </tr>
                       </thead>
                       <tbody className="divide-y" style={{borderColor:'var(--border-color)'}}>
-                        {pipelineMetrics[selectedPhaseKey].students.map((st) => (
+                        {pipelineMetrics[selectedPhaseKey].students.map((st: ApiPipelineStudent) => (
                           <tr key={st.paper_id} className="transition-colors hover:bg-purple-500/5">
                             <td className="px-4 py-3 font-mono font-semibold text-purple-500">{st.index_number}</td>
                             <td className="px-4 py-3 font-bold" style={{color:'var(--text-main)'}}>{st.student_name}</td>

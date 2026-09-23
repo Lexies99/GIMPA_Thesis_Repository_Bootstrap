@@ -35,10 +35,10 @@ def normalize_role(role: str) -> str:
     return normalized
 
 
-def _validate_role_identity_fields(*, role: str, school_id: str | None) -> None:
+def _validate_role_identity_fields(*, role: str, school_id: str | None, is_create: bool = False) -> None:
     normalized_role = normalize_role(role)
     normalized_school_id = (school_id or "").strip()
-    if normalized_role in ROLE_REQUIRES_SCHOOL_ID and not normalized_school_id:
+    if is_create and normalized_role in ROLE_REQUIRES_SCHOOL_ID and not normalized_school_id:
         raise ValueError(f"School ID is required for role '{normalized_role}'")
 
 
@@ -183,7 +183,7 @@ def create_user(
     normalized_role = normalize_role(role)
     if normalized_role not in VALID_USER_ROLES:
         raise ValueError(f"Unsupported role: {role}")
-    _validate_role_identity_fields(role=normalized_role, school_id=school_id)
+    _validate_role_identity_fields(role=normalized_role, school_id=school_id, is_create=True)
     user = User(
         email=normalized_email,
         school_id=(school_id or "").strip() or None,
@@ -228,26 +228,55 @@ def update_user(db: Session, user: User, payload: UserUpdate) -> User:
         user.school = payload.school.strip() or None
     if payload.department is not None:
         user.department = payload.department
+    if payload.program is not None:
+        user.program = payload.program.strip() or None
+    if payload.must_change_password is not None:
+        user.must_change_password = payload.must_change_password
     if payload.password:
         validate_password_requirements(payload.password)
         user.hashed_password = hash_password(payload.password)
-        user.must_change_password = False
+        if payload.must_change_password is None:
+            user.must_change_password = False
     if payload.is_admin is not None:
         user.is_admin = payload.is_admin
-        if payload.role is None:
+        if payload.role is None and not payload.roles:
             user.role = "librarian" if payload.is_admin else user.role
     if payload.is_active is not None:
         user.is_active = payload.is_active
-    if payload.role is not None:
+
+    if payload.roles is not None and len(payload.roles) > 0:
+        # Replace all roles with provided list
+        db.query(UserRole).filter(UserRole.user_id == user.id).delete()
+        db.flush()
+        valid_roles = []
+        for r in payload.roles:
+            nr = normalize_role(r)
+            if nr in VALID_USER_ROLES and nr not in valid_roles:
+                valid_roles.append(nr)
+                db.add(UserRole(user_id=user.id, role=nr))
+        db.flush()
+        _sync_primary_role(user, valid_roles)
+        user.is_admin = _is_admin_role_set(valid_roles)
+    elif payload.role is not None:
         user = assign_role(db, user, payload.role)
-        _validate_role_identity_fields(role=user.role, school_id=user.school_id)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
 
     _validate_role_identity_fields(role=user.role, school_id=user.school_id)
 
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def admin_reset_password(
+    db: Session,
+    user: User,
+    new_password: str,
+    must_change_password: bool = True,
+) -> User:
+    validate_password_requirements(new_password)
+    user.hashed_password = hash_password(new_password)
+    user.must_change_password = must_change_password
     db.add(user)
     db.commit()
     db.refresh(user)

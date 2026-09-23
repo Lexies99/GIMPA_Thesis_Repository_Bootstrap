@@ -267,14 +267,21 @@ export function PhdHub() {
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <span className="p-2 rounded-xl bg-white/10 text-amber-300">
-                <GraduationCap className="w-6 h-6" />
+              <span
+                className="p-2 rounded-xl flex items-center justify-center"
+                style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                  color: '#fcd34d',
+                  border: '1px solid rgba(255, 255, 255, 0.25)',
+                }}
+              >
+                <GraduationCap className="w-6 h-6 text-amber-300" />
               </span>
-              <h1 className="text-2xl font-black tracking-tight text-white m-0">
+              <h1 className="text-2xl font-black tracking-tight text-white m-0" style={{ color: '#ffffff' }}>
                 GIMPA Business School — PhD Programme Hub
               </h1>
             </div>
-            <p className="text-white/80 text-xs mt-1.5 max-w-3xl leading-relaxed">
+            <p className="text-xs mt-1.5 max-w-3xl leading-relaxed" style={{ color: 'rgba(255, 255, 255, 0.85)' }}>
               Doctor of Philosophy in Business Administration: Coursework, 7-Type Research Seminars, Comprehensive Examination, 12-Stage Supervision Logs, Teaching Practice, 6-Month Review & 18 Reaccreditation Folders.
             </p>
           </div>
@@ -284,6 +291,7 @@ export function PhdHub() {
               onClick={loadAll}
               disabled={loading}
               className="bg-white/10 hover:bg-white/20 text-white text-xs border border-white/20 rounded-xl px-3.5 py-2 flex items-center gap-1.5 transition-all shadow-sm"
+              style={{ color: '#ffffff', backgroundColor: 'rgba(255, 255, 255, 0.15)', borderColor: 'rgba(255, 255, 255, 0.3)' }}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
@@ -293,48 +301,96 @@ export function PhdHub() {
 
         {/* 4 Summary Stat Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-white/15">
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/10">
-            <span className="text-[11px] font-semibold text-white/70 block uppercase tracking-wider">
+          <div
+            className="rounded-xl p-3.5 border transition-all"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <span
+              className="text-[11px] font-semibold block uppercase tracking-wider"
+              style={{ color: 'rgba(255, 255, 255, 0.85)' }}
+            >
               Enrolled PhD Students
             </span>
-            <span className="text-2xl font-black text-white mt-1 block">{dossiers.length}</span>
+            <span className="text-2xl font-black mt-1 block" style={{ color: '#ffffff' }}>
+              {dossiers.length}
+            </span>
           </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/10">
-            <span className="text-[11px] font-semibold text-white/70 block uppercase tracking-wider">
+          <div
+            className="rounded-xl p-3.5 border transition-all"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <span
+              className="text-[11px] font-semibold block uppercase tracking-wider"
+              style={{ color: 'rgba(255, 255, 255, 0.85)' }}
+            >
               Doctoral Candidates
             </span>
-            <span className="text-2xl font-black text-amber-300 mt-1 block">{candidacyCount}</span>
+            <span className="text-2xl font-black mt-1 block" style={{ color: '#fcd34d' }}>
+              {candidacyCount}
+            </span>
           </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/10">
-            <span className="text-[11px] font-semibold text-white/70 block uppercase tracking-wider">
+          <div
+            className="rounded-xl p-3.5 border transition-all"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <span
+              className="text-[11px] font-semibold block uppercase tracking-wider"
+              style={{ color: 'rgba(255, 255, 255, 0.85)' }}
+            >
               60-Day Inactivity Flag
             </span>
             <span
-              className={`text-2xl font-black mt-1 block ${
-                inactiveCount > 0 ? 'text-red-300' : 'text-emerald-300'
-              }`}
+              className="text-2xl font-black mt-1 block"
+              style={{ color: inactiveCount > 0 ? '#fda4af' : '#6ee7b7' }}
             >
               {inactiveCount}
             </span>
           </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/10">
-            <span className="text-[11px] font-semibold text-white/70 block uppercase tracking-wider">
+          <div
+            className="rounded-xl p-3.5 border transition-all"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <span
+              className="text-[11px] font-semibold block uppercase tracking-wider"
+              style={{ color: 'rgba(255, 255, 255, 0.85)' }}
+            >
               Reaccreditation Folders
             </span>
-            <span className="text-2xl font-black text-white mt-1 block">18 Standard</span>
+            <span className="text-2xl font-black mt-1 block" style={{ color: '#ffffff' }}>
+              18 Standard
+            </span>
           </div>
         </div>
       </div>
 
       {/* Inactivity Alert Callout if any */}
       {inactiveCount > 0 && (
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shadow-sm animate-in fade-in">
-          <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div
+          className="p-4 rounded-xl border flex items-start gap-3 shadow-sm animate-in fade-in"
+          style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}
+        >
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#d97706' }} />
           <div className="text-xs">
-            <p className="font-bold text-amber-800 m-0">
+            <p className="font-bold m-0" style={{ color: '#92400e' }}>
               Regulatory Early-Warning: {inactiveCount} PhD student(s) have no logged supervision activity in the past 60 days.
             </p>
-            <p className="text-amber-700 m-0 mt-0.5">
+            <p className="m-0 mt-0.5" style={{ color: '#b45309' }}>
               GIMPA accreditation guidelines mandate monthly research supervision meetings and records to avoid student stalling or abandonment.
             </p>
           </div>
@@ -359,14 +415,16 @@ export function PhdHub() {
               key={tab.key}
               type="button"
               onClick={() => setActiveSubTab(tab.key as any)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-blue-900 text-white shadow-md'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-              }`}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              style={{
+                backgroundColor: isActive ? '#1e3f6d' : '#ffffff',
+                color: isActive ? '#ffffff' : '#334155',
+                border: isActive ? '1.5px solid #1e3f6d' : '1px solid #cbd5e1',
+                boxShadow: isActive ? '0 2px 8px rgba(30,63,109,0.3)' : '0 1px 2px rgba(0,0,0,0.04)',
+              }}
             >
-              <Icon className="w-4 h-4" />
-              {tab.label}
+              <Icon className="w-4 h-4 shrink-0" style={{ color: isActive ? '#ffffff' : '#64748b' }} />
+              <span style={{ color: isActive ? '#ffffff' : '#334155' }}>{tab.label}</span>
             </button>
           )
         })}
@@ -379,13 +437,14 @@ export function PhdHub() {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search student, email, specialization..."
                 className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-800"
+                style={{ paddingLeft: '34px' }}
               />
             </div>
             <div className="text-xs text-slate-500 font-medium">
