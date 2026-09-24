@@ -69,9 +69,11 @@ html, body {
 }
 
 /* ── Override all dark Tailwind utilities ──────────── */
-/* Force dark bg classes to be light */
-.bg-slate-900, .bg-slate-800, .bg-gray-900, .bg-gray-800,
-.bg-zinc-900, .bg-zinc-800, .bg-neutral-900, .bg-neutral-800 {
+/* Force dark bg classes on layout containers to be light, while keeping buttons distinct */
+div.bg-slate-900, div.bg-slate-800, div.bg-gray-900, div.bg-gray-800,
+div.bg-zinc-900, div.bg-zinc-800, div.bg-neutral-900, div.bg-neutral-800,
+section.bg-slate-900, section.bg-slate-800, section.bg-gray-900, section.bg-gray-800,
+main.bg-slate-900, main.bg-slate-800 {
   background-color: #ffffff !important;
 }
 .bg-slate-950, .bg-gray-950, .bg-zinc-950 {

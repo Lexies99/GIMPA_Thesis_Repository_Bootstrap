@@ -535,7 +535,8 @@ export function PhdHub() {
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                   <Button
                     size="sm"
-                    className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg py-1.5"
+                    className="w-full text-white text-xs font-semibold rounded-lg py-1.5"
+                    style={{ background: 'linear-gradient(135deg, #1e3f6d, #2a528a)', color: '#ffffff', border: 'none' }}
                     onClick={() => {
                       setSelectedStudentId(student.student_id)
                       setLogForm((f) => ({ ...f, student_id: student.student_id }))

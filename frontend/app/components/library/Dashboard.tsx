@@ -569,17 +569,19 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
                   <button
                     type="button"
                     onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-white shadow-sm transition-all cursor-pointer hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #1e3f6d, #2a528a)', color: '#ffffff', border: '1px solid #1e3f6d' }}
                   >
-                    <FileEdit className="size-3.5 text-slate-200" />
+                    <FileEdit className="size-3.5 text-blue-200" />
                     📝 Edit & Work on Thesis in ONLYOFFICE
                   </button>
                   <button
                     type="button"
                     onClick={() => window.open(`/editor?paperId=${paper.id}&type=comments`, '_blank')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 shadow-sm transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white shadow-sm transition-all cursor-pointer hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #5D6EC7, #7c3aed)', color: '#ffffff', border: '1px solid #5D6EC7' }}
                   >
-                    <MessageSquare className="size-3.5 text-slate-200" />
+                    <MessageSquare className="size-3.5 text-purple-200" />
                     💬 View Comments Document (ONLYOFFICE Word)
                   </button>
                   <button
