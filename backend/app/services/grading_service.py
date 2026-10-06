@@ -16,6 +16,31 @@ def classify_degree_level(
     """
     Determines the academic degree classification: 'Undergraduate', 'Masters', 'MPhil', or 'PhD'.
     """
+    # 1. Direct explicit paper / thesis degree_level check
+    if paper and getattr(paper, "degree_level", None):
+        deg = str(paper.degree_level).strip()
+        deg_lower = deg.lower()
+        if any(k in deg_lower for k in ["undergrad", "bsc", "bachelor", "diploma"]):
+            return "Undergraduate"
+        if "mphil" in deg_lower or "m.phil" in deg_lower:
+            return "MPhil"
+        if any(k in deg_lower for k in ["phd", "doctor", "doctoral"]):
+            return "PhD"
+        if any(k in deg_lower for k in ["master", "msc", "mba", "ma", "mpa", "med", "mph"]):
+            return "Masters"
+
+    if thesis and getattr(thesis, "degree_level", None):
+        deg = str(thesis.degree_level).strip()
+        deg_lower = deg.lower()
+        if any(k in deg_lower for k in ["undergrad", "bsc", "bachelor"]):
+            return "Undergraduate"
+        if "mphil" in deg_lower or "m.phil" in deg_lower:
+            return "MPhil"
+        if any(k in deg_lower for k in ["phd", "doctor"]):
+            return "PhD"
+        if any(k in deg_lower for k in ["master", "msc", "mba"]):
+            return "Masters"
+
     text_chunks: list[str] = []
 
     if student_user:
@@ -32,6 +57,8 @@ def classify_degree_level(
     if thesis:
         if getattr(thesis, "topic_description", None):
             text_chunks.append(str(thesis.topic_description))
+        if getattr(thesis, "topic_title", None):
+            text_chunks.append(str(thesis.topic_title))
 
     if paper:
         if getattr(paper, "document_type", None):
@@ -40,6 +67,8 @@ def classify_degree_level(
             text_chunks.append(str(paper.publication_type))
         if getattr(paper, "discipline", None):
             text_chunks.append(str(paper.discipline))
+        if getattr(paper, "title", None):
+            text_chunks.append(str(paper.title))
 
     combined = " ".join(text_chunks).lower()
 
@@ -49,7 +78,7 @@ def classify_degree_level(
         return "MPhil"
     if any(k in combined for k in ["master", "msc", "mba", "ma ", "med", "mpa", "mph"]):
         return "Masters"
-    if any(k in combined for k in ["undergraduate", "bsc", "ba ", "llb", "bachelor", "degree", "diploma"]):
+    if any(k in combined for k in ["undergraduate", "bsc", "b.sc", "ba ", "llb", "bachelor", "degree", "diploma", "project"]):
         return "Undergraduate"
 
     return "Masters"

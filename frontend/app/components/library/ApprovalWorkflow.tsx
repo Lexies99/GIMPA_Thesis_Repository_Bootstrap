@@ -160,11 +160,11 @@ export function ApprovalWorkflow() {
   const [documentViewerName, setDocumentViewerName] = useState<string>('')
   const [documentMimeType, setDocumentMimeType] = useState<string>('')
   const [documentLoading, setDocumentLoading] = useState(false)
-  const isLibrarian = user?.role === 'librarian'
-  const canUploadCorrection = user?.role === 'lecturer' || user?.role === 'project_supervisor'
+  const roles = user?.roles || (user?.role ? [user.role] : [])
+  const isLibrarian = roles.includes('librarian') || roles.includes('head_library') || user?.role === 'librarian' || user?.role === 'head_library'
+  const canUploadCorrection = roles.includes('lecturer') || roles.includes('project_supervisor') || user?.role === 'lecturer' || user?.role === 'project_supervisor'
   const correctedFileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const roles = user?.roles || (user?.role ? [user.role] : [])
   const isHOD = roles.includes('hod')
   const isCoordinator = roles.includes('project_coordinator')
   const isSupervisor = roles.includes('project_supervisor') || roles.includes('lecturer') || roles.includes('hod')
@@ -208,6 +208,7 @@ export function ApprovalWorkflow() {
   const [adminMarksData, setAdminMarksData] = useState<ApiAdminMarkSheetResponse | null>(null)
   const [selectedThirdId, setSelectedThirdId] = useState<string>('')
   const [assigningThird, setAssigningThird] = useState(false)
+  const [selectedDegreeTier, setSelectedDegreeTier] = useState<string>('')
 
   useEffect(() => {
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -484,6 +485,15 @@ export function ApprovalWorkflow() {
     setStudentFeedbackData(null)
     setAdminMarksData(null)
 
+    const initialTier = paper.degree_level || 
+      (paper.publication_type?.toLowerCase().includes('undergrad') || 
+       paper.document_type?.toLowerCase().includes('undergrad') || 
+       paper.discipline?.toLowerCase().includes('b.sc') || 
+       paper.discipline?.toLowerCase().includes('bsc') ? 'Undergraduate' : 
+       (paper.publication_type?.toLowerCase().includes('mphil') ? 'MPhil' :
+        (paper.publication_type?.toLowerCase().includes('phd') || paper.document_type?.toLowerCase().includes('phd') || paper.document_type?.toLowerCase().includes('doctoral') ? 'PhD' : 'Masters')));
+    setSelectedDegreeTier(initialTier)
+
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
     if (token) {
       if (canViewScores) {
@@ -502,6 +512,7 @@ export function ApprovalWorkflow() {
     setReviewDecision('')
     setCorrectedFile(null)
     setCorrectedNote('')
+    setSelectedDegreeTier('')
   }
 
   useEffect(() => {
@@ -1489,38 +1500,87 @@ export function ApprovalWorkflow() {
               )}
 
               {selectedPaper.status === 'phase4_pending_examiners' && (isHOD || isCoordinator || isDean || isAdmin) && (() => {
-                const isUndergradPaper = (selectedPaper.degree_level === 'Undergraduate') || 
-                  (selectedPaper.publication_type?.toLowerCase().includes('undergrad') ?? false) ||
-                  (selectedPaper.document_type?.toLowerCase().includes('undergrad') ?? false) ||
-                  (Boolean(selectedPaper.discipline?.toLowerCase().includes('b.sc')) || Boolean(selectedPaper.discipline?.toLowerCase().includes('bsc')));
+                const currentTier = selectedDegreeTier || selectedPaper.degree_level || 
+                  (selectedPaper.publication_type?.toLowerCase().includes('undergrad') || 
+                   selectedPaper.document_type?.toLowerCase().includes('undergrad') || 
+                   selectedPaper.discipline?.toLowerCase().includes('b.sc') || 
+                   selectedPaper.discipline?.toLowerCase().includes('bsc') ? 'Undergraduate' : 
+                   (selectedPaper.publication_type?.toLowerCase().includes('mphil') ? 'MPhil' :
+                    (selectedPaper.publication_type?.toLowerCase().includes('phd') || selectedPaper.document_type?.toLowerCase().includes('phd') || selectedPaper.document_type?.toLowerCase().includes('doctoral') ? 'PhD' : 'Masters')));
+
+                const isUndergrad = currentTier === 'Undergraduate';
+                const isMPhilOrPhD = currentTier === 'PhD' || currentTier === 'MPhil';
+                const isMasters = !isUndergrad && !isMPhilOrPhD;
+
+                // Internal faculty vs external faculty
+                const internalFacultyList = supervisorsList.filter(s => s.role !== 'external_examiner');
+                const externalFacultyList = supervisorsList.filter(s => s.role === 'external_examiner' || s.roles?.includes('external_examiner'));
+                const externalOptionsList = externalFacultyList.length > 0 ? externalFacultyList : supervisorsList;
 
                 return (
                   <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                    <h4 className="font-bold text-sm text-primary flex items-center gap-2">
-                      <Shield className="size-4" />
-                      {isUndergradPaper ? 'Phase 3: Undergraduate Project Examination (Supervisor / Internal Examiner)' : 'Phase 3: Assign Examiners (HOD / Coordinator)'}
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      {isUndergradPaper 
-                        ? 'Undergraduate (B.Sc.) projects are assessed internally by the assigned Project Supervisor or an Internal Examiner. No external examiner is required.'
-                        : 'Assign one internal and one external examiner individually or via automated batch mapping.'}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-primary/10">
+                      <h4 className="font-bold text-sm text-primary flex items-center gap-2 m-0">
+                        <Shield className="size-4" />
+                        {isUndergrad 
+                          ? 'Phase 3: Undergraduate Examination (Single Internal Examiner / Supervisor)' 
+                          : isMasters 
+                          ? 'Phase 3: Master\'s Examination (Two Internal Examiners)' 
+                          : 'Phase 3: Postgraduate Research Examination (1 Internal + 1 External Examiner)'}
+                      </h4>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[11px] text-muted-foreground font-medium">Program Tier:</span>
+                        <div className="inline-flex rounded-lg border border-primary/20 p-0.5 bg-background text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDegreeTier('Undergraduate')}
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${isUndergrad ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            Undergraduate (1 Internal)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDegreeTier('Masters')}
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${isMasters ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            Masters (2 Internal)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDegreeTier('PhD')}
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${isMPhilOrPhD ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            MPhil / PhD (Internal + External)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground m-0">
+                      {isUndergrad && 'Undergraduate (B.Sc./B.A./Diploma) projects are examined internally by the assigned Project Supervisor or 1 Internal Assessor. No external examiner is required.'}
+                      {isMasters && 'Master\'s degree programs (MBA, MSc, MA, MPA) require exactly 2 Internal Examiners from faculty. No external examiner is required by GIMPA regulations.'}
+                      {isMPhilOrPhD && 'MPhil and Doctoral (PhD) theses require 1 Internal Examiner and 1 External Examiner as mandated by postgraduate academic regulations.'}
                     </p>
 
                     {/* Individual Examiner Selection */}
-                    <div className={`grid grid-cols-1 ${isUndergradPaper ? 'md:grid-cols-1' : 'md:grid-cols-2'} gap-4`}>
+                    <div className={`grid grid-cols-1 ${isUndergrad ? 'md:grid-cols-1' : 'md:grid-cols-2'} gap-4`}>
                       <div className="space-y-2">
                         <Label htmlFor="assign-internal-select">
-                          {isUndergradPaper ? 'Select Project Supervisor / Internal Examiner *' : 'Select Internal Examiner *'}
+                          {isUndergrad 
+                            ? 'Select Project Supervisor / Internal Examiner *' 
+                            : isMasters 
+                            ? 'Select Internal Examiner 1 *' 
+                            : 'Select Internal Examiner *'}
                         </Label>
                         <Select 
-                          value={selectedInternalId || (isUndergradPaper && selectedPaper.supervisor_id ? String(selectedPaper.supervisor_id) : '')} 
+                          value={selectedInternalId || (isUndergrad && selectedPaper.supervisor_id ? String(selectedPaper.supervisor_id) : '')} 
                           onValueChange={setSelectedInternalId}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder={isUndergradPaper ? 'Choose Supervisor / Examiner...' : 'Choose Internal Examiner...'} />
+                            <SelectValue placeholder={isUndergrad ? 'Choose Supervisor / Examiner...' : isMasters ? 'Choose Internal Examiner 1...' : 'Choose Internal Examiner...'} />
                           </SelectTrigger>
                           <SelectContent>
-                            {supervisorsList.map((s) => (
+                            {(isMasters ? internalFacultyList : supervisorsList).map((s) => (
                               <SelectItem key={s.id} value={String(s.id)}>
                                 {s.full_name || s.email} {selectedPaper.supervisor_id === s.id ? '(Assigned Supervisor)' : ''}
                               </SelectItem>
@@ -1529,15 +1589,17 @@ export function ApprovalWorkflow() {
                         </Select>
                       </div>
 
-                      {!isUndergradPaper && (
+                      {!isUndergrad && (
                         <div className="space-y-2">
-                          <Label htmlFor="assign-external-select">Select External Examiner *</Label>
+                          <Label htmlFor="assign-external-select">
+                            {isMasters ? 'Select Internal Examiner 2 *' : 'Select External Examiner *'}
+                          </Label>
                           <Select value={selectedExternalId} onValueChange={setSelectedExternalId}>
                             <SelectTrigger>
-                              <SelectValue placeholder="Choose External Examiner..." />
+                              <SelectValue placeholder={isMasters ? 'Choose Internal Examiner 2...' : 'Choose External Examiner...'} />
                             </SelectTrigger>
                             <SelectContent>
-                              {supervisorsList.map((s) => (
+                              {(isMasters ? internalFacultyList : externalOptionsList).map((s) => (
                                 <SelectItem key={s.id} value={String(s.id)}>
                                   {s.full_name || s.email}
                                 </SelectItem>
@@ -1552,17 +1614,17 @@ export function ApprovalWorkflow() {
                       <Button 
                         onClick={async () => {
                           setReviewError('')
-                          const effectiveInternalId = selectedInternalId || (isUndergradPaper && selectedPaper.supervisor_id ? String(selectedPaper.supervisor_id) : '')
+                          const effectiveInternalId = selectedInternalId || (isUndergrad && selectedPaper.supervisor_id ? String(selectedPaper.supervisor_id) : '')
                           if (!effectiveInternalId) {
-                            setReviewError(isUndergradPaper ? 'Please select a Project Supervisor / Internal Examiner.' : 'Please select an Internal Examiner.')
+                            setReviewError(isUndergrad ? 'Please select a Project Supervisor / Internal Examiner.' : isMasters ? 'Please select Internal Examiner 1.' : 'Please select an Internal Examiner.')
                             return
                           }
-                          if (!isUndergradPaper && !selectedExternalId) {
-                            setReviewError('Please select an External Examiner.')
+                          if (!isUndergrad && !selectedExternalId) {
+                            setReviewError(isMasters ? 'Please select Internal Examiner 2.' : 'Please select an External Examiner.')
                             return
                           }
-                          if (!isUndergradPaper && effectiveInternalId === selectedExternalId) {
-                            setReviewError('Internal and External examiners must be different users')
+                          if (!isUndergrad && effectiveInternalId === selectedExternalId) {
+                            setReviewError(isMasters ? 'Internal Examiner 1 and Internal Examiner 2 must be different faculty members.' : 'Internal and External examiners must be different users.')
                             return
                           }
                           const token = localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -1575,8 +1637,9 @@ export function ApprovalWorkflow() {
                             await apiAssignExaminers(
                               selectedPaper.id, 
                               Number(effectiveInternalId), 
-                              isUndergradPaper ? null : Number(selectedExternalId), 
-                              token
+                              isUndergrad ? null : Number(selectedExternalId), 
+                              token,
+                              currentTier
                             )
                             setDialogOpen(false)
                             setSelectedPaper(null)
@@ -1597,9 +1660,9 @@ export function ApprovalWorkflow() {
                             setSubmittingReview(false)
                           }
                         }} 
-                        disabled={submittingReview || (!isUndergradPaper && (!selectedInternalId || !selectedExternalId))}
+                        disabled={submittingReview || (!isUndergrad && (!selectedInternalId || !selectedExternalId))}
                       >
-                        {submittingReview ? 'Assigning...' : (isUndergradPaper ? 'Assign & Advance to Grading' : 'Assign Examiners')}
+                        {submittingReview ? 'Assigning...' : (isUndergrad ? 'Assign & Advance to Grading' : isMasters ? 'Assign 2 Internal Examiners' : 'Assign Internal & External Examiners')}
                       </Button>
                       {reviewError && (
                         <p className="text-xs font-semibold text-destructive mt-1">{reviewError}</p>
@@ -1635,17 +1698,27 @@ export function ApprovalWorkflow() {
 
                   {/* Summary of Examiner Scores */}
                   {(() => {
-                    const isUndergradPaper = (selectedPaper.degree_level === 'Undergraduate') || 
-                      (selectedPaper.publication_type?.toLowerCase().includes('undergrad') ?? false) ||
-                      (selectedPaper.document_type?.toLowerCase().includes('undergrad') ?? false) ||
-                      (Boolean(selectedPaper.discipline?.toLowerCase().includes('b.sc')) || Boolean(selectedPaper.discipline?.toLowerCase().includes('bsc')));
+                    const tier = selectedDegreeTier || selectedPaper.degree_level || 
+                      (selectedPaper.publication_type?.toLowerCase().includes('undergrad') || 
+                       selectedPaper.document_type?.toLowerCase().includes('undergrad') || 
+                       selectedPaper.discipline?.toLowerCase().includes('b.sc') || 
+                       selectedPaper.discipline?.toLowerCase().includes('bsc') ? 'Undergraduate' : 
+                       (selectedPaper.publication_type?.toLowerCase().includes('mphil') ? 'MPhil' :
+                        (selectedPaper.publication_type?.toLowerCase().includes('phd') || selectedPaper.document_type?.toLowerCase().includes('phd') || selectedPaper.document_type?.toLowerCase().includes('doctoral') ? 'PhD' : 'Masters')));
+
+                    const isUndergradPaper = tier === 'Undergraduate';
+                    const isMPhilOrPhD = tier === 'PhD' || tier === 'MPhil';
+                    const isMastersPaper = !isUndergradPaper && !isMPhilOrPhD;
                     const hasExternal = Boolean(selectedPaper.external_examiner_id);
+
+                    const examiner1Label = isUndergradPaper ? 'Supervisor / Internal Examiner Score' : isMastersPaper ? 'Internal Examiner 1 Score' : 'Internal Examiner Score';
+                    const examiner2Label = isMastersPaper ? 'Internal Examiner 2 Score' : 'External Examiner Score';
 
                     return (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
                           <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                            {isUndergradPaper && !hasExternal ? 'Supervisor / Internal Examiner Score' : 'Internal Examiner Score'}
+                            {examiner1Label}
                           </span>
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
@@ -1662,7 +1735,7 @@ export function ApprovalWorkflow() {
                         </div>
 
                         <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
-                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">External Examiner Score</span>
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{examiner2Label}</span>
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
                               {isUndergradPaper && !hasExternal
@@ -1677,7 +1750,7 @@ export function ApprovalWorkflow() {
                               </Badge>
                             ) : isUndergradPaper && !hasExternal ? (
                               <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground border-border">
-                                Optional
+                                Single Examiner
                               </Badge>
                             ) : null}
                           </div>
@@ -1722,7 +1795,9 @@ export function ApprovalWorkflow() {
                         onClick={() => {
                           const isInternal = selectedPaper.internal_examiner_id === user?.id;
                           const isExternal = selectedPaper.external_examiner_id === user?.id;
-                          setActiveExaminerRole(isInternal ? 'Internal Examiner' : (isExternal ? 'External Examiner' : (isHOD || isCoordinator ? 'Coordinator / HOD' : 'Internal Examiner')));
+                          const tier = selectedDegreeTier || selectedPaper.degree_level;
+                          const isMastersTier = tier === 'Masters';
+                          setActiveExaminerRole(isInternal ? (isMastersTier ? 'Internal Examiner 1' : 'Internal Examiner') : (isExternal ? (isMastersTier ? 'Internal Examiner 2' : 'External Examiner') : (isHOD || isCoordinator ? 'Coordinator / HOD' : 'Internal Examiner')));
                           setAssessmentModalOpen(true);
                         }}
                       >

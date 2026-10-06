@@ -28,6 +28,9 @@ class UserBase(BaseModel):
     full_name: str | None = None
     department: str | None = None
     program: str | None = None
+    specialization: str | None = None
+    research_interests: str | None = None
+    max_student_ceiling: int | None = 5
 
 
 class UserCreate(UserBase):
@@ -102,6 +105,7 @@ class UserRead(UserBase):
 class AdminUserCreateResult(BaseModel):
     user: UserRead
     email_sent: bool = False
+    temporary_password: str | None = None
 
 
 class UserUpdate(BaseModel):
@@ -111,6 +115,9 @@ class UserUpdate(BaseModel):
     full_name: str | None = None
     department: str | None = None
     program: str | None = None
+    specialization: str | None = None
+    research_interests: str | None = None
+    max_student_ceiling: int | None = None
     password: str | None = None
     is_admin: bool | None = None
     is_active: bool | None = None
@@ -170,6 +177,22 @@ class BroadcastRecipientPreview(BaseModel):
     is_active: bool = True
 
 
+class BroadcastAttachmentItem(BaseModel):
+    filename: str
+    file_url: str
+    file_size: int | None = None
+    content_type: str | None = None
+
+
+class BroadcastCsvPreviewResponse(BaseModel):
+    total_rows_parsed: int
+    matched_count: int
+    unmatched_count: int
+    matched_recipients: list[BroadcastRecipientPreview]
+    unmatched_identifiers: list[str]
+    message: str
+
+
 class AdminBroadcastPreviewResponse(BaseModel):
     total_count: int
     recipients: list[BroadcastRecipientPreview]
@@ -182,6 +205,7 @@ class AdminBroadcastRequest(BaseModel):
     message: str
     announcement_type: str = "general"
     include_email: bool = True
+    attachments: list[BroadcastAttachmentItem] | None = None
 
 
 class AdminBroadcastResponse(BaseModel):

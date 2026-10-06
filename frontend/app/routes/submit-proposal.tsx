@@ -9,9 +9,9 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Checkbox } from '../components/ui/checkbox';
 import { Progress } from '../components/ui/progress';
-import { apiUploadPaper } from '../lib/api';
+import { apiUploadPaper, apiCheckTopicDuplication, apiBase } from '../lib/api';
 import { createTopicPdfFile } from '../lib/pdfGenerator';
-import { Library, ArrowLeft, Upload, FileText, X, AlertCircle, Sparkles } from 'lucide-react';
+import { Library, ArrowLeft, Upload, FileText, X, AlertCircle, Sparkles, CheckCircle2, ShieldAlert, Cpu } from 'lucide-react';
 
 const DISCIPLINES_BY_SCHOOL: Record<string, string[]> = {
   'Business School': [
@@ -69,10 +69,34 @@ export default function SubmitProposal() {
     discipline: '',
   });
 
+  const [duplicateCheck, setDuplicateCheck] = useState<{ is_duplicate: boolean; message: string; similarity_pct: number } | null>(null);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
+
+  // Live duplicate topic verification
+  useEffect(() => {
+    const trimmed = formData.title.trim();
+    if (trimmed.length < 5) {
+      setDuplicateCheck(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setCheckingDuplicate(true);
+      try {
+        const res = await apiCheckTopicDuplication(trimmed);
+        setDuplicateCheck(res);
+      } catch {
+        // Silent catch
+      } finally {
+        setCheckingDuplicate(false);
+      }
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [formData.title]);
 
   const disciplineOptions = useMemo(
     () => DISCIPLINES_BY_SCHOOL[user?.university || ''] || ALL_DISCIPLINES,
@@ -358,9 +382,48 @@ export default function SubmitProposal() {
                   placeholder="Enter your proposed thesis topic title"
                   value={formData.title}
                   onChange={(e) => handleFormDataChange('title', e.target.value)}
+                  className={duplicateCheck?.is_duplicate ? 'border-destructive focus-visible:ring-destructive' : ''}
                   required
                 />
+                {checkingDuplicate && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5 animate-pulse">
+                    <Sparkles className="size-3 text-primary" /> Checking topic uniqueness against repository...
+                  </p>
+                )}
+                {duplicateCheck && (
+                  <div
+                    className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+                      duplicateCheck.is_duplicate
+                        ? 'bg-destructive/10 border-destructive/30 text-destructive'
+                        : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                    }`}
+                  >
+                    {duplicateCheck.is_duplicate ? (
+                      <ShieldAlert className="size-4 shrink-0 mt-0.5 text-destructive" />
+                    ) : (
+                      <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+                    )}
+                    <div>
+                      <p className="font-semibold">
+                        {duplicateCheck.is_duplicate ? 'Duplicate Topic Alert — Cannot Submit' : 'Unique Research Topic'}
+                      </p>
+                      <p className="mt-0.5">{duplicateCheck.message}</p>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Intelligent Supervisor Allocation Notice */}
+              <div className="p-3.5 rounded-lg border bg-secondary/30 text-xs flex items-start gap-3">
+                <Cpu className="size-4 text-primary shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-foreground">Intelligent Supervisor Matching & Quota Balancing</p>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Based on your topic keywords, the system will automatically match and recommend the optimal project supervisor specialized in your domain (e.g., AI/Data Science, Cybersecurity, Systems Architecture) while respecting departmental workload capacity ceilings.
+                  </p>
+                </div>
+              </div>
+
 
               {/* Short Description */}
               <div className="space-y-1.5">

@@ -41,6 +41,7 @@ class Paper(Base):
     project_coordinator_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     internal_examiner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     external_examiner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    degree_level = Column(String(64), nullable=True)
 
     # Chapters checklist
     ch1_student_done = Column(Boolean, nullable=False, default=False)
@@ -75,8 +76,14 @@ class Paper(Base):
     project_coordinator_approved_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     project_coordinator_approved_at = Column(DateTime(timezone=True), nullable=True)
     hod_approved_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    hod_approved_at = Column(DateTime(timezone=True), nullable=True)
     lecturer_overdue_alert_sent_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Plagiarism & Integrity Suite
+    plagiarism_score = Column(Float, nullable=True)
+    plagiarism_status = Column(String(32), nullable=False, default="pending")  # pending, clean, flagged, exempt
+    plagiarism_report_json = Column(Text, nullable=True)
+    plagiarism_checked_at = Column(DateTime(timezone=True), nullable=True)
+
     work_mode = Column(String(16), nullable=False, default="individual")
     is_public = Column(Boolean, nullable=False, default=True)
     institution_id = Column(Integer, ForeignKey("institutions.id", ondelete="SET NULL"), nullable=True)

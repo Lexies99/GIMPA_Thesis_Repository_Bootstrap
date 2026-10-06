@@ -364,6 +364,11 @@ def _upsert_staff_user(
     if not roles:
         roles = [default_role]
 
+    specialization = _map_value(row, ["specialization", "domain", "research specialization"])
+    research_interests = _map_value(row, ["research interests", "research_interests", "interests", "keywords", "topics"])
+    ceiling_str = _map_value(row, ["max student ceiling", "ceiling", "max students", "capacity", "quota", "student ceiling"])
+    max_student_ceiling = int(ceiling_str) if ceiling_str.isdigit() and int(ceiling_str) > 0 else 5
+
     existing = get_user_by_email(db, email)
     if existing:
         updated = update_user(
@@ -374,6 +379,9 @@ def _upsert_staff_user(
                 school_id=school_id or existing.school_id,
                 school=_map_value(row, ["school"]) or existing.school,
                 department=_map_value(row, ["department"]) or existing.department,
+                specialization=specialization or existing.specialization,
+                research_interests=research_interests or existing.research_interests,
+                max_student_ceiling=max_student_ceiling if ceiling_str else existing.max_student_ceiling,
                 is_active=True,
             ),
         )
@@ -397,6 +405,9 @@ def _upsert_staff_user(
         department=_map_value(row, ["department"]) or None,
         must_change_password=True,
     )
+    user.specialization = specialization or ""
+    user.research_interests = research_interests or ""
+    user.max_student_ceiling = max_student_ceiling
     user.is_active = True
     db.add(user)
     db.commit()

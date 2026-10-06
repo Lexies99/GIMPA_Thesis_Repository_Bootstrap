@@ -1,0 +1,30 @@
+import paramiko
+
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect("46.62.214.146", username="root", password="ANCugiE4jL3q")
+
+sftp = client.open_sftp()
+with sftp.open('/tmp/set_known_passwords.py', 'w') as f:
+    f.write('''
+import sys
+sys.path.insert(0, '/home/admin/web/thesis.manamatechnologies.com/app')
+from app.core.security import hash_password
+import sqlite3
+
+h = hash_password("Password123!")
+print("New hash for Password123!:", h)
+
+conn = sqlite3.connect('/home/admin/web/thesis.manamatechnologies.com/app/gimpa_thesis.db')
+c = conn.cursor()
+c.execute("UPDATE users SET hashed_password=? WHERE email IN ('admin@gimpa.edu.gh', 'phd.candidate@st.gimpa.edu.gh', 'josbudu@gimpa.edu.gh', 'eadaku@gimpa.edu.gh', 'kofi.mensah@gimpa.edu.gh', 'kwame.boadu@adj.gimpa.edu.gh', 'yaw.asante@gimpa.edu.gh', 'fapboadu@gimpa.edu.gh', 'john.smith@st.gimpa.edu.gh')", (h,))
+conn.commit()
+print("Updated all test accounts with Password123!")
+conn.close()
+''')
+sftp.close()
+
+stdin, stdout, stderr = client.exec_command('python3 /tmp/set_known_passwords.py')
+print("OUT:\n", stdout.read().decode())
+print("ERR:\n", stderr.read().decode())
+client.close()

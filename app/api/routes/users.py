@@ -1,6 +1,12 @@
-from __future__ import annotations
+import csv
+import io
+import os
+import re
+import shutil
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, desc
 from sqlalchemy.orm import Session
 
@@ -16,6 +22,8 @@ from app.schemas.user import (
     AdminPasswordResetResponse,
     AdminUserCreate,
     AdminUserCreateResult,
+    BroadcastAttachmentItem,
+    BroadcastCsvPreviewResponse,
     BroadcastRecipientPreview,
     PasswordChangeRequest,
     UserRead,
@@ -324,6 +332,12 @@ def admin_create_user(
             must_change_password=True,
         )
         created.is_active = True
+        if getattr(payload, "specialization", None):
+            created.specialization = payload.specialization.strip()
+        if getattr(payload, "research_interests", None):
+            created.research_interests = payload.research_interests.strip()
+        if getattr(payload, "max_student_ceiling", None):
+            created.max_student_ceiling = max(1, int(payload.max_student_ceiling))
         db.add(created)
         db.commit()
         db.refresh(created)
@@ -353,7 +367,11 @@ def admin_create_user(
             ntype="system",
         )
 
-    return AdminUserCreateResult(user=_to_user_read(db, created), email_sent=email_sent)
+    return AdminUserCreateResult(
+        user=_to_user_read(db, created),
+        email_sent=email_sent,
+        temporary_password=temporary_password,
+    )
 
 
 @router.post("/users/external-examiner", response_model=AdminUserCreateResult, status_code=status.HTTP_201_CREATED)
@@ -421,7 +439,11 @@ def create_external_examiner_account(
             ntype="system",
         )
 
-    return AdminUserCreateResult(user=_to_user_read(db, created), email_sent=email_sent)
+    return AdminUserCreateResult(
+        user=_to_user_read(db, created),
+        email_sent=email_sent,
+        temporary_password=temporary_password,
+    )
 
 
 
@@ -814,6 +836,171 @@ def preview_broadcast_recipients_endpoint(
     )
 
 
+BROADCAST_ATTACHMENTS_DIR = os.path.join("uploads", "broadcast_attachments")
+os.makedirs(BROADCAST_ATTACHMENTS_DIR, exist_ok=True)
+
+
+@router.post("/admin/broadcast-attachment", response_model=BroadcastAttachmentItem)
+@router.post("/users/broadcast-attachment", response_model=BroadcastAttachmentItem)
+def upload_broadcast_attachment_endpoint(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BroadcastAttachmentItem:
+    is_authorized = (
+        current_user.is_admin
+        or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "head_library")
+        or has_role(db, current_user, "librarian")
+        or has_role(db, current_user, "dean")
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "project_coordinator")
+        or has_role(db, current_user, "project_supervisor")
+        or has_role(db, current_user, "lecturer")
+    )
+    if not is_authorized:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to upload attachments")
+
+    raw_filename = os.path.basename(file.filename or "attachment.dat")
+    safe_prefix = uuid.uuid4().hex[:12]
+    saved_filename = f"{safe_prefix}_{raw_filename}"
+    file_path = os.path.join(BROADCAST_ATTACHMENTS_DIR, saved_filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    file_size = os.path.getsize(file_path)
+    file_url = f"/api/v1/users/broadcast-attachment/download/{saved_filename}"
+
+    return BroadcastAttachmentItem(
+        filename=raw_filename,
+        file_url=file_url,
+        file_size=file_size,
+        content_type=file.content_type or "application/octet-stream",
+    )
+
+
+@router.get("/admin/broadcast-attachment/download/{filename}")
+@router.get("/users/broadcast-attachment/download/{filename}")
+def download_broadcast_attachment_endpoint(
+    filename: str,
+):
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(BROADCAST_ATTACHMENTS_DIR, safe_name)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment file not found")
+    display_name = safe_name.split("_", 1)[1] if "_" in safe_name else safe_name
+    return FileResponse(
+        path=file_path,
+        filename=display_name,
+        media_type="application/octet-stream",
+    )
+
+
+@router.post("/admin/broadcast-csv-preview", response_model=BroadcastCsvPreviewResponse)
+@router.post("/users/broadcast-csv-preview", response_model=BroadcastCsvPreviewResponse)
+async def preview_broadcast_csv_recipients_endpoint(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> BroadcastCsvPreviewResponse:
+    is_authorized = (
+        current_user.is_admin
+        or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "head_library")
+        or has_role(db, current_user, "librarian")
+        or has_role(db, current_user, "dean")
+        or has_role(db, current_user, "hod")
+        or has_role(db, current_user, "project_coordinator")
+    )
+    if not is_authorized:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to parse recipients")
+
+    contents = await file.read()
+    text = contents.decode("utf-8-sig", errors="ignore")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return BroadcastCsvPreviewResponse(
+            total_rows_parsed=0,
+            matched_count=0,
+            unmatched_count=0,
+            matched_recipients=[],
+            unmatched_identifiers=[],
+            message="Uploaded CSV file is empty.",
+        )
+
+    identifiers: set[str] = set()
+    reader = csv.reader(io.StringIO(text))
+    header = None
+    for row in reader:
+        if not row:
+            continue
+        if header is None:
+            header = [h.strip().lower() for h in row]
+            if any(k in ["email", "student_id", "school_id", "id", "index_number", "username"] for k in header):
+                continue
+            else:
+                for cell in row:
+                    val = cell.strip()
+                    if val and ("@" in val or len(val) >= 3):
+                        identifiers.add(val)
+        else:
+            for cell in row:
+                val = cell.strip()
+                if val and ("@" in val or len(val) >= 3):
+                    identifiers.add(val)
+
+    if not identifiers:
+        for line in lines:
+            parts = [p.strip() for p in re.split(r"[,;\t]", line) if p.strip()]
+            for p in parts:
+                if "@" in p or len(p) >= 3:
+                    identifiers.add(p)
+
+    all_users = db.query(User).all()
+    id_map = {i.lower(): i for i in identifiers}
+    matched_users: list[User] = []
+    matched_set: set[str] = set()
+
+    for u in all_users:
+        u_email = (u.email or "").lower()
+        u_school_id = (u.school_id or "").lower()
+        is_match = (u_email in id_map) or (u_school_id and u_school_id in id_map)
+        if is_match:
+            matched_users.append(u)
+            if u_email in id_map:
+                matched_set.add(id_map[u_email])
+            if u_school_id in id_map:
+                matched_set.add(id_map[u_school_id])
+
+    unmatched = [ident for ident in identifiers if ident not in matched_set]
+
+    recipients = [
+        BroadcastRecipientPreview(
+            id=u.id,
+            full_name=u.full_name,
+            email=u.email,
+            school_id=u.school_id,
+            role=u.role,
+            school=u.school,
+            department=u.department,
+            program=u.program,
+            phase=None,
+            is_active=u.is_active,
+        )
+        for u in matched_users
+    ]
+
+    return BroadcastCsvPreviewResponse(
+        total_rows_parsed=len(identifiers),
+        matched_count=len(recipients),
+        unmatched_count=len(unmatched),
+        matched_recipients=recipients,
+        unmatched_identifiers=unmatched[:50],
+        message=f"Successfully matched {len(recipients)} recipient account(s) from {len(identifiers)} parsed CSV entries.",
+    )
+
+
 @router.post("/admin/broadcast", response_model=AdminBroadcastResponse)
 @router.post("/users/broadcast", response_model=AdminBroadcastResponse)
 def send_admin_broadcast_endpoint(
@@ -855,8 +1042,17 @@ def send_admin_broadcast_endpoint(
 
     sender_title = current_user.full_name or current_user.email
     notif_msg = f"[{subject}] {body}"
-    notifications_created = 0
 
+    attachments_text = ""
+    if payload.attachments:
+        attachments_text = "\n\n📎 Attached Documents:\n"
+        for att in payload.attachments:
+            full_url = f"https://thesis.manamatechnologies.com{att.file_url}" if att.file_url.startswith("/") else att.file_url
+            size_kb = f" ({round(att.file_size / 1024, 1)} KB)" if att.file_size else ""
+            attachments_text += f"• {att.filename}{size_kb}: {full_url}\n"
+        notif_msg += attachments_text
+
+    notifications_created = 0
     for u in recipients:
         create_notification(
             db,
@@ -875,7 +1071,8 @@ def send_admin_broadcast_endpoint(
             email_body = (
                 f"Hello {u.full_name or u.email},\n\n"
                 f"You have received a message from {sender_title}:\n\n"
-                f"{body}\n\n"
+                f"{body}"
+                f"{attachments_text}\n"
                 f"----------------------------------------\n"
                 f"Access the GIMPA Portal: https://thesis.manamatechnologies.com/login\n\n"
                 f"Ghana Institute of Management and Public Administration (GIMPA)"
@@ -899,3 +1096,4 @@ def send_admin_broadcast_endpoint(
         emails_queued=emails_queued,
         message=f"Broadcast successfully dispatched to {len(recipients)} recipient(s)."
     )
+

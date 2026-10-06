@@ -8,6 +8,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { useAuth } from '../../context/AuthContext'
 import {
+  getValidAccessToken,
   apiImportAccounts,
   apiAdminCreateUser,
   apiCreateExternalExaminer,
@@ -27,6 +28,8 @@ import {
   apiAdminResetPassword,
   apiAdminBroadcastPreview,
   apiAdminSendBroadcast,
+  apiUploadBroadcastAttachment,
+  apiPreviewBroadcastCsv,
   apiBulkAssignExaminers,
   apiDownloadBulkExaminerTemplate,
   apiDownloadStudentsTemplate,
@@ -39,7 +42,10 @@ import {
   type ApiUserRole,
   type ApiUserUpdatePayload,
   type ApiAdminPasswordResetResponse,
+  type ApiAdminCreateUserResult,
   type ApiBroadcastRecipientPreview,
+  type BroadcastAttachmentItem,
+  type BroadcastCsvPreviewResponse,
 } from '../../lib/api'
 import {
   Users,
@@ -64,6 +70,8 @@ import {
   AlertCircle,
   X,
   Eye,
+  Paperclip,
+  UploadCloud,
 } from 'lucide-react'
 
 interface ManagedAccount {
@@ -74,6 +82,9 @@ interface ManagedAccount {
   name: string
   department: string
   program: string
+  specialization?: string
+  researchInterests?: string
+  maxStudentCeiling?: number
   role: ApiUserRole
   roles: ApiUserRole[]
   isActive: boolean
@@ -129,6 +140,9 @@ function mapApiUser(user: ApiUser): ManagedAccount {
     name: user.full_name || user.email.split('@')[0],
     department: user.department || '-',
     program: user.program || '-',
+    specialization: user.specialization || '',
+    researchInterests: user.research_interests || '',
+    maxStudentCeiling: user.max_student_ceiling ?? 5,
     role: user.role || (user.is_admin ? 'librarian' : 'student'),
     roles: normalizedRoles,
     isActive: user.is_active,
@@ -202,6 +216,8 @@ export function AccountManagement() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [createBusy, setCreateBusy] = useState(false)
   const [createMessage, setCreateMessage] = useState('')
+  const [createdAccountResult, setCreatedAccountResult] = useState<ApiAdminCreateUserResult | null>(null)
+  const [copiedCreatedPass, setCopiedCreatedPass] = useState(false)
   const [createForm, setCreateForm] = useState({
     full_name: '',
     email: '',
@@ -242,6 +258,9 @@ export function AccountManagement() {
     school: '',
     department: '',
     program: '',
+    specialization: '',
+    research_interests: '',
+    max_student_ceiling: 5,
     role: 'student' as ApiUserRole,
     roles: [] as ApiUserRole[],
     is_active: true,
@@ -265,6 +284,7 @@ export function AccountManagement() {
 
   // Bulk Broadcast Messaging state
   const [broadcastModalOpen, setBroadcastModalOpen] = useState(false)
+  const [broadcastTargetMode, setBroadcastTargetMode] = useState<'filter' | 'csv'>('filter')
   const [broadcastFilter, setBroadcastFilter] = useState({
     role: 'all',
     school: 'all',
@@ -283,6 +303,13 @@ export function AccountManagement() {
   const [sendingBroadcast, setSendingBroadcast] = useState(false)
   const [broadcastSuccess, setBroadcastSuccess] = useState('')
   const [broadcastError, setBroadcastError] = useState('')
+
+  // Attachment & CSV Upload states
+  const [broadcastAttachments, setBroadcastAttachments] = useState<BroadcastAttachmentItem[]>([])
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
+  const [csvUploadFile, setCsvUploadFile] = useState<File | null>(null)
+  const [csvPreviewResult, setCsvPreviewResult] = useState<BroadcastCsvPreviewResponse | null>(null)
+  const [uploadingCsv, setUploadingCsv] = useState(false)
 
   const filteredAccounts = accounts.filter((acc) => {
     if (accountRoleFilter !== 'ALL') {
@@ -313,6 +340,9 @@ export function AccountManagement() {
       school: account.school === '-' ? '' : account.school,
       department: account.department === '-' ? '' : account.department,
       program: account.program === '-' ? '' : account.program,
+      specialization: account.specialization || '',
+      research_interests: account.researchInterests || '',
+      max_student_ceiling: account.maxStudentCeiling ?? 5,
       role: account.role,
       roles: account.roles,
       is_active: account.isActive,
@@ -336,6 +366,9 @@ export function AccountManagement() {
         school: editForm.school.trim() || undefined,
         department: editForm.department.trim() || undefined,
         program: editForm.program.trim() || undefined,
+        specialization: editForm.specialization.trim(),
+        research_interests: editForm.research_interests.trim(),
+        max_student_ceiling: Number(editForm.max_student_ceiling) || 5,
         role: editForm.role,
         roles: editForm.roles,
         is_active: editForm.is_active,
@@ -420,7 +453,57 @@ export function AccountManagement() {
     setBroadcastModalOpen(true)
     setBroadcastSuccess('')
     setBroadcastError('')
+    setBroadcastTargetMode('filter')
+    setBroadcastAttachments([])
+    setCsvUploadFile(null)
+    setCsvPreviewResult(null)
     void fetchBroadcastPreview(broadcastFilter)
+  }
+
+  const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    if (!accessToken) return
+
+    setUploadingAttachment(true)
+    setBroadcastError('')
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const uploaded = await apiUploadBroadcastAttachment(file, accessToken)
+        setBroadcastAttachments((prev) => [...prev, uploaded])
+      }
+    } catch (err) {
+      setBroadcastError(extractErrorMessage(err) || 'Failed to upload attachment.')
+    } finally {
+      setUploadingAttachment(false)
+      if (e.target) e.target.value = ''
+    }
+  }
+
+  const handleRemoveAttachment = (fileUrl: string) => {
+    setBroadcastAttachments((prev) => prev.filter((att) => att.file_url !== fileUrl))
+  }
+
+  const handleProcessCsvFile = async (file: File) => {
+    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    if (!accessToken) return
+    setUploadingCsv(true)
+    setCsvUploadFile(file)
+    setBroadcastError('')
+    try {
+      const res = await apiPreviewBroadcastCsv(file, accessToken)
+      setCsvPreviewResult(res)
+      if (res.matched_recipients.length > 0) {
+        setBroadcastRecipients(res.matched_recipients)
+        setSelectedRecipientIds(res.matched_recipients.map((r) => r.id))
+      }
+    } catch (err) {
+      setBroadcastError(extractErrorMessage(err) || 'Failed to parse recipients from CSV.')
+    } finally {
+      setUploadingCsv(false)
+    }
   }
 
   const handleSendAdminBroadcast = async () => {
@@ -445,6 +528,7 @@ export function AccountManagement() {
           message: broadcastMessage.trim(),
           announcement_type: broadcastType,
           include_email: broadcastIncludeEmail,
+          attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
         },
         accessToken
       )
@@ -453,6 +537,9 @@ export function AccountManagement() {
       )
       setBroadcastSubject('')
       setBroadcastMessage('')
+      setBroadcastAttachments([])
+      setCsvUploadFile(null)
+      setCsvPreviewResult(null)
     } catch (err) {
       setBroadcastError(extractErrorMessage(err))
     } finally {
@@ -512,9 +599,9 @@ export function AccountManagement() {
   )
 
   const loadAccounts = async () => {
-    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    const accessToken = await getValidAccessToken()
     if (!accessToken) {
-      setLoadingError('Missing session token. Please sign in again.')
+      setLoadingError('Missing or expired session token. Please sign in again.')
       setLoading(false)
       return
     }
@@ -532,9 +619,9 @@ export function AccountManagement() {
   }
 
   const loadAssignmentData = async () => {
-    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    const accessToken = await getValidAccessToken()
     if (!accessToken) {
-      setLoadingError('Missing session token. Please sign in again.')
+      setLoadingError('Missing or expired session token. Please sign in again.')
       return
     }
 
@@ -555,7 +642,7 @@ export function AccountManagement() {
   }
 
   const loadDepartmentSupervisors = async (departmentId: number) => {
-    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    const accessToken = await getValidAccessToken()
     if (!accessToken) return
     try {
       const rows = await apiListDepartmentSupervisors(departmentId, accessToken)
@@ -586,9 +673,9 @@ export function AccountManagement() {
   }, [selectedDepartmentId, canManageAssignments])
 
   const handleDeleteAccount = async (id: number) => {
-    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    const accessToken = await getValidAccessToken()
     if (!accessToken) {
-      setLoadingError('Missing session token. Please sign in again.')
+      setLoadingError('Missing or expired session token. Please sign in again.')
       return
     }
     setDeletingId(id)
@@ -603,9 +690,9 @@ export function AccountManagement() {
   }
 
   const handleActivateAccount = async (id: number) => {
-    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    const accessToken = await getValidAccessToken()
     if (!accessToken) {
-      setLoadingError('Missing session token. Please sign in again.')
+      setLoadingError('Missing or expired session token. Please sign in again.')
       return
     }
     setActivatingId(id)
@@ -630,21 +717,29 @@ export function AccountManagement() {
       certification_type: 'Undergraduate',
       block_code: 'A1',
       year: String(new Date().getFullYear()),
+      specialization: '',
+      research_interests: '',
+      max_student_ceiling: 5,
     })
   }
 
   const handleCreateAccount = async () => {
-    const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    setCreateBusy(true)
+    setCreateMessage('')
+    const accessToken = await getValidAccessToken()
     if (!accessToken) {
-      setCreateMessage('Missing session token. Please sign in again.')
+      setCreateMessage('Your session has expired. Please sign in again.')
+      setCreateBusy(false)
       return
     }
     if (!createForm.email.trim()) {
       setCreateMessage('Email is required.')
+      setCreateBusy(false)
       return
     }
     if (!createForm.full_name.trim()) {
       setCreateMessage('Full name is required.')
+      setCreateBusy(false)
       return
     }
 
@@ -652,15 +747,15 @@ export function AccountManagement() {
     const needsDepartment = ['lecturer', 'staff', 'project_coordinator', 'hod'].includes(createForm.role)
     if (needsSchoolAndId && (!createForm.school.trim() || !createForm.school_id.trim())) {
       setCreateMessage('School and School ID are required for students.')
+      setCreateBusy(false)
       return
     }
     if (needsDepartment && (!createForm.school.trim() || !createForm.department.trim())) {
       setCreateMessage('School and Department are required for this role.')
+      setCreateBusy(false)
       return
     }
 
-    setCreateBusy(true)
-    setCreateMessage('')
     try {
       const payload = {
         email: createForm.email.trim(),
@@ -672,18 +767,17 @@ export function AccountManagement() {
         certification_type: createForm.certification_type.trim() || undefined,
         block_code: createForm.block_code.trim() || undefined,
         year: createForm.year ? Number(createForm.year) : undefined,
+        specialization: createForm.specialization.trim() || undefined,
+        research_interests: createForm.research_interests.trim() || undefined,
+        max_student_ceiling: Number(createForm.max_student_ceiling) || 5,
       }
       const result = isHodOrCoordOnly
         ? await apiCreateExternalExaminer(payload, accessToken)
         : await apiAdminCreateUser(payload, accessToken)
-      setCreateMessage(
-        result.email_sent
-          ? `Account created for ${result.user.email}. Login details were sent by email.`
-          : `Account created for ${result.user.email}, but email delivery failed. Check SMTP settings.`,
-      )
+      setCreatedAccountResult(result)
+      setCreateMessage('')
       await loadAccounts()
       resetCreateForm()
-      setCreateDialogOpen(false)
     } catch (err) {
       setCreateMessage(extractErrorMessage(err))
     } finally {
@@ -1086,7 +1180,11 @@ export function AccountManagement() {
                 studentsFile,
                 setStudentsFile,
               )}
-              {fileInput('Lecturers File (Lecturer Name, Lecturer ID, School Email, School, Department)', lecturersFile, setLecturersFile)}
+              {fileInput(
+                'Lecturers File (Lecturer Name, Lecturer ID, School Email, School, Department, Specialization, Research Interests, Max Students)',
+                lecturersFile,
+                setLecturersFile,
+              )}
               {fileInput('Library Staff File (Name, School Email, Staff ID, Role)', libraryFile, setLibraryFile)}
               <p className="text-xs text-muted-foreground">
                 Staff passwords are auto-generated by the system and sent by email. Users must change password on first login.
@@ -1379,20 +1477,49 @@ export function AccountManagement() {
                       {departmentSupervisors.length === 0 ? (
                         <p className="text-xs m-0" style={{color:'var(--text-muted)'}}>No supervisors assigned yet.</p>
                       ) : (
-                        departmentSupervisors.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between rounded-xl border p-2.5 text-xs" style={{backgroundColor:'var(--bg-subtle)',borderColor:'var(--border-color)'}}>
-                            <span className="font-semibold" style={{color:'var(--text-main)'}}>{displayNameByUserId(item.supervisor_user_id)}</span>
-                            <button
-                              type="button"
-                              onClick={() => void handleRemoveSupervisor(item.supervisor_user_id)}
-                              disabled={savingAssignment}
-                              className="px-2.5 py-1 text-xs font-semibold text-red-400 hover:text-white bg-red-500/10 hover:bg-red-600 rounded-lg border border-red-500/20 transition-all flex items-center gap-1 cursor-pointer"
-                            >
-                              <Trash2 className="size-3" />
-                              <span>Remove</span>
-                            </button>
-                          </div>
-                        ))
+                        departmentSupervisors.map((item) => {
+                          const targetAcc = accounts.find((a) => a.id === item.supervisor_user_id)
+                          return (
+                            <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border p-2.5 text-xs" style={{backgroundColor:'var(--bg-subtle)',borderColor:'var(--border-color)'}}>
+                              <div>
+                                <span className="font-semibold block" style={{color:'var(--text-main)'}}>
+                                  {displayNameByUserId(item.supervisor_user_id)}
+                                </span>
+                                {targetAcc && (
+                                  <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+                                    <span className="font-mono text-purple-600 dark:text-purple-400 font-bold">
+                                      Ceiling: {targetAcc.maxStudentCeiling ?? 5} students
+                                    </span>
+                                    {targetAcc.specialization && (
+                                      <span>• Domain: {targetAcc.specialization}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {targetAcc && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditAccount(targetAcc)}
+                                    className="px-2.5 py-1 text-xs font-semibold text-purple-600 dark:text-purple-300 hover:text-white bg-purple-500/10 hover:bg-purple-600 rounded-lg border border-purple-500/20 transition-all flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Sliders className="size-3" />
+                                    <span>Adjust Ceiling & Specialization</span>
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => void handleRemoveSupervisor(item.supervisor_user_id)}
+                                  disabled={savingAssignment}
+                                  className="px-2.5 py-1 text-xs font-semibold text-red-400 hover:text-white bg-red-500/10 hover:bg-red-600 rounded-lg border border-red-500/20 transition-all flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 className="size-3" />
+                                  <span>Remove</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })
                       )}
                     </div>
                   </div>
@@ -1751,23 +1878,96 @@ export function AccountManagement() {
           if (!open) {
             resetCreateForm()
             setCreateMessage('')
+            setCreatedAccountResult(null)
+            setCopiedCreatedPass(false)
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Create New Account</DialogTitle>
+            <DialogTitle>
+              {createdAccountResult ? 'Account Credentials' : 'Create New Account'}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="create-full-name">Full Name</Label>
-              <Input
-                id="create-full-name"
-                value={createForm.full_name}
-                onChange={(e) => setCreateForm((prev) => ({ ...prev, full_name: e.target.value }))}
-                placeholder="e.g. Ama Mensah"
-              />
+          {createdAccountResult ? (
+            <div className="space-y-4 pt-1 text-xs">
+              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 space-y-3">
+                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-sm">
+                  <CheckCircle className="h-5 w-5 shrink-0" />
+                  <span>Account Created Successfully!</span>
+                </div>
+
+                <p className="text-muted-foreground m-0">
+                  The account for <strong>{createdAccountResult.user.full_name || createdAccountResult.user.email}</strong> (<code>{createdAccountResult.user.email}</code>) has been registered and activated.
+                </p>
+
+                {createdAccountResult.temporary_password && (
+                  <div className="space-y-1.5 pt-1">
+                    <Label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Temporary Sign-in Password:
+                    </Label>
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-500/30">
+                      <span className="font-mono font-bold text-sm text-slate-900 dark:text-slate-100 select-all">
+                        {createdAccountResult.temporary_password}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-semibold"
+                        onClick={() => {
+                          if (createdAccountResult.temporary_password) {
+                            navigator.clipboard.writeText(createdAccountResult.temporary_password)
+                            setCopiedCreatedPass(true)
+                            setTimeout(() => setCopiedCreatedPass(false), 2000)
+                          }
+                        }}
+                      >
+                        {copiedCreatedPass ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedCreatedPass ? 'Copied' : 'Copy'}
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground m-0">
+                      The user will be required to update this temporary password upon first login.
+                    </p>
+                  </div>
+                )}
+
+                <div className={`p-2.5 rounded-lg text-xs flex items-start gap-2 ${
+                  createdAccountResult.email_sent
+                    ? 'bg-emerald-100/50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
+                    : 'bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300'
+                }`}>
+                  {createdAccountResult.email_sent ? (
+                    <span>✓ Welcome email with login details was dispatched to <strong>{createdAccountResult.user.email}</strong>.</span>
+                  ) : (
+                    <span>⚠️ Email delivery failed or is not configured. Please copy the temporary password above and share it directly with the user.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2 border-t">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setCreateDialogOpen(false)
+                    setCreatedAccountResult(null)
+                  }}
+                >
+                  Done
+                </Button>
+              </div>
             </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="create-full-name">Full Name</Label>
+                <Input
+                  id="create-full-name"
+                  value={createForm.full_name}
+                  onChange={(e) => setCreateForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                  placeholder="e.g. Ama Mensah"
+                />
+              </div>
             <div className="space-y-1">
               <Label htmlFor="create-email">Email</Label>
               <Input
@@ -1796,7 +1996,14 @@ export function AccountManagement() {
                     <>
                       <SelectItem value="student">Student</SelectItem>
                       <SelectItem value="lecturer">Lecturer</SelectItem>
+                      <SelectItem value="project_supervisor">Project Supervisor</SelectItem>
+                      <SelectItem value="project_coordinator">Project Coordinator</SelectItem>
+                      <SelectItem value="hod">HOD</SelectItem>
+                      <SelectItem value="dean">Dean</SelectItem>
                       <SelectItem value="librarian">Librarian</SelectItem>
+                      <SelectItem value="head_library">Head Librarian</SelectItem>
+                      <SelectItem value="external_examiner">External Examiner</SelectItem>
+                      <SelectItem value="system_admin">System Admin</SelectItem>
                     </>
                   )}
                 </SelectContent>
@@ -1869,6 +2076,65 @@ export function AccountManagement() {
               </>
             )}
 
+            {/* Lecturer / Supervisor Specialization & Advisee Quota */}
+            {createForm.role !== 'student' && (
+              <div className="space-y-2.5 p-3 rounded-xl border border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Supervisor Research Specialization & Quota
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="create-specialization" className="text-xs font-medium">
+                    Research Specialization / Domain
+                  </Label>
+                  <Input
+                    id="create-specialization"
+                    value={createForm.specialization}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, specialization: e.target.value }))}
+                    placeholder="e.g. Machine Learning, Cloud Architecture, Financial Econometrics"
+                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="create-research-interests" className="text-xs font-medium">
+                    Research Interests & Topic Keywords
+                  </Label>
+                  <Input
+                    id="create-research-interests"
+                    value={createForm.research_interests}
+                    onChange={(e) => setCreateForm((prev) => ({ ...prev, research_interests: e.target.value }))}
+                    placeholder="e.g. AI, deep learning, cybersecurity, IoT, blockchain (comma-separated)"
+                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Keywords used to auto-match students to this supervisor</p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="create-max-ceiling" className="text-xs font-medium">
+                    Max Student Supervision Ceiling (Advisee Cap)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      id="create-max-ceiling"
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={createForm.max_student_ceiling}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, max_student_ceiling: Number(e.target.value) || 1 }))}
+                      className="h-8 w-24 text-xs bg-white dark:bg-slate-950 font-bold"
+                    />
+                    <span className="text-[11px] text-muted-foreground">
+                      Maximum active students before ceiling locks
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Additional Student-Only Fields: Certification Type, Block Code, Year */}
             {createForm.role === 'student' && (
               <>
@@ -1913,16 +2179,42 @@ export function AccountManagement() {
                 </div>
               </>
             )}
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+            {createMessage && (
+              <div
+                className={`p-3 rounded-lg text-xs flex items-start gap-2.5 ${
+                  createMessage.toLowerCase().includes('account created')
+                    ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-700 dark:text-emerald-400'
+                    : 'bg-red-500/10 border border-red-500/25 text-red-700 dark:text-red-400'
+                }`}
+              >
+                {createMessage.toLowerCase().includes('account created') ? (
+                  <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+                )}
+                <div className="flex-1">
+                  <p className="font-semibold m-0 leading-snug">{createMessage}</p>
+                  {createMessage.toLowerCase().includes('session') && (
+                    <a
+                      href="/login"
+                      className="inline-block mt-1.5 font-bold underline text-primary hover:text-primary/80"
+                    >
+                      Click here to sign in again →
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={createBusy}>
                 Cancel
               </Button>
               <Button onClick={() => void handleCreateAccount()} disabled={createBusy}>
-                {createBusy ? 'Creating...' : 'Create Account'}
+                {createBusy ? 'Creating Account...' : 'Create Account'}
               </Button>
             </div>
-            {createMessage && <p className="text-xs text-muted-foreground">{createMessage}</p>}
           </div>
+        )}
         </DialogContent>
       </Dialog>
 
@@ -2039,7 +2331,14 @@ export function AccountManagement() {
                   <Label className="text-xs">Primary Role</Label>
                   <Select
                     value={editForm.role}
-                    onValueChange={(val) => setEditForm((prev) => ({ ...prev, role: val as ApiUserRole }))}
+                    onValueChange={(val) => {
+                      const newPrimary = val as ApiUserRole
+                      setEditForm((prev) => ({
+                        ...prev,
+                        role: newPrimary,
+                        roles: Array.from(new Set([newPrimary, ...prev.roles])),
+                      }))
+                    }}
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Select primary role" />
@@ -2072,6 +2371,151 @@ export function AccountManagement() {
                       <SelectItem value="inactive" className="text-xs text-amber-600 font-semibold">Pending Activation</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Supervisor & Lecturer Specialization & Auto-Matching Quota Section */}
+              <div className="space-y-2.5 p-3 rounded-xl border border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <div>
+                    <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                      Supervisor Research Specialization & Quota
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground m-0">
+                      Used by the system to automatically pair students' thesis topics with matching supervisor expertise.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1 pt-1">
+                  <Label htmlFor="edit-specialization" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Research Specialization / Domain
+                  </Label>
+                  <Input
+                    id="edit-specialization"
+                    value={editForm.specialization}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, specialization: e.target.value }))}
+                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                    placeholder="e.g. Machine Learning, Cloud Architecture, Financial Econometrics, Criminal Law"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="edit-research-interests" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Research Interests & Topic Keywords
+                  </Label>
+                  <Input
+                    id="edit-research-interests"
+                    value={editForm.research_interests}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, research_interests: e.target.value }))}
+                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                    placeholder="e.g. AI, deep learning, cybersecurity, IoT, blockchain, audit, corporate governance"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Comma-separated keywords for automatic topic matching algorithm</p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="edit-max-ceiling" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Max Student Supervision Ceiling (Quota Limit)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      id="edit-max-ceiling"
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={editForm.max_student_ceiling}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, max_student_ceiling: Number(e.target.value) || 1 }))}
+                      className="h-8 w-24 text-xs bg-white dark:bg-slate-950 font-bold"
+                    />
+                    <span className="text-[11px] text-muted-foreground">
+                      Maximum active students allowed for this supervisor before ceiling locks.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Secondary Roles & Elevated Admin Privileges */}
+              <div className="space-y-2 p-3 rounded-xl border bg-slate-50/70 dark:bg-slate-900/40">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                      Secondary / Additional Roles
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground m-0">
+                      Grant multiple roles or administrative privileges while retaining primary role ({roleChipLabel(editForm.role)}).
+                    </p>
+                  </div>
+                  {editForm.roles.includes('system_admin') && editForm.role !== 'system_admin' && (
+                    <Badge className="bg-purple-600 text-white text-[10px] font-semibold">
+                      🛡️ Admin Enabled
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1.5">
+                  {[
+                    { id: 'system_admin' as ApiUserRole, label: 'System Admin', desc: 'Full Super Admin access', badge: 'bg-purple-100 text-purple-800 border-purple-300' },
+                    { id: 'dean' as ApiUserRole, label: 'Dean', desc: 'Faculty-level approvals', badge: 'bg-blue-100 text-blue-800 border-blue-300' },
+                    { id: 'hod' as ApiUserRole, label: 'HOD', desc: 'Department oversight', badge: 'bg-amber-100 text-amber-800 border-amber-300' },
+                    { id: 'project_coordinator' as ApiUserRole, label: 'Project Coordinator', desc: 'Thesis workflow manager', badge: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+                    { id: 'project_supervisor' as ApiUserRole, label: 'Project Supervisor', desc: 'Guide & grade advisees', badge: 'bg-teal-100 text-teal-800 border-teal-300' },
+                    { id: 'lecturer' as ApiUserRole, label: 'Lecturer', desc: 'Internal academic reviewer', badge: 'bg-slate-100 text-slate-800 border-slate-300' },
+                    { id: 'librarian' as ApiUserRole, label: 'Librarian', desc: 'Repository & archiving', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+                    { id: 'external_examiner' as ApiUserRole, label: 'External Examiner', desc: 'Independent thesis scoring', badge: 'bg-rose-100 text-rose-800 border-rose-300' },
+                  ].map((item) => {
+                    const isPrimary = editForm.role === item.id
+                    const isSelected = isPrimary || editForm.roles.includes(item.id)
+
+                    return (
+                      <label
+                        key={item.id}
+                        className={`flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer ${
+                          isPrimary
+                            ? 'bg-primary/5 border-primary/40'
+                            : isSelected
+                              ? 'bg-purple-500/10 border-purple-500/30'
+                              : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isPrimary}
+                          onChange={(e) => {
+                            const checked = e.target.checked
+                            setEditForm((prev) => {
+                              const existing = new Set(prev.roles)
+                              existing.add(prev.role) // ensure primary is always included
+                              if (checked) {
+                                existing.add(item.id)
+                              } else {
+                                existing.delete(item.id)
+                              }
+                              return { ...prev, roles: Array.from(existing) }
+                            })
+                          }}
+                          className="mt-0.5 rounded text-purple-600 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-xs text-slate-900 dark:text-slate-100">
+                              {item.label}
+                            </span>
+                            {isPrimary && (
+                              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.2 rounded">
+                                Primary
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground m-0 truncate">
+                            {item.desc}
+                          </p>
+                        </div>
+                      </label>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -2263,218 +2707,299 @@ export function AccountManagement() {
               </div>
             )}
 
-            {/* Step 1: Filter Audience */}
+            {/* Step 1: Target Audience Selection (Filter Directory vs CSV Upload) */}
             <div className="p-4 rounded-xl border bg-card/60 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-1.5 m-0">
-                  <Filter className="h-4 w-4 text-purple-500" />
-                  Target Audience Filters
-                </h4>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs flex items-center gap-1"
-                  onClick={() => {
-                    const resetF = { role: 'all', school: 'all', department: 'all', program: 'all', phase: 'all', search: '' }
-                    setBroadcastFilter(resetF)
-                    void fetchBroadcastPreview(resetF)
-                  }}
-                >
-                  Clear Filters
-                </Button>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-1.5 m-0">
+                    <Filter className="h-4 w-4 text-purple-500" />
+                    Target Audience
+                  </h4>
+                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border">
+                    <button
+                      type="button"
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                        broadcastTargetMode === 'filter'
+                          ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                      onClick={() => {
+                        setBroadcastTargetMode('filter')
+                        void fetchBroadcastPreview(broadcastFilter)
+                      }}
+                    >
+                      🎯 Filter Directory
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                        broadcastTargetMode === 'csv'
+                          ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                      onClick={() => setBroadcastTargetMode('csv')}
+                    >
+                      📄 Upload Recipient CSV
+                    </button>
+                  </div>
+                </div>
+
+                {broadcastTargetMode === 'filter' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs flex items-center gap-1 self-start sm:self-auto"
+                    onClick={() => {
+                      const resetF = { role: 'all', school: 'all', department: 'all', program: 'all', phase: 'all', search: '' }
+                      setBroadcastFilter(resetF)
+                      void fetchBroadcastPreview(resetF)
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {/* Role Filter */}
-                <div className="space-y-1">
-                  <Label className="text-xs">Role Cohort</Label>
-                  <Select
-                    value={broadcastFilter.role}
-                    onValueChange={(val) => {
-                      const updated = { ...broadcastFilter, role: val }
-                      setBroadcastFilter(updated)
-                      void fetchBroadcastPreview(updated)
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="All Roles" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="text-xs">All Roles</SelectItem>
-                      <SelectItem value="student" className="text-xs">Students (All)</SelectItem>
-                      <SelectItem value="lecturer" className="text-xs">Lecturers / Supervisors</SelectItem>
-                      <SelectItem value="project_coordinator" className="text-xs">Project Coordinators</SelectItem>
-                      <SelectItem value="hod" className="text-xs">HODs</SelectItem>
-                      <SelectItem value="dean" className="text-xs">Deans</SelectItem>
-                      <SelectItem value="librarian" className="text-xs">Librarians</SelectItem>
-                      <SelectItem value="external_examiner" className="text-xs">External Examiners</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* School Filter */}
-                <div className="space-y-1">
-                  <Label className="text-xs">School / Faculty</Label>
-                  <Select
-                    value={broadcastFilter.school}
-                    onValueChange={(val) => {
-                      const updated = { ...broadcastFilter, school: val, department: 'all' }
-                      setBroadcastFilter(updated)
-                      void fetchBroadcastPreview(updated)
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="All Schools" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="text-xs">All Schools</SelectItem>
-                      {effectiveSchoolOptions.map((s) => (
-                        <SelectItem key={s.id} value={s.label} className="text-xs">{s.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Department Filter */}
-                <div className="space-y-1">
-                  <Label className="text-xs">Department</Label>
-                  <Select
-                    value={broadcastFilter.department}
-                    onValueChange={(val) => {
-                      const updated = { ...broadcastFilter, department: val }
-                      setBroadcastFilter(updated)
-                      void fetchBroadcastPreview(updated)
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="All Departments" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="text-xs">All Departments</SelectItem>
-                      {(broadcastFilter.school === 'all'
-                        ? departments.map((d) => d.name)
-                        : getDepartmentsForSchool(broadcastFilter.school, departments)
-                      ).map((dept) => (
-                        <SelectItem key={dept} value={dept} className="text-xs">{dept}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Program Filter */}
-                <div className="space-y-1">
-                  <Label className="text-xs">Degree Programme</Label>
-                  <Select
-                    value={broadcastFilter.program}
-                    onValueChange={(val) => {
-                      const updated = { ...broadcastFilter, program: val }
-                      setBroadcastFilter(updated)
-                      void fetchBroadcastPreview(updated)
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="All Programs" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="text-xs">All Academic Programs</SelectItem>
-                      <SelectItem value="phd" className="text-xs">🎓 PhD / Doctorate</SelectItem>
-                      <SelectItem value="mba" className="text-xs">📙 MBA (Master of Business Admin)</SelectItem>
-                      <SelectItem value="msc" className="text-xs">📘 MSc / MA (Master of Science)</SelectItem>
-                      <SelectItem value="undergraduate" className="text-xs">📗 Undergraduate (BSc / BA / LLB)</SelectItem>
-                      <SelectItem value="diploma" className="text-xs">📕 Postgraduate Diploma</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Thesis Phase Filter (Students) */}
-                <div className="space-y-1">
-                  <Label className="text-xs">Thesis Pipeline Stage</Label>
-                  <Select
-                    value={broadcastFilter.phase}
-                    onValueChange={(val) => {
-                      const updated = { ...broadcastFilter, phase: val }
-                      setBroadcastFilter(updated)
-                      void fetchBroadcastPreview(updated)
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="All Thesis Stages" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="text-xs">All Stages / Non-filtered</SelectItem>
-                      <SelectItem value="p1" className="text-xs">Phase 1: Proposals</SelectItem>
-                      <SelectItem value="p2" className="text-xs">Phase 2: Allocation</SelectItem>
-                      <SelectItem value="p3" className="text-xs">Phase 3: Chapter Writing</SelectItem>
-                      <SelectItem value="p4" className="text-xs">Phase 4: Examination</SelectItem>
-                      <SelectItem value="p5" className="text-xs">Phase 5: Sign-Off &amp; Published</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Search Text Filter */}
-                <div className="space-y-1">
-                  <Label className="text-xs">Search Name / Email / ID</Label>
-                  <div
-                    className="flex items-center gap-2 px-2.5 rounded-lg border transition-all"
-                    style={{
-                      backgroundColor: '#ffffff',
-                      borderColor: '#e2e8f0',
-                      height: '32px',
-                    }}
-                  >
-                    <Search style={{ width: 14, height: 14, color: '#94a3b8', flexShrink: 0 }} />
-                    <input
-                      type="text"
-                      value={broadcastFilter.search}
-                      onChange={(e) => {
-                        const updated = { ...broadcastFilter, search: e.target.value }
+              {broadcastTargetMode === 'filter' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+                  {/* Role Filter */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Role Cohort</Label>
+                    <Select
+                      value={broadcastFilter.role}
+                      onValueChange={(val) => {
+                        const updated = { ...broadcastFilter, role: val }
                         setBroadcastFilter(updated)
                         void fetchBroadcastPreview(updated)
                       }}
-                      placeholder="Type keyword..."
-                      style={{
-                        flex: 1,
-                        width: '100%',
-                        border: 'none',
-                        outline: 'none',
-                        background: 'transparent',
-                        fontSize: 12,
-                        color: '#1e293b',
-                        padding: '4px 0',
-                        fontFamily: 'Inter, sans-serif',
-                        boxShadow: 'none',
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="All Roles" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">All Roles</SelectItem>
+                        <SelectItem value="student" className="text-xs">Students (All)</SelectItem>
+                        <SelectItem value="lecturer" className="text-xs">Lecturers / Supervisors</SelectItem>
+                        <SelectItem value="project_coordinator" className="text-xs">Project Coordinators</SelectItem>
+                        <SelectItem value="hod" className="text-xs">HODs</SelectItem>
+                        <SelectItem value="dean" className="text-xs">Deans</SelectItem>
+                        <SelectItem value="librarian" className="text-xs">Librarians</SelectItem>
+                        <SelectItem value="external_examiner" className="text-xs">External Examiners</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* School Filter */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">School / Faculty</Label>
+                    <Select
+                      value={broadcastFilter.school}
+                      onValueChange={(val) => {
+                        const updated = { ...broadcastFilter, school: val, department: 'all' }
+                        setBroadcastFilter(updated)
+                        void fetchBroadcastPreview(updated)
                       }}
-                    />
-                    {broadcastFilter.search && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = { ...broadcastFilter, search: '' }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="All Schools" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">All Schools</SelectItem>
+                        {effectiveSchoolOptions.map((s) => (
+                          <SelectItem key={s.id} value={s.label} className="text-xs">{s.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Department Filter */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Department</Label>
+                    <Select
+                      value={broadcastFilter.department}
+                      onValueChange={(val) => {
+                        const updated = { ...broadcastFilter, department: val }
+                        setBroadcastFilter(updated)
+                        void fetchBroadcastPreview(updated)
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="All Departments" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">All Departments</SelectItem>
+                        {(broadcastFilter.school === 'all'
+                          ? departments.map((d) => d.name)
+                          : getDepartmentsForSchool(broadcastFilter.school, departments)
+                        ).map((dept) => (
+                          <SelectItem key={dept} value={dept} className="text-xs">{dept}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Program Filter */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Degree Programme</Label>
+                    <Select
+                      value={broadcastFilter.program}
+                      onValueChange={(val) => {
+                        const updated = { ...broadcastFilter, program: val }
+                        setBroadcastFilter(updated)
+                        void fetchBroadcastPreview(updated)
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="All Programs" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">All Academic Programs</SelectItem>
+                        <SelectItem value="phd" className="text-xs">🎓 PhD / Doctorate</SelectItem>
+                        <SelectItem value="mba" className="text-xs">📙 MBA (Master of Business Admin)</SelectItem>
+                        <SelectItem value="msc" className="text-xs">📘 MSc / MA (Master of Science)</SelectItem>
+                        <SelectItem value="undergraduate" className="text-xs">📗 Undergraduate (BSc / BA / LLB)</SelectItem>
+                        <SelectItem value="diploma" className="text-xs">📕 Postgraduate Diploma</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Thesis Phase Filter (Students) */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Thesis Pipeline Stage</Label>
+                    <Select
+                      value={broadcastFilter.phase}
+                      onValueChange={(val) => {
+                        const updated = { ...broadcastFilter, phase: val }
+                        setBroadcastFilter(updated)
+                        void fetchBroadcastPreview(updated)
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="All Thesis Stages" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">All Stages / Non-filtered</SelectItem>
+                        <SelectItem value="p1" className="text-xs">Phase 1: Proposals</SelectItem>
+                        <SelectItem value="p2" className="text-xs">Phase 2: Allocation</SelectItem>
+                        <SelectItem value="p3" className="text-xs">Phase 3: Chapter Writing</SelectItem>
+                        <SelectItem value="p4" className="text-xs">Phase 4: Examination</SelectItem>
+                        <SelectItem value="p5" className="text-xs">Phase 5: Sign-Off &amp; Published</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Search Text Filter */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Search Name / Email / ID</Label>
+                    <div
+                      className="flex items-center gap-2 px-2.5 rounded-lg border transition-all"
+                      style={{
+                        backgroundColor: '#ffffff',
+                        borderColor: '#e2e8f0',
+                        height: '32px',
+                      }}
+                    >
+                      <Search style={{ width: 14, height: 14, color: '#94a3b8', flexShrink: 0 }} />
+                      <input
+                        type="text"
+                        value={broadcastFilter.search}
+                        onChange={(e) => {
+                          const updated = { ...broadcastFilter, search: e.target.value }
                           setBroadcastFilter(updated)
                           void fetchBroadcastPreview(updated)
                         }}
+                        placeholder="Type keyword..."
                         style={{
-                          background: 'none',
+                          flex: 1,
+                          width: '100%',
                           border: 'none',
-                          color: '#94a3b8',
-                          fontSize: 11,
-                          cursor: 'pointer',
-                          padding: '0 2px',
+                          outline: 'none',
+                          background: 'transparent',
+                          fontSize: 12,
+                          color: '#1e293b',
+                          padding: '4px 0',
+                          fontFamily: 'Inter, sans-serif',
+                          boxShadow: 'none',
                         }}
-                      >
-                        ✕
-                      </button>
-                    )}
+                      />
+                      {broadcastFilter.search && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = { ...broadcastFilter, search: '' }
+                            setBroadcastFilter(updated)
+                            void fetchBroadcastPreview(updated)
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#94a3b8',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            padding: '0 2px',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                /* CSV Recipient Upload Zone */
+                <div className="pt-1 space-y-3">
+                  <div className="border-2 border-dashed border-purple-200 dark:border-purple-800 rounded-xl p-5 bg-purple-50/40 dark:bg-purple-950/20 text-center hover:bg-purple-50 transition-colors">
+                    <FileSpreadsheet className="h-8 w-8 text-purple-600 mx-auto mb-2" />
+                    <h5 className="font-bold text-sm text-slate-900 dark:text-slate-100 m-0">
+                      Upload Custom Recipient CSV / Text List
+                    </h5>
+                    <p className="text-xs text-muted-foreground mt-1 mb-3 max-w-md mx-auto">
+                      Upload a CSV or TXT file containing student emails or institutional IDs. The system will match them with registered users automatically.
+                    </p>
+                    <label className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs cursor-pointer shadow-sm transition-all">
+                      <UploadCloud className="h-4 w-4" />
+                      <span>{uploadingCsv ? 'Parsing CSV File...' : 'Choose CSV File to Upload'}</span>
+                      <input
+                        type="file"
+                        accept=".csv,.txt"
+                        className="hidden"
+                        disabled={uploadingCsv}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) void handleProcessCsvFile(file)
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {csvPreviewResult && (
+                    <div className="p-3 rounded-lg border bg-background flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <div>
+                        <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                          ✓ {csvPreviewResult.message}
+                        </span>
+                        <p className="text-muted-foreground text-[11px] m-0">
+                          File: <strong>{csvUploadFile?.name}</strong> • Matched: <strong>{csvPreviewResult.matched_count}</strong> user(s) • Unmatched: <strong>{csvPreviewResult.unmatched_count}</strong>
+                        </p>
+                      </div>
+                      {csvPreviewResult.unmatched_count > 0 && (
+                        <div className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200">
+                          Unmatched: {csvPreviewResult.unmatched_identifiers.slice(0, 3).join(', ')}{csvPreviewResult.unmatched_count > 3 ? ` +${csvPreviewResult.unmatched_count - 3} more` : ''}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Step 2: Matched Audience Table & Fine Selection */}
             <div className="p-4 rounded-xl border bg-card/60 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Audience Preview</span>
+                  <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                    {broadcastTargetMode === 'csv' ? 'Matched CSV Recipients' : 'Audience Preview'}
+                  </span>
                   <Badge variant="secondary" className="text-xs">
                     {broadcastRecipients.length} Matching
                   </Badge>
@@ -2503,9 +3028,13 @@ export function AccountManagement() {
                 </div>
               </div>
 
-              <div className="max-h-48 overflow-y-auto border rounded-lg bg-background">
+              <div className="max-h-44 overflow-y-auto border rounded-lg bg-background">
                 {broadcastRecipients.length === 0 ? (
-                  <p className="text-center py-6 text-muted-foreground m-0">No users match the selected filters.</p>
+                  <p className="text-center py-6 text-muted-foreground m-0">
+                    {broadcastTargetMode === 'csv'
+                      ? 'Upload a CSV above to populate recipients.'
+                      : 'No users match the selected filters.'}
+                  </p>
                 ) : (
                   <div className="divide-y text-xs">
                     {broadcastRecipients.map((r) => {
@@ -2526,7 +3055,7 @@ export function AccountManagement() {
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              onChange={() => {}} // handled by row click
+                              onChange={() => {}}
                               className="rounded text-purple-600 cursor-pointer"
                             />
                             <div>
@@ -2556,7 +3085,7 @@ export function AccountManagement() {
               </div>
             </div>
 
-            {/* Step 3: Message Content */}
+            {/* Step 3: Message Content & File Attachments */}
             <div className="p-4 rounded-xl border bg-card/60 space-y-3">
               <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 m-0 flex items-center gap-1.5">
                 <Mail className="h-4 w-4 text-purple-500" />
@@ -2597,10 +3126,64 @@ export function AccountManagement() {
                   id="broadcast-message"
                   value={broadcastMessage}
                   onChange={(e) => setBroadcastMessage(e.target.value)}
-                  rows={5}
+                  rows={4}
                   placeholder="Enter detailed notice, instructions, or milestone deadlines for the targeted recipients..."
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring font-sans"
                 />
+              </div>
+
+              {/* Upload Document Attachments Area */}
+              <div className="space-y-2 p-3 rounded-lg border bg-slate-50/50 dark:bg-slate-900/30">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
+                    <Paperclip className="h-3.5 w-3.5 text-purple-600" />
+                    Upload File &amp; Document Attachments (PDF, DOCX, XLSX, Images, ZIP)
+                  </Label>
+                  <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white dark:bg-slate-800 border hover:bg-slate-50 text-purple-700 dark:text-purple-300 text-xs font-semibold cursor-pointer shadow-xs transition-all">
+                    <UploadCloud className="h-3.5 w-3.5" />
+                    <span>{uploadingAttachment ? 'Uploading...' : 'Attach File'}</span>
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      disabled={uploadingAttachment}
+                      onChange={handleAttachmentUpload}
+                    />
+                  </label>
+                </div>
+
+                {broadcastAttachments.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground m-0 italic">
+                    No files attached. Attach guidelines, dissertation templates, or notices for recipients to download.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {broadcastAttachments.map((att, idx) => (
+                      <div
+                        key={idx}
+                        className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-xs shadow-xs"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+                        <span className="font-medium text-slate-800 dark:text-slate-200 max-w-[200px] truncate" title={att.filename}>
+                          {att.filename}
+                        </span>
+                        {att.file_size && (
+                          <span className="text-[10px] text-muted-foreground">
+                            ({Math.round(att.file_size / 1024)} KB)
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(att.file_url)}
+                          className="text-slate-400 hover:text-red-500 text-xs ml-1 transition-colors"
+                          title="Remove attachment"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
@@ -2611,7 +3194,7 @@ export function AccountManagement() {
                     onChange={(e) => setBroadcastIncludeEmail(e.target.checked)}
                     className="rounded text-purple-600 cursor-pointer"
                   />
-                  <span>Also dispatch transactional email with direct portal sign-in link</span>
+                  <span>Also dispatch transactional email with direct portal sign-in link &amp; attachment download URLs</span>
                 </label>
                 <span className="text-[11px] text-muted-foreground">In-app notifications are always sent</span>
               </div>

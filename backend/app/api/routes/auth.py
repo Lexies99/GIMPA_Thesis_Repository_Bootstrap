@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.security import create_access_token, create_refresh_token, decode_access_token
-from app.schemas.token import RefreshToken, Token
+from app.schemas.token import RefreshToken, Token, SsoVerifyRequest, SsoVerifyResponse, SsoSyncPasswordRequest
 from app.schemas.user import UserCreate, UserRead
 from app.services.notification_service import create_notification
 from app.services.user_service import (
@@ -138,3 +138,85 @@ def logout(payload: RefreshToken, db: Session = Depends(get_db)) -> Response:
     if record:
         revoke_refresh_token(db, record)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/sso/verify-credentials", response_model=SsoVerifyResponse)
+def sso_verify_credentials(payload: SsoVerifyRequest, db: Session = Depends(get_db)) -> SsoVerifyResponse:
+    """
+    Central Identity Provider (SSO) endpoint.
+    Used by other GIMPA applications (e.g. libraryapp.manamatechnologies.com)
+    to verify unified passwords and fetch authoritative user roles.
+    """
+    identifier = payload.identifier.strip()
+    user = authenticate_user(db, identifier, payload.password)
+    if not user and "@" not in identifier:
+        # If user passed their staff/school ID instead of email
+        u = get_user_by_school_id(db, identifier)
+        if u and authenticate_user(db, u.email, payload.password):
+            user = u
+
+    if not user:
+        return SsoVerifyResponse(
+            authenticated=False,
+            message="Invalid credentials or incorrect password.",
+            user=None,
+            access_token=None,
+        )
+
+    if not user.is_active:
+        return SsoVerifyResponse(
+            authenticated=False,
+            message="Account is inactive or pending administrator activation.",
+            user=None,
+            access_token=None,
+        )
+
+    roles = get_user_roles(db, user.id)
+    access_token = create_access_token(subject=user.email)
+
+    return SsoVerifyResponse(
+        authenticated=True,
+        message="Authentication successful.",
+        user={
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name or user.email.split("@")[0],
+            "school_id": user.school_id,
+            "role": user.role,
+            "roles": roles,
+            "is_admin": bool(user.is_admin or "system_admin" in roles),
+            "department": user.department,
+            "school": user.school,
+            "program": user.program,
+            "must_change_password": bool(user.must_change_password),
+            "password_hash": user.hashed_password,
+        },
+        access_token=access_token,
+    )
+
+
+@router.post("/sso/sync-password")
+def sso_sync_password(payload: SsoSyncPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Propagate password updates from any integrated app back into the Central Identity Provider.
+    """
+    from app.core.security import get_password_hash, verify_password
+    from app.services.user_service import validate_password_requirements
+
+    email = payload.email.strip().lower()
+    user = get_user_by_email(db, email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found in Central Identity Provider.")
+
+    if payload.old_password:
+        if not verify_password(payload.old_password, user.hashed_password):
+            raise HTTPException(status_code=400, detail="Current password verification failed.")
+
+    validate_password_requirements(payload.new_password)
+    user.hashed_password = get_password_hash(payload.new_password)
+    user.must_change_password = False
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"status": "success", "message": f"Central password synchronized for {user.email}."}
+

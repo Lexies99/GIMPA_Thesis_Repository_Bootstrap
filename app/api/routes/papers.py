@@ -283,7 +283,11 @@ def _notify_roles(
 
 
 def _resolve_reviewer_role(db: Session, user: User) -> str:
-    ordered_roles = ["librarian", "head_library", "hod", "project_coordinator", "project_supervisor", "lecturer"]
+    if user.is_admin or has_role(db, user, "system_admin"):
+        return "system_admin"
+    if has_role(db, user, "deputy_rector") or user.role == "deputy_rector":
+        return "deputy_rector"
+    ordered_roles = ["system_admin", "deputy_rector", "dean", "librarian", "head_library", "hod", "project_coordinator", "project_supervisor", "lecturer", "external_examiner"]
     for role in ordered_roles:
         if has_role(db, user, role):
             return role
@@ -960,8 +964,8 @@ def read_pending_papers(
     _dispatch_overdue_review_alerts(db)
     reviewer_role = _resolve_reviewer_role(db, current_admin)
     reviewer_department = (current_admin.department or "").strip().lower()
-    if reviewer_role in {"project_coordinator", "hod"} and not reviewer_department:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer department is not configured")
+    reviewer_school = (current_admin.school or "").strip().lower()
+
     # Universal examiner condition: Any paper where current_admin is assigned as examiner during Phase 4 marking
     assigned_as_examiner_cond = (
         (Paper.status == "phase4_marking")
@@ -971,13 +975,101 @@ def read_pending_papers(
         )
     )
 
-    if reviewer_role in {"lecturer", "project_supervisor", "external_examiner"}:
+    pending_statuses = {
+        "pending",
+        "pending_hod",
+        "pending_coordinator",
+        "pending_hod_and_coordinator",
+        "pending_lecturer",
+        "phase1_proposal_submitted",
+        "phase2_pending_coordinator",
+        "phase2_pending_supervisor",
+        "phase2_proposal_submitted",
+        "phase3_chapters",
+        "phase3_steps_in_progress",
+        "phase4_pending_examiners",
+        "phase4_marking",
+        "phase5_corrections",
+        "phase5_pending_supervisor",
+        "phase5_pending_coordinator",
+        "phase5_pending_hod",
+        "phase5_pending_hod_and_coordinator",
+        "approved_for_library",
+        "phase5_approved_for_library",
+    }
+
+    if current_admin.is_admin or reviewer_role in {"system_admin", "deputy_rector", "admin"}:
+        # Super Administrator & Deputy Rector: Oversees all pending review items across the institution
+        papers = (
+            db.query(Paper)
+            .filter(Paper.status.in_(pending_statuses))
+            .order_by(Paper.created_at.desc(), Paper.id.desc())
+            .limit(500)
+            .all()
+        )
+    elif reviewer_role == "dean":
+        # Dean: Oversees all pending review items across their school (or all if not scoped)
+        query = db.query(Paper).join(User, Paper.created_by_id == User.id, isouter=True)
+        if reviewer_school:
+            query = query.filter(
+                (func.lower(func.coalesce(Paper.university, "")) == reviewer_school)
+                | (func.lower(func.coalesce(User.school, "")) == reviewer_school)
+            )
+        papers = (
+            query.filter(Paper.status.in_(pending_statuses))
+            .order_by(Paper.created_at.desc(), Paper.id.desc())
+            .limit(500)
+            .all()
+        )
+        if not papers and reviewer_school:
+            papers = (
+                db.query(Paper)
+                .filter(Paper.status.in_(pending_statuses))
+                .order_by(Paper.created_at.desc(), Paper.id.desc())
+                .limit(500)
+                .all()
+            )
+    elif reviewer_role in {"project_coordinator", "hod"}:
+        dept_filter = None
+        if reviewer_department:
+            dept_filter = (
+                (func.lower(func.coalesce(Paper.discipline, "")) == reviewer_department)
+                | (func.lower(func.coalesce(User.department, "")) == reviewer_department)
+            )
+        
+        query = db.query(Paper).join(User, Paper.created_by_id == User.id, isouter=True)
+        if dept_filter is not None:
+            papers = (
+                query.filter(
+                    assigned_as_examiner_cond
+                    | (Paper.status.in_(pending_statuses) & dept_filter)
+                )
+                .order_by(Paper.created_at.desc(), Paper.id.desc())
+                .limit(300)
+                .all()
+            )
+        else:
+            papers = (
+                query.filter(Paper.status.in_(pending_statuses))
+                .order_by(Paper.created_at.desc(), Paper.id.desc())
+                .limit(300)
+                .all()
+            )
+    elif reviewer_role in {"librarian", "head_library"}:
+        papers = (
+            db.query(Paper)
+            .filter(Paper.status.in_(["approved_for_library", "phase5_approved_for_library", "approved", "phase5_published"]))
+            .order_by(Paper.created_at.desc(), Paper.id.desc())
+            .limit(300)
+            .all()
+        )
+    elif reviewer_role in {"lecturer", "project_supervisor", "external_examiner"}:
         supervisor_cond = (
             Paper.status.in_({
                 "pending_lecturer",
                 "phase2_proposal_submitted",
                 "phase3_chapters",
-                "phase3_steps_in_progress",  # thesis visible after first step submitted
+                "phase3_steps_in_progress",
                 "phase5_pending_supervisor",
             })
         )
@@ -986,12 +1078,17 @@ def read_pending_papers(
                 (Paper.supervisor_id == current_admin.id)
                 | (
                     (Paper.supervisor_id.is_(None))
-                    & (func.lower(func.coalesce(User.department, "")) == reviewer_department)
+                    & (
+                        (func.lower(func.coalesce(Paper.discipline, "")) == reviewer_department)
+                        | (func.lower(func.coalesce(User.department, "")) == reviewer_department)
+                    )
                     & (Paper.created_by_id != current_admin.id)
                 )
             )
         else:
-            supervisor_cond = supervisor_cond & (Paper.supervisor_id == current_admin.id)
+            supervisor_cond = supervisor_cond & (
+                (Paper.supervisor_id == current_admin.id) | (Paper.supervisor_id.is_(None))
+            )
             
         examiner_cond = (
             (Paper.status == "phase4_marking")
@@ -1001,72 +1098,22 @@ def read_pending_papers(
             )
         )
         
-        query = (
-            db.query(Paper)
-            .join(User, Paper.created_by_id == User.id, isouter=True)
-            .filter(supervisor_cond | examiner_cond)
-        )
-        papers = query.order_by(Paper.created_at.desc(), Paper.id.desc()).limit(200).all()
-    elif reviewer_role == "project_coordinator":
         papers = (
             db.query(Paper)
             .join(User, Paper.created_by_id == User.id, isouter=True)
-            .filter(
-                assigned_as_examiner_cond
-                | (
-                    (
-                        ((Paper.status == "pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
-                        | (Paper.status == "pending_coordinator")
-                        | (Paper.status == "phase1_proposal_submitted")
-                        | (Paper.status == "phase2_pending_coordinator")
-                        | (Paper.status == "phase2_pending_supervisor")
-                        | (Paper.status == "phase4_pending_examiners")
-                        | (Paper.status == "phase4_marking")
-                        | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.project_coordinator_approved_at.is_(None)))
-                        | (Paper.status == "phase5_pending_coordinator")
-                    )
-                    & (func.lower(func.coalesce(User.department, "")) == reviewer_department)
-                )
-            )
+            .filter(supervisor_cond | examiner_cond | assigned_as_examiner_cond)
             .order_by(Paper.created_at.desc(), Paper.id.desc())
-            .limit(200)
-            .all()
-        )
-    elif reviewer_role == "hod":
-        papers = (
-            db.query(Paper)
-            .join(User, Paper.created_by_id == User.id, isouter=True)
-            .filter(
-                assigned_as_examiner_cond
-                | (
-                    (
-                        ((Paper.status == "pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
-                        | (Paper.status == "pending_hod")
-                        | (Paper.status == "phase1_proposal_submitted")
-                        | (Paper.status == "phase2_pending_coordinator")
-                        | (Paper.status == "phase2_pending_supervisor")
-                        | (Paper.status == "phase4_pending_examiners")
-                        | (Paper.status == "phase4_marking")
-                        | ((Paper.status == "phase5_pending_hod_and_coordinator") & (Paper.hod_approved_at.is_(None)))
-                        | (Paper.status == "phase5_pending_hod")
-                    )
-                    & (func.lower(func.coalesce(User.department, "")) == reviewer_department)
-                )
-            )
-            .order_by(Paper.created_at.desc(), Paper.id.desc())
-            .limit(200)
-            .all()
-        )
-    elif reviewer_role in {"librarian", "head_library"}:
-        papers = (
-            db.query(Paper)
-            .filter(Paper.status.in_(["approved_for_library", "phase5_approved_for_library"]))
-            .order_by(Paper.created_at.desc(), Paper.id.desc())
-            .limit(200)
+            .limit(300)
             .all()
         )
     else:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer role is not allowed")
+        papers = (
+            db.query(Paper)
+            .filter(Paper.status.in_(pending_statuses))
+            .order_by(Paper.created_at.desc(), Paper.id.desc())
+            .limit(100)
+            .all()
+        )
     return [_to_paper_read(p, db) for p in papers]
 
 
@@ -1077,47 +1124,49 @@ def read_reviewed_papers(
 ):
     reviewer_role = _resolve_reviewer_role(db, current_admin)
     reviewer_department = (current_admin.department or "").strip().lower()
-    if reviewer_role in {"project_coordinator", "hod"} and not reviewer_department:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer department is not configured")
 
-    if reviewer_role in {"lecturer", "project_supervisor"}:
+    if current_admin.is_admin or reviewer_role in {"system_admin", "admin", "dean"}:
         papers = (
             db.query(Paper)
-            .filter(Paper.lecturer_approved_by_id == current_admin.id)
+            .filter(Paper.status.in_(["approved", "phase5_published", "approved_for_library", "phase5_approved_for_library", "phase4_examination_completed"]))
             .order_by(Paper.created_at.desc(), Paper.id.desc())
-            .limit(200)
-            .all()
-        )
-    elif reviewer_role == "project_coordinator":
-        papers = (
-            db.query(Paper)
-            .join(User, Paper.created_by_id == User.id, isouter=True)
-            .filter(Paper.project_coordinator_approved_by_id == current_admin.id)
-            .filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
-            .order_by(Paper.created_at.desc(), Paper.id.desc())
-            .limit(200)
-            .all()
-        )
-    elif reviewer_role == "hod":
-        papers = (
-            db.query(Paper)
-            .join(User, Paper.created_by_id == User.id, isouter=True)
-            .filter(Paper.hod_approved_by_id == current_admin.id)
-            .filter(func.lower(func.coalesce(User.department, "")) == reviewer_department)
-            .order_by(Paper.created_at.desc(), Paper.id.desc())
-            .limit(200)
+            .limit(500)
             .all()
         )
     elif reviewer_role in {"librarian", "head_library"}:
         papers = (
             db.query(Paper)
-            .filter(Paper.status == "approved")
+            .filter(Paper.status.in_(["approved", "phase5_published", "approved_for_library", "phase5_approved_for_library"]))
+            .order_by(Paper.created_at.desc(), Paper.id.desc())
+            .limit(300)
+            .all()
+        )
+    elif reviewer_role in {"project_coordinator", "hod"}:
+        query = db.query(Paper).join(User, Paper.created_by_id == User.id, isouter=True)
+        if reviewer_department:
+            query = query.filter(
+                (func.lower(func.coalesce(Paper.discipline, "")) == reviewer_department)
+                | (func.lower(func.coalesce(User.department, "")) == reviewer_department)
+            )
+        papers = (
+            query.filter(Paper.status.in_(["approved", "phase5_published", "approved_for_library", "phase5_approved_for_library", "phase4_examination_completed"]))
+            .order_by(Paper.created_at.desc(), Paper.id.desc())
+            .limit(300)
+            .all()
+        )
+    else:
+        papers = (
+            db.query(Paper)
+            .filter(
+                (Paper.lecturer_approved_by_id == current_admin.id)
+                | (Paper.supervisor_id == current_admin.id)
+                | (Paper.internal_examiner_id == current_admin.id)
+                | (Paper.external_examiner_id == current_admin.id)
+            )
             .order_by(Paper.created_at.desc(), Paper.id.desc())
             .limit(200)
             .all()
         )
-    else:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer role is not allowed")
 
     return [_to_paper_read(p, db) for p in papers]
 
@@ -1437,10 +1486,27 @@ def create_paper_endpoint(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only students and lecturers can submit papers.",
         )
+    # Duplicate topic prevention
+    from app.services.integrity_service import check_duplicate_topic
+    dup_res = check_duplicate_topic(db, payload.title)
+    if dup_res["is_duplicate"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=dup_res["message"],
+        )
+
     if payload.department_id is None and current_user.department:
         matched_department_id = _safe_match_department_id(db, current_user.department)
         if matched_department_id is not None:
             payload = payload.model_copy(update={"department_id": matched_department_id})
+
+    # Auto-match supervisor if not specified
+    if payload.supervisor_id is None:
+        from app.services.matching_service import match_supervisor_for_topic
+        matched = match_supervisor_for_topic(db, title=payload.title, abstract=payload.abstract, department_id=payload.department_id)
+        if matched.get("best_match"):
+            payload = payload.model_copy(update={"supervisor_id": matched["best_match"]["id"]})
+
     paper = create_paper(
         db,
         payload,
@@ -1524,6 +1590,21 @@ async def upload_paper_endpoint(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only students and lecturers can submit papers.",
         )
+    # Duplicate topic prevention
+    from app.services.integrity_service import check_duplicate_topic
+    dup_res = check_duplicate_topic(db, title)
+    if dup_res["is_duplicate"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=dup_res["message"],
+        )
+
+    # Auto-match supervisor if none provided
+    if not supervisor_id:
+        from app.services.matching_service import match_supervisor_for_topic
+        matched = match_supervisor_for_topic(db, title=title, abstract=abstract, department_id=department_id)
+        if matched.get("best_match"):
+            supervisor_id = matched["best_match"]["id"]
     safe_name = f"{uuid4().hex}_{Path(file.filename or 'upload.bin').name}"
     dest = UPLOADS_DIR / safe_name
 
@@ -2106,26 +2187,29 @@ def download_paper_file_legacy(
     paper = get_paper(db, paper_id)
     if not paper:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    if not paper.file_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached to this paper")
 
-    path = Path(paper.file_path)
-    if not path.exists() or not path.is_file():
+    target, file_name, file_ext, _ = _get_target_doc_path(paper, "paper", user=current_user, db=db)
+    if not target or not target.exists() or not target.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
 
     # Compile any database annotations/comments into the downloaded docx document
-    from app.services.annotation_service import get_paper_annotations, compile_comments_to_docx
-    annotations = get_paper_annotations(db, paper_id)
-    download_path = Path(compile_comments_to_docx(paper.file_path, annotations))
+    download_path = target
+    if file_ext == "docx":
+        try:
+            from app.services.annotation_service import get_paper_annotations, compile_comments_to_docx
+            annotations = get_paper_annotations(db, paper_id)
+            if annotations:
+                download_path = Path(compile_comments_to_docx(str(target), annotations))
+        except Exception:
+            download_path = target
 
-    # Always return the currently stored file name so students receive
-    # the exact supervisor-uploaded corrected file name.
-    download_name = paper.file_name or download_path.name
+    download_name = paper.file_name or file_name or download_path.name
+    media_type = paper.mime_type or ("application/vnd.openxmlformats-officedocument.wordprocessingml.document" if file_ext == "docx" else "application/octet-stream")
 
     increment_download(db, paper)
     return FileResponse(
         path=download_path,
-        media_type=paper.mime_type or "application/octet-stream",
+        media_type=media_type,
         filename=download_name,
     )
 
@@ -2445,23 +2529,38 @@ def _get_target_doc_path(paper, doc_type: str, user=None, assigned_papers=None, 
     # Default: student's supervisor-approved main thesis file
     target = Path(paper.file_path) if (paper and paper.file_path and Path(paper.file_path).exists()) else None
     if not target or not target.exists():
+        if paper and db:
+            from app.models.thesis_system import Proposal
+            latest_proposal = (
+                db.query(Proposal)
+                .filter(Proposal.thesis_id == paper.id)
+                .order_by(Proposal.version.desc())
+                .first()
+            )
+            if latest_proposal and latest_proposal.file_url and Path(latest_proposal.file_url).exists():
+                target = Path(latest_proposal.file_url)
+                file_name = f"Proposal_v{latest_proposal.version}_{paper.title}.docx"
+                return target, file_name, "docx", "word"
+
         target_dir = Path("uploads/theses")
         target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"paper_{paper.id}_approved_thesis.docx" if paper else Path("uploads/paper.docx")
+        target = target_dir / f"paper_{paper.id}_thesis_summary.docx" if paper else Path("uploads/paper.docx")
         if not target.exists() and paper:
             try:
                 import docx
                 doc = docx.Document()
-                doc.add_heading(f"Approved Final Thesis: {paper.title}", level=1)
+                doc.add_heading(f"Thesis Project: {paper.title}", level=1)
                 doc.add_paragraph(f"Student Author: {student_name}")
                 doc.add_paragraph(f"Paper ID: #{paper.id}")
-                doc.add_paragraph(f"Status: {paper.status} (Supervisor Signed Off)")
+                doc.add_paragraph(f"Status: {paper.status}")
+                doc.add_paragraph(f"Discipline/Department: {paper.discipline or 'N/A'}")
+                doc.add_paragraph(f"Degree Level: {paper.degree_level or 'N/A'}")
                 doc.add_paragraph("--------------------------------------------------------------------------------")
-                doc.add_heading("Abstract & Full Thesis Submission", level=2)
-                doc.add_paragraph(paper.abstract or "Full thesis work submitted by student and approved by supervisor for Phase 4 examination.")
+                doc.add_heading("Abstract & Research Proposal Summary", level=2)
+                doc.add_paragraph(paper.abstract or "Research project registered and submitted for institutional review.")
                 doc.save(target)
             except Exception:
-                target.write_bytes(b"Student Approved Thesis Document\n")
+                target.write_bytes(b"Thesis Project Summary Document\n")
 
     file_name = (paper.file_name if (paper and paper.file_name) else None) or target.name
     file_ext = (target.suffix or "").lstrip(".").lower() or "docx"
@@ -3453,6 +3552,7 @@ def assign_examiners(
     paper_id: int,
     internal_examiner_id: int = Form(...),
     external_examiner_id: int | None = Form(None),
+    degree_level: str | None = Form(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> PaperRead:
@@ -3467,14 +3567,34 @@ def assign_examiners(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the HOD, Project Coordinator, Dean, or Admin can assign examiners")
 
     stu_user = db.query(User).filter(User.id == paper.created_by_id).first() if paper.created_by_id else None
-    degree_level = classify_degree_level(paper=paper, student_user=stu_user, db=db)
-    is_undergrad = (degree_level == "Undergraduate")
+    
+    if degree_level:
+        paper.degree_level = degree_level
+        db.add(paper)
+        db.flush()
 
-    if not is_undergrad and not external_examiner_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Postgraduate degree programs (Masters, MPhil, PhD) require both an Internal Examiner and an External Examiner."
-        )
+    eff_degree = degree_level or classify_degree_level(paper=paper, student_user=stu_user, db=db)
+    is_undergrad = (eff_degree == "Undergraduate")
+    is_masters = (eff_degree == "Masters")
+    is_mphil_or_phd = (eff_degree in ("MPhil", "PhD"))
+
+    if is_undergrad:
+        # Undergraduate: only 1 internal examiner (supervisor / internal assessor)
+        external_examiner_id = None
+    elif is_masters:
+        # Masters: exactly 2 Internal Examiners required (no external examiner)
+        if not external_examiner_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Master's degree dissertations require two Internal Examiners (Internal Examiner 1 and Internal Examiner 2)."
+            )
+    else:
+        # MPhil / PhD: 1 Internal Examiner + 1 External Examiner
+        if not external_examiner_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Postgraduate research programs (MPhil, PhD) require both an Internal Examiner and an External Examiner."
+            )
 
     int_exam = db.query(User).filter(User.id == internal_examiner_id).first()
     if not int_exam:
@@ -3489,30 +3609,43 @@ def assign_examiners(
     ext_exam = None
     if external_examiner_id:
         if internal_examiner_id == external_examiner_id:
+            conflict_msg = (
+                "Conflict of interest: Internal Examiner 1 and Internal Examiner 2 must be distinct individuals"
+                if is_masters else
+                "Conflict of interest: Internal and external examiners must be distinct individuals"
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Conflict of interest: Internal and external examiners must be distinct individuals",
+                detail=conflict_msg,
             )
         ext_exam = db.query(User).filter(User.id == external_examiner_id).first()
         if not ext_exam:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected external examiner not found")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected second examiner not found")
             
         ext_roles = set(get_user_roles(db, external_examiner_id))
         ext_roles.add(ext_exam.role)
-        allowed_ext = {"external_examiner", "lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
-        if not ext_roles.intersection(allowed_ext):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must be an external examiner, lecturer, HOD, or Dean")
+        if is_masters:
+            allowed_masters_ext = {"lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
+            if not ext_roles.intersection(allowed_masters_ext):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Internal Examiner 2 must be an internal lecturer, supervisor, HOD, or Dean")
+        else:
+            allowed_ext = {"external_examiner", "lecturer", "project_supervisor", "hod", "project_coordinator", "dean"}
+            if not ext_roles.intersection(allowed_ext):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="External examiner must be an external examiner, lecturer, HOD, or Dean")
     
     paper.internal_examiner_id = internal_examiner_id
     paper.external_examiner_id = external_examiner_id if ext_exam else None
+    if degree_level:
+        paper.degree_level = degree_level
     paper.status = "phase4_marking"
     db.add(paper)
     
-    assigned_msg = f"Examiners assigned: Internal={int_exam.full_name or int_exam.email}"
-    if ext_exam:
-        assigned_msg += f", External={ext_exam.full_name or ext_exam.email}"
+    if is_undergrad:
+        assigned_msg = f"Single Internal Examiner assigned for Undergraduate project: {int_exam.full_name or int_exam.email}"
+    elif is_masters:
+        assigned_msg = f"Two Internal Examiners assigned for Master's dissertation: Examiner 1={int_exam.full_name or int_exam.email}, Examiner 2={ext_exam.full_name or ext_exam.email}"
     else:
-        assigned_msg += " (Single Internal/Supervisor Examiner assigned for Undergraduate project)"
+        assigned_msg = f"Examiners assigned for {eff_degree}: Internal={int_exam.full_name or int_exam.email}, External={ext_exam.full_name or ext_exam.email}"
 
     _record_workflow_event(
         db,
@@ -4145,6 +4278,18 @@ def supervisor_approve_combined_thesis(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Combined thesis has not been uploaded by the student yet")
 
     if approved:
+        # Enforce Plagiarism Verification
+        from app.services.plagiarism_service import run_plagiarism_analysis
+        if paper.plagiarism_score is None:
+            run_plagiarism_analysis(paper.id, db, user=current_user)
+            db.refresh(paper)
+        
+        if paper.plagiarism_score is not None and paper.plagiarism_score > 20.0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Plagiarism check failed: Similarity index is {paper.plagiarism_score}%, which exceeds institutional limit (20.0%). Supervisor cannot approve for examination until revisions reduce similarity.",
+            )
+
         paper.combined_thesis_supervisor_approved = True
         from_status = paper.status
         paper.status = "phase4_pending_examiners"

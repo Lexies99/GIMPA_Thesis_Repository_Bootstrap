@@ -59,6 +59,7 @@ def get_current_admin(
         and not has_role(db, current_user, "librarian")
         and not has_role(db, current_user, "head_library")
         and not has_role(db, current_user, "system_admin")
+        and not has_role(db, current_user, "deputy_rector")
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return current_user
@@ -68,7 +69,7 @@ def get_current_librarian(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    if not has_role(db, current_user, "librarian"):
+    if not has_role(db, current_user, "librarian") and not has_role(db, current_user, "head_library"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Librarian access required")
     return current_user
 
@@ -77,7 +78,20 @@ def get_current_reviewer(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    reviewer_roles = {"lecturer", "project_supervisor", "librarian", "project_coordinator", "hod", "external_examiner"}
+    if current_user.is_admin:
+        return current_user
+    reviewer_roles = {
+        "system_admin",
+        "deputy_rector",
+        "dean",
+        "lecturer",
+        "project_supervisor",
+        "librarian",
+        "head_library",
+        "project_coordinator",
+        "hod",
+        "external_examiner",
+    }
     if not any(has_role(db, current_user, role) for role in reviewer_roles):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer access required")
     return current_user

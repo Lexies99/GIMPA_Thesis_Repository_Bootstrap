@@ -29,6 +29,10 @@ class Thesis(Base):
     topic_description = Column(Text, nullable=True)
     topic_status = Column(String(32), nullable=False, default="pending")  # pending, accepted, rejected
     phase = Column(Integer, nullable=False, default=1)  # 1 to 5
+    plagiarism_score = Column(Float, nullable=True)
+    plagiarism_status = Column(String(32), nullable=False, default="pending")
+    plagiarism_report_json = Column(Text, nullable=True)
+    plagiarism_checked_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

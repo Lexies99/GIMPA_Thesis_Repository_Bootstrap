@@ -101,6 +101,8 @@ def ensure_paper_workflow_columns() -> None:
         statements.append("ALTER TABLE papers ADD COLUMN external_result_file_path VARCHAR(1024)")
     if "external_result_file_name" not in columns:
         statements.append("ALTER TABLE papers ADD COLUMN external_result_file_name VARCHAR(255)")
+    if "degree_level" not in columns:
+        statements.append("ALTER TABLE papers ADD COLUMN degree_level VARCHAR(64)")
 
     if not statements:
         return

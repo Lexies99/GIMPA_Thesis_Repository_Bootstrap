@@ -18,6 +18,7 @@ import {
   UploadCloud,
   ChevronRight,
   Filter,
+  Mail,
 } from 'lucide-react'
 import {
   apiGetPhdDossiers,
@@ -33,7 +34,9 @@ import {
   apiRecordProgressEvaluation,
   apiGetReaccreditationFolders,
   apiUploadReaccreditationFolderDoc,
+  apiSendPhdRegulatoryReminders,
 } from '../../lib/api'
+
 import type {
   ApiPhDStudentDossier,
   ApiPhDSupervisionLog,
@@ -103,14 +106,19 @@ export function PhdHub() {
   const token = localStorage.getItem('murrs_access_token') || ''
   
   const userRoles = (user?.roles || []) as string[]
-  const isSupervisorOrStaff =
-    user?.role === 'system_admin' ||
+  const isStudent =
+    (user?.role === 'student' || user?.role === 'member') &&
+    !userRoles.some((r) => ['system_admin', 'dean', 'hod', 'project_coordinator', 'project_supervisor', 'lecturer'].includes(r))
+  const isSupervisorOnly =
+    (user?.role === 'project_supervisor' || user?.role === 'lecturer' || userRoles.includes('project_supervisor') || userRoles.includes('lecturer')) &&
+    !userRoles.some((r) => ['system_admin', 'dean', 'hod', 'project_coordinator'].includes(r))
+  const isLeadership =
+    user?.role === 'dean' ||
     user?.role === 'hod' ||
     user?.role === 'project_coordinator' ||
-    user?.role === 'dean' ||
-    user?.role === 'project_supervisor' ||
-    user?.role === 'lecturer' ||
-    userRoles.some((r) => ['system_admin', 'hod', 'project_coordinator', 'dean', 'project_supervisor', 'lecturer'].includes(r))
+    userRoles.some((r) => ['dean', 'hod', 'project_coordinator'].includes(r))
+  const isAdmin = user?.role === 'system_admin' || userRoles.includes('system_admin')
+  const isSupervisorOrStaff = !isStudent
 
   const [activeSubTab, setActiveSubTab] = useState<
     'dossiers' | 'supervision' | 'seminars' | 'exams' | 'teaching' | 'reviews' | 'folders'
@@ -215,13 +223,14 @@ export function PhdHub() {
     if (!token) return
     setLoading(true)
     try {
+      const targetStudentId = isStudent ? user?.id : selectedStudentId
       const [dossierRes, logsRes, semRes, examRes, teachRes, evalRes, foldRes] = await Promise.all([
         apiGetPhdDossiers(token).catch(() => []),
-        apiGetSupervisionLogs(token, selectedStudentId).catch(() => []),
-        apiGetPhdSeminars(token, selectedStudentId).catch(() => []),
-        apiGetComprehensiveExams(token, selectedStudentId).catch(() => []),
-        apiGetTeachingRequirements(token, selectedStudentId).catch(() => []),
-        apiGetProgressEvaluations(token, selectedStudentId).catch(() => []),
+        apiGetSupervisionLogs(token, targetStudentId).catch(() => []),
+        apiGetPhdSeminars(token, targetStudentId).catch(() => []),
+        apiGetComprehensiveExams(token, targetStudentId).catch(() => []),
+        apiGetTeachingRequirements(token, targetStudentId).catch(() => []),
+        apiGetProgressEvaluations(token, targetStudentId).catch(() => []),
         apiGetReaccreditationFolders(token).catch(() => []),
       ])
       setDossiers(dossierRes)
@@ -236,9 +245,55 @@ export function PhdHub() {
     }
   }
 
+  const [dispatchingReminders, setDispatchingReminders] = useState(false)
+  const [reminderResult, setReminderResult] = useState<string | null>(null)
+
+  const handleSendReminders = async () => {
+    if (!token) return
+    setDispatchingReminders(true)
+    setReminderResult(null)
+    try {
+      const res = await apiSendPhdRegulatoryReminders(token)
+      setReminderResult(
+        `Dispatched successfully: ${res.students_notified} student notice(s) and ${res.supervisors_notified} supervisor alert(s) sent via email.`
+      )
+      // refresh dossiers
+      void loadAll()
+    } catch (err: any) {
+      setReminderResult(err?.message || 'Failed to dispatch regulatory reminders.')
+    } finally {
+      setDispatchingReminders(false)
+    }
+  }
+
+  useEffect(() => {
+    if (isStudent && user?.id) {
+
+      setSelectedStudentId(user.id)
+      setLogForm((f) => ({ ...f, student_id: user.id }))
+      setSeminarForm((f) => ({ ...f, student_id: user.id }))
+      setTeachingForm((f) => ({ ...f, student_id: user.id }))
+      setExamForm((f) => ({ ...f, student_id: user.id }))
+      setEvalForm((f) => ({ ...f, student_id: user.id }))
+    }
+  }, [isStudent, user?.id])
+
+  useEffect(() => {
+    if (!isStudent && dossiers.length > 0 && !selectedStudentId) {
+      if (dossiers.length === 1) {
+        setSelectedStudentId(dossiers[0].student_id)
+        setLogForm((f) => ({ ...f, student_id: dossiers[0].student_id }))
+        setSeminarForm((f) => ({ ...f, student_id: dossiers[0].student_id }))
+        setTeachingForm((f) => ({ ...f, student_id: dossiers[0].student_id }))
+        setExamForm((f) => ({ ...f, student_id: dossiers[0].student_id }))
+        setEvalForm((f) => ({ ...f, student_id: dossiers[0].student_id }))
+      }
+    }
+  }, [dossiers, isStudent, selectedStudentId])
+
   useEffect(() => {
     void loadAll()
-  }, [token, selectedStudentId])
+  }, [token, selectedStudentId, isStudent, user?.id])
 
   // Count inactive students (>= 60 days without supervision log)
   const inactiveCount = dossiers.filter((d) => d.inactivity_alert).length
@@ -277,12 +332,37 @@ export function PhdHub() {
               >
                 <GraduationCap className="w-6 h-6 text-amber-300" />
               </span>
-              <h1 className="text-2xl font-black tracking-tight text-white m-0" style={{ color: '#ffffff' }}>
-                GIMPA Business School — PhD Programme Hub
-              </h1>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-black tracking-tight text-white m-0" style={{ color: '#ffffff' }}>
+                    {isStudent ? 'PhD Candidate Degree Hub' : 'Doctoral Programme & Research Hub'}
+                  </h1>
+                  {isStudent && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400 text-blue-950">
+                      Candidate Account
+                    </span>
+                  )}
+                  {isSupervisorOnly && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-400 text-emerald-950">
+                      Supervisor Scope
+                    </span>
+                  )}
+                  {isLeadership && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-sky-300 text-sky-950">
+                      {user?.role === 'dean' ? 'School Leadership' : 'Department Leadership'}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
             <p className="text-xs mt-1.5 max-w-3xl leading-relaxed" style={{ color: 'rgba(255, 255, 255, 0.85)' }}>
-              Doctor of Philosophy in Business Administration: Coursework, 7-Type Research Seminars, Comprehensive Examination, 12-Stage Supervision Logs, Teaching Practice, 6-Month Review & 18 Reaccreditation Folders.
+              {isStudent
+                ? `Welcome, ${user?.name || user?.email}. View and manage your doctoral research milestones, supervision logs, comprehensive exams, and teaching practice.`
+                : isSupervisorOnly
+                ? `Welcome, ${user?.name || user?.email}. Managing doctoral candidates actively assigned under your research supervision.`
+                : isLeadership
+                ? `${user?.role === 'dean' ? (user?.school || 'School') : (user?.department || 'Department')} doctoral student monitoring, coursework, comprehensive examinations, and compliance.`
+                : 'Doctor of Philosophy in Business Administration: Coursework, 7-Type Research Seminars, Comprehensive Examination, 12-Stage Supervision Logs, Teaching Practice, 6-Month Review & 18 Reaccreditation Folders.'}
             </p>
           </div>
 
@@ -313,28 +393,10 @@ export function PhdHub() {
               className="text-[11px] font-semibold block uppercase tracking-wider"
               style={{ color: 'rgba(255, 255, 255, 0.85)' }}
             >
-              Enrolled PhD Students
+              {isStudent ? 'Enrolled Program' : isSupervisorOnly ? 'My Supervisees' : 'Enrolled PhD Students'}
             </span>
-            <span className="text-2xl font-black mt-1 block" style={{ color: '#ffffff' }}>
-              {dossiers.length}
-            </span>
-          </div>
-          <div
-            className="rounded-xl p-3.5 border transition-all"
-            style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.12)',
-              borderColor: 'rgba(255, 255, 255, 0.22)',
-              backdropFilter: 'blur(8px)',
-            }}
-          >
-            <span
-              className="text-[11px] font-semibold block uppercase tracking-wider"
-              style={{ color: 'rgba(255, 255, 255, 0.85)' }}
-            >
-              Doctoral Candidates
-            </span>
-            <span className="text-2xl font-black mt-1 block" style={{ color: '#fcd34d' }}>
-              {candidacyCount}
+            <span className="text-xl sm:text-2xl font-black mt-1 block truncate" style={{ color: '#ffffff' }}>
+              {isStudent ? (dossiers[0]?.specialization || 'PhD Candidate') : dossiers.length}
             </span>
           </div>
           <div
@@ -349,13 +411,10 @@ export function PhdHub() {
               className="text-[11px] font-semibold block uppercase tracking-wider"
               style={{ color: 'rgba(255, 255, 255, 0.85)' }}
             >
-              60-Day Inactivity Flag
+              {isStudent ? 'Candidacy Status' : 'Doctoral Candidates'}
             </span>
-            <span
-              className="text-2xl font-black mt-1 block"
-              style={{ color: inactiveCount > 0 ? '#fda4af' : '#6ee7b7' }}
-            >
-              {inactiveCount}
+            <span className="text-xl sm:text-2xl font-black mt-1 block truncate" style={{ color: '#fcd34d' }}>
+              {isStudent ? (dossiers[0]?.candidacy_status || 'Pre-Candidacy') : candidacyCount}
             </span>
           </div>
           <div
@@ -370,10 +429,33 @@ export function PhdHub() {
               className="text-[11px] font-semibold block uppercase tracking-wider"
               style={{ color: 'rgba(255, 255, 255, 0.85)' }}
             >
-              Reaccreditation Folders
+              {isStudent ? 'Supervision Status' : '60-Day Inactivity Flag'}
             </span>
-            <span className="text-2xl font-black mt-1 block" style={{ color: '#ffffff' }}>
-              18 Standard
+            <span
+              className="text-xl sm:text-2xl font-black mt-1 block truncate"
+              style={{ color: isStudent ? (dossiers[0]?.inactivity_alert ? '#fda4af' : '#6ee7b7') : (inactiveCount > 0 ? '#fda4af' : '#6ee7b7') }}
+            >
+              {isStudent
+                ? (dossiers[0]?.inactivity_alert ? 'Alert: >60d Inactive' : 'Active Meeting Logged')
+                : inactiveCount}
+            </span>
+          </div>
+          <div
+            className="rounded-xl p-3.5 border transition-all"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <span
+              className="text-[11px] font-semibold block uppercase tracking-wider"
+              style={{ color: 'rgba(255, 255, 255, 0.85)' }}
+            >
+              {isStudent ? 'Teaching Practice' : 'Reaccreditation Folders'}
+            </span>
+            <span className="text-xl sm:text-2xl font-black mt-1 block truncate" style={{ color: '#ffffff' }}>
+              {isStudent ? (dossiers[0]?.teaching_completed ? '✓ Completed' : 'Pending') : '18 Standard'}
             </span>
           </div>
         </div>
@@ -382,25 +464,56 @@ export function PhdHub() {
       {/* Inactivity Alert Callout if any */}
       {inactiveCount > 0 && (
         <div
-          className="p-4 rounded-xl border flex items-start gap-3 shadow-sm animate-in fade-in"
+          className="p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm animate-in fade-in"
           style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}
         >
-          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#d97706' }} />
-          <div className="text-xs">
-            <p className="font-bold m-0" style={{ color: '#92400e' }}>
-              Regulatory Early-Warning: {inactiveCount} PhD student(s) have no logged supervision activity in the past 60 days.
-            </p>
-            <p className="m-0 mt-0.5" style={{ color: '#b45309' }}>
-              GIMPA accreditation guidelines mandate monthly research supervision meetings and records to avoid student stalling or abandonment.
-            </p>
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#d97706' }} />
+            <div className="text-xs">
+              <p className="font-bold m-0" style={{ color: '#92400e' }}>
+                {isStudent
+                  ? 'Supervision Notice: More than 60 days have passed since your last recorded research supervision meeting.'
+                  : `Regulatory Early-Warning: ${inactiveCount} PhD candidate(s) have no logged supervision activity in the past 60 days.`}
+              </p>
+              <p className="m-0 mt-0.5" style={{ color: '#b45309' }}>
+                GIMPA accreditation guidelines mandate monthly research supervision meetings and records to avoid student stalling or abandonment.
+              </p>
+            </div>
           </div>
+
+          {!isStudent && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={handleSendReminders}
+                disabled={dispatchingReminders}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white shadow-sm transition-all cursor-pointer hover:opacity-90 disabled:opacity-50"
+                style={{
+                  backgroundColor: '#b45309',
+                }}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                {dispatchingReminders
+                  ? 'Sending Official Notices...'
+                  : isSupervisorOnly
+                  ? 'Email Supervisee Reminder'
+                  : 'Dispatch Regulatory Reminders (Email)'}
+              </button>
+              {reminderResult && (
+                <span className="text-xs font-medium text-slate-800 bg-white/90 px-2.5 py-1 rounded-md border border-amber-300">
+                  {reminderResult}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
+
 
       {/* Subtab Navigation */}
       <div className="flex flex-wrap items-center gap-2 border-b pb-3 border-slate-200">
         {[
-          { key: 'dossiers', label: 'PhD Student Dossiers', icon: UserCheck },
+          { key: 'dossiers', label: isStudent ? 'My PhD Dossier' : isSupervisorOnly ? 'My Supervised Students' : 'PhD Student Dossiers', icon: UserCheck },
           { key: 'supervision', label: '12-Stage Supervision Logs', icon: Calendar },
           { key: 'seminars', label: '7-Type Research Seminars', icon: BookOpen },
           { key: 'exams', label: 'Comprehensive Exam & Candidacy', icon: Award },
@@ -436,23 +549,37 @@ export function PhdHub() {
       {activeSubTab === 'dossiers' && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search student, email, specialization..."
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-800"
-                style={{ paddingLeft: '34px' }}
-              />
-            </div>
+            {!isStudent && (
+              <div className="relative w-full sm:w-80">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search student, email, specialization..."
+                  className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-800"
+                  style={{ paddingLeft: '34px' }}
+                />
+              </div>
+            )}
             <div className="text-xs text-slate-500 font-medium">
-              Showing {filteredDossiers.length} of {dossiers.length} PhD Students
+              {isStudent
+                ? `Doctoral Candidate Progress Dossier`
+                : isSupervisorOnly
+                ? `Showing ${filteredDossiers.length} of ${dossiers.length} PhD Supervisees`
+                : `Showing ${filteredDossiers.length} of ${dossiers.length} PhD Students`}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {isSupervisorOnly && dossiers.length === 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-xs text-slate-600 space-y-2">
+              <UserCheck className="w-8 h-8 text-slate-400 mx-auto" />
+              <p className="font-bold text-slate-800 m-0">No Assigned Supervisees</p>
+              <p className="text-slate-500 m-0">You are not currently recorded as the research supervisor for any enrolled PhD students in the repository.</p>
+            </div>
+          )}
+
+          <div className={`grid gap-4 ${isStudent ? 'grid-cols-1 max-w-3xl mx-auto' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
             {filteredDossiers.map((student) => (
               <div
                 key={student.student_id}
@@ -508,7 +635,7 @@ export function PhdHub() {
                 <div className="text-xs space-y-1 pt-1 border-t border-slate-100">
                   <div className="flex justify-between text-[11px]">
                     <span className="text-slate-500">Current Stage:</span>
-                    <span className="font-semibold text-slate-800 text-right truncate max-w-[170px]" title={student.research_stage}>
+                    <span className="font-semibold text-slate-800 text-right truncate max-w-[200px]" title={student.research_stage}>
                       {student.research_stage}
                     </span>
                   </div>
@@ -530,6 +657,14 @@ export function PhdHub() {
                       {student.last_meeting_date ? `${student.last_meeting_date} (${student.days_since_last_meeting}d ago)` : 'None Logged'}
                     </span>
                   </div>
+                  {student.supervisors && student.supervisors.length > 0 && (
+                    <div className="flex justify-between text-[11px] pt-1">
+                      <span className="text-slate-500">Supervisors:</span>
+                      <span className="font-semibold text-slate-800 text-right truncate max-w-[200px]">
+                        {student.supervisors.join(', ')}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
@@ -550,9 +685,9 @@ export function PhdHub() {
             ))}
           </div>
 
-          {filteredDossiers.length === 0 && (
+          {filteredDossiers.length === 0 && !isSupervisorOnly && (
             <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center text-xs text-slate-500">
-              No PhD students found matching search.
+              No PhD candidate records found.
             </div>
           )}
         </div>
@@ -650,9 +785,14 @@ export function PhdHub() {
                 Departmental Colloquia, GAAS Conferences, International Peer-Reviewed Venues, and Proposal/Pre-Viva Seminars.
               </p>
             </div>
-            {isSupervisorOrStaff && (
+            {(isSupervisorOrStaff || isStudent) && (
               <Button
-                onClick={() => setShowSeminarModal(true)}
+                onClick={() => {
+                  if (isStudent && user?.id) {
+                    setSeminarForm((f) => ({ ...f, student_id: user.id }))
+                  }
+                  setShowSeminarModal(true)
+                }}
                 className="bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl px-3.5 py-2 flex items-center gap-1.5 shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -804,9 +944,14 @@ export function PhdHub() {
                 Minimum 45 contact hours of undergraduate teaching, tutoring, seminar facilitation and supervising faculty evaluation.
               </p>
             </div>
-            {isSupervisorOrStaff && (
+            {(isSupervisorOrStaff || isStudent) && (
               <Button
-                onClick={() => setShowTeachingModal(true)}
+                onClick={() => {
+                  if (isStudent && user?.id) {
+                    setTeachingForm((f) => ({ ...f, student_id: user.id }))
+                  }
+                  setShowTeachingModal(true)
+                }}
                 className="bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl px-3.5 py-2 flex items-center gap-1.5 shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -1190,19 +1335,26 @@ export function PhdHub() {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Student</label>
-                <select
-                  value={seminarForm.student_id}
-                  onChange={(e) => setSeminarForm({ ...seminarForm, student_id: Number(e.target.value) })}
-                  className="w-full p-2 rounded-lg border border-slate-200 text-xs"
-                >
-                  <option value={0}>-- Select Student --</option>
-                  {dossiers.map((d) => (
-                    <option key={d.student_id} value={d.student_id}>
-                      {d.student_name}
-                    </option>
-                  ))}
-                </select>
+                <label className="font-bold text-slate-700 block mb-1">Doctoral Candidate</label>
+                {isStudent ? (
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 flex items-center justify-between">
+                    <span>{user?.name || user?.email}</span>
+                    <span className="text-[10px] text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded font-bold">You</span>
+                  </div>
+                ) : (
+                  <select
+                    value={seminarForm.student_id}
+                    onChange={(e) => setSeminarForm({ ...seminarForm, student_id: Number(e.target.value) })}
+                    className="w-full p-2 rounded-lg border border-slate-200 text-xs"
+                  >
+                    <option value={0}>-- Select Student --</option>
+                    {dossiers.map((d) => (
+                      <option key={d.student_id} value={d.student_id}>
+                        {d.student_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -1263,12 +1415,13 @@ export function PhdHub() {
                 size="sm"
                 className="bg-blue-900 hover:bg-blue-800 text-white font-bold"
                 onClick={async () => {
-                  if (!seminarForm.student_id || !seminarForm.title) {
+                  const targetStudentId = isStudent ? (user?.id || 0) : seminarForm.student_id
+                  if (!targetStudentId || !seminarForm.title) {
                     alert('Please select student and specify title')
                     return
                   }
                   try {
-                    await apiRecordPhdSeminar(token, seminarForm)
+                    await apiRecordPhdSeminar(token, { ...seminarForm, student_id: targetStudentId })
                     setShowSeminarModal(false)
                     await loadAll()
                   } catch (err) {
@@ -1404,19 +1557,26 @@ export function PhdHub() {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Student</label>
-                <select
-                  value={teachingForm.student_id}
-                  onChange={(e) => setTeachingForm({ ...teachingForm, student_id: Number(e.target.value) })}
-                  className="w-full p-2 rounded-lg border border-slate-200 text-xs"
-                >
-                  <option value={0}>-- Select Student --</option>
-                  {dossiers.map((d) => (
-                    <option key={d.student_id} value={d.student_id}>
-                      {d.student_name}
-                    </option>
-                  ))}
-                </select>
+                <label className="font-bold text-slate-700 block mb-1">Doctoral Candidate</label>
+                {isStudent ? (
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 flex items-center justify-between">
+                    <span>{user?.name || user?.email}</span>
+                    <span className="text-[10px] text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded font-bold">You</span>
+                  </div>
+                ) : (
+                  <select
+                    value={teachingForm.student_id}
+                    onChange={(e) => setTeachingForm({ ...teachingForm, student_id: Number(e.target.value) })}
+                    className="w-full p-2 rounded-lg border border-slate-200 text-xs"
+                  >
+                    <option value={0}>-- Select Student --</option>
+                    {dossiers.map((d) => (
+                      <option key={d.student_id} value={d.student_id}>
+                        {d.student_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -1461,12 +1621,13 @@ export function PhdHub() {
                 size="sm"
                 className="bg-blue-900 hover:bg-blue-800 text-white font-bold"
                 onClick={async () => {
-                  if (!teachingForm.student_id || !teachingForm.course_code) {
+                  const targetStudentId = isStudent ? (user?.id || 0) : teachingForm.student_id
+                  if (!targetStudentId || !teachingForm.course_code) {
                     alert('Please select student and course')
                     return
                   }
                   try {
-                    await apiRecordTeachingRequirement(token, teachingForm)
+                    await apiRecordTeachingRequirement(token, { ...teachingForm, student_id: targetStudentId })
                     setShowTeachingModal(false)
                     await loadAll()
                   } catch (err) {

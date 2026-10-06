@@ -23,6 +23,7 @@ export interface User {
   roles?: UserRole[]
   university?: string
   department?: string
+  program?: string | null
   mustChangePassword?: boolean
 }
 
@@ -93,6 +94,7 @@ const buildUser = (apiUser: ApiUser, extras?: Partial<User>): User => {
     roles: mergedRoles,
     university: extras?.university,
     department: apiUser.department || extras?.department,
+    program: apiUser.program || extras?.program,
     mustChangePassword: typeof apiUser.must_change_password === 'boolean' ? apiUser.must_change_password : extras?.mustChangePassword,
   }
 }

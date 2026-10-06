@@ -22,6 +22,7 @@ export type ApiUserRole =
   | "project_supervisor"
   | "hod"
   | "dean"
+  | "deputy_rector"
   | "system_admin"
   | "librarian"
   | "head_library"
@@ -35,6 +36,9 @@ export interface ApiUser {
   full_name: string | null
   department: string | null
   program?: string | null
+  specialization?: string | null
+  research_interests?: string | null
+  max_student_ceiling?: number
   is_active: boolean
   is_admin: boolean
   role: ApiUserRole
@@ -53,11 +57,15 @@ export interface ApiAdminCreateUserPayload {
   certification_type?: string
   block_code?: string
   year?: number
+  specialization?: string
+  research_interests?: string
+  max_student_ceiling?: number
 }
 
 export interface ApiAdminCreateUserResult {
   user: ApiUser
   email_sent: boolean
+  temporary_password?: string | null
 }
 
 export interface ApiListUsersParams {
@@ -349,6 +357,57 @@ export async function apiMe(accessToken: string): Promise<ApiUser> {
   return handleResponse<ApiUser>(response)
 }
 
+export const ACCESS_TOKEN_KEY = 'murrs_access_token'
+export const REFRESH_TOKEN_KEY = 'murrs_refresh_token'
+
+export async function getValidAccessToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+
+  const token =
+    localStorage.getItem(ACCESS_TOKEN_KEY) ||
+    localStorage.getItem('gimpa_access_token') ||
+    localStorage.getItem('access_token') ||
+    localStorage.getItem('token')
+
+  if (token) {
+    try {
+      const parts = token.split('.')
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]))
+        if (payload.exp && payload.exp * 1000 > Date.now() + 30000) {
+          return token
+        }
+      } else {
+        return token
+      }
+    } catch {
+      // payload decode failed, fall through to refresh
+    }
+  }
+
+  const refreshToken =
+    localStorage.getItem(REFRESH_TOKEN_KEY) ||
+    localStorage.getItem('gimpa_refresh_token') ||
+    localStorage.getItem('refresh_token')
+
+  if (refreshToken) {
+    try {
+      const refreshed = await apiRefresh(refreshToken)
+      if (refreshed?.access_token) {
+        localStorage.setItem(ACCESS_TOKEN_KEY, refreshed.access_token)
+        if (refreshed.refresh_token) {
+          localStorage.setItem(REFRESH_TOKEN_KEY, refreshed.refresh_token)
+        }
+        return refreshed.access_token
+      }
+    } catch {
+      // refresh token expired or invalid
+    }
+  }
+
+  return token || null
+}
+
 export async function apiUpdateUser(
   userId: number,
   payload: { full_name?: string; school_id?: string; school?: string; department?: string; password?: string },
@@ -457,6 +516,9 @@ export interface ApiUserUpdatePayload {
   full_name?: string
   department?: string
   program?: string
+  specialization?: string
+  research_interests?: string
+  max_student_ceiling?: number
   password?: string
   is_admin?: boolean
   is_active?: boolean
@@ -477,6 +539,22 @@ export interface ApiAdminPasswordResetResponse {
   new_password: string
   must_change_password: boolean
   email_sent: boolean
+  message: string
+}
+
+export interface BroadcastAttachmentItem {
+  filename: string
+  file_url: string
+  file_size?: number
+  content_type?: string
+}
+
+export interface BroadcastCsvPreviewResponse {
+  total_rows_parsed: number
+  matched_count: number
+  unmatched_count: number
+  matched_recipients: ApiBroadcastRecipientPreview[]
+  unmatched_identifiers: string[]
   message: string
 }
 
@@ -515,6 +593,7 @@ export interface ApiAdminBroadcastRequest {
   message: string
   announcement_type?: string
   include_email?: boolean
+  attachments?: BroadcastAttachmentItem[]
 }
 
 export interface ApiAdminBroadcastResponse {
@@ -569,6 +648,38 @@ export async function apiAdminBroadcastPreview(
     body: JSON.stringify(filter),
   })
   return handleResponse<ApiAdminBroadcastPreviewResponse>(response)
+}
+
+export async function apiUploadBroadcastAttachment(
+  file: File,
+  accessToken: string
+): Promise<BroadcastAttachmentItem> {
+  const formData = new FormData()
+  formData.append("file", file)
+  const response = await fetch(`${apiBase}/users/broadcast-attachment`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
+  })
+  return handleResponse<BroadcastAttachmentItem>(response)
+}
+
+export async function apiPreviewBroadcastCsv(
+  file: File,
+  accessToken: string
+): Promise<BroadcastCsvPreviewResponse> {
+  const formData = new FormData()
+  formData.append("file", file)
+  const response = await fetch(`${apiBase}/users/broadcast-csv-preview`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
+  })
+  return handleResponse<BroadcastCsvPreviewResponse>(response)
 }
 
 export async function apiAdminSendBroadcast(
@@ -1269,11 +1380,15 @@ export async function apiAssignExaminers(
   internalExaminerId: number,
   externalExaminerId: number | null | undefined,
   accessToken: string,
+  degreeLevel?: string,
 ): Promise<ApiPaper> {
   const form = new FormData()
   form.set("internal_examiner_id", String(internalExaminerId))
   if (externalExaminerId) {
     form.set("external_examiner_id", String(externalExaminerId))
+  }
+  if (degreeLevel) {
+    form.set("degree_level", degreeLevel)
   }
   const response = await fetch(`${apiBase}/papers/${paperId}/assign-examiners`, {
     method: "POST",
@@ -1982,6 +2097,7 @@ export interface ApiSupervisorMessagePayload {
   program_filter?: string
   include_email?: boolean
   student_ids?: number[]
+  attachments?: BroadcastAttachmentItem[]
 }
 
 export interface ApiSupervisorMessageResult {
@@ -2379,6 +2495,275 @@ export async function apiUploadReaccreditationFolderDoc(
   })
   return handleResponse<ApiPhDReaccreditationFolder>(response)
 }
+
+export interface ApiPhdRegulatoryReminderResponse {
+  success: boolean
+  message: string
+  candidates_evaluated: number
+  inactive_candidates_found: number
+  students_notified: number
+  supervisors_notified: number
+  details: Array<{
+    student_id: number
+    student_name: string
+    student_email: string
+    days_since_last_meeting: number | null
+    supervisors_contacted: number
+  }>
+}
+
+export async function apiSendPhdRegulatoryReminders(
+  accessToken: string,
+): Promise<ApiPhdRegulatoryReminderResponse> {
+  const response = await fetch(`${apiBase}/phd/regulatory-reminders`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+  return handleResponse<ApiPhdRegulatoryReminderResponse>(response)
+}
+
+export interface ApiDuplicateTopicCheckResponse {
+  is_duplicate: boolean
+  matched_title: string | null
+  similarity_pct: number
+  message: string
+}
+
+export async function apiCheckTopicDuplication(
+  title: string,
+  excludeId?: number,
+  token?: string,
+): Promise<ApiDuplicateTopicCheckResponse> {
+  const url = new URL(`${apiBase}/theses/check-topic`, window.location.origin)
+  url.searchParams.set("title", title)
+  if (excludeId) url.searchParams.set("exclude_id", String(excludeId))
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (token) headers["Authorization"] = `Bearer ${token}`
+
+  const response = await fetch(url.toString(), { method: "GET", headers })
+  return handleResponse<ApiDuplicateTopicCheckResponse>(response)
+}
+
+export interface ApiSupervisorCapacityItem {
+  id: number
+  name: string
+  email: string
+  department: string
+  school: string
+  specialization: string
+  research_interests: string
+  active_students_count: number
+  max_student_ceiling: number
+  utilization_pct: number
+  is_at_ceiling: boolean
+  available_slots: number
+}
+
+export async function apiGetSupervisorCapacities(
+  accessToken: string,
+  departmentId?: number,
+): Promise<ApiSupervisorCapacityItem[]> {
+  const url = new URL(`${apiBase}/supervisors/capacities`, window.location.origin)
+  if (departmentId) url.searchParams.set("department_id", String(departmentId))
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiSupervisorCapacityItem[]>(response)
+}
+
+export async function apiUpdateSupervisorCapacity(
+  supervisorId: number,
+  maxCeiling: number,
+  accessToken: string,
+  specialization?: string,
+  researchInterests?: string,
+): Promise<{ id: number; message: string }> {
+  const url = new URL(`${apiBase}/supervisors/${supervisorId}/capacity`, window.location.origin)
+  url.searchParams.set("max_student_ceiling", String(maxCeiling))
+  if (specialization) url.searchParams.set("specialization", specialization)
+  if (researchInterests) url.searchParams.set("research_interests", researchInterests)
+
+  const response = await fetch(url.toString(), {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<{ id: number; message: string }>(response)
+}
+
+export interface ApiPlagiarismReport {
+  report_id: string
+  paper_id: number
+  similarity_score: number
+  status: "clean" | "moderate" | "flagged"
+  risk_level: string
+  word_count: number
+  checked_at: string
+  checked_by: string
+  allowed_threshold: number
+  is_approved_for_marking: boolean
+  sources: Array<{
+    source_id: string | number
+    title: string
+    author: string
+    year: number
+    similarity_pct: number
+    matched_type: string
+  }>
+  breakdown: {
+    internet_sources: number
+    publications: number
+    student_papers: number
+  }
+}
+
+export async function apiCheckPlagiarism(
+  paperId: number,
+  accessToken: string,
+): Promise<ApiPlagiarismReport> {
+  const response = await fetch(`${apiBase}/papers/${paperId}/check-plagiarism`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPlagiarismReport>(response)
+}
+
+export async function apiGetPlagiarismReport(
+  paperId: number,
+  accessToken: string,
+): Promise<ApiPlagiarismReport> {
+  const response = await fetch(`${apiBase}/papers/${paperId}/plagiarism-report`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiPlagiarismReport>(response)
+}
+
+export interface ApiSupervisorCommentEntry {
+  id: string
+  thesis_id: number
+  thesis_title: string
+  phase_label: string
+  supervisor_id: number | null
+  supervisor_name: string
+  supervisor_email: string | null
+  student_id: number | null
+  student_name: string
+  department: string
+  comment_text: string
+  decision_status: string
+  created_at: string | null
+  source_type: string
+}
+
+export interface ApiSupervisorCommentsReportResponse {
+  total_comments: number
+  entries: ApiSupervisorCommentEntry[]
+  supervisors_summary: Array<{
+    supervisor_id: number
+    name: string
+    email: string | null
+    total_comments: number
+    advisees_count: number
+  }>
+}
+
+export async function apiGetSupervisorCommentsReport(
+  accessToken: string,
+  params?: { supervisor_id?: number; department_id?: number; search?: string },
+): Promise<ApiSupervisorCommentsReportResponse> {
+  const url = new URL(`${apiBase}/reports/supervisor-comments`, window.location.origin)
+  if (params?.supervisor_id) url.searchParams.set("supervisor_id", String(params.supervisor_id))
+  if (params?.department_id) url.searchParams.set("department_id", String(params.department_id))
+  if (params?.search) url.searchParams.set("search", params.search)
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiSupervisorCommentsReportResponse>(response)
+}
+
+export interface ApiOverdueReviewItem {
+  paper_id: number
+  title: string
+  status: string
+  discipline: string
+  student_name: string
+  student_email: string | null
+  supervisor_id: number | null
+  supervisor_name: string
+  supervisor_email: string | null
+  submitted_at: string
+  days_pending: number
+  hours_pending: number
+  is_overdue: boolean
+  alert_sent_at: string | null
+}
+
+export async function apiGetOverdueReviews(
+  accessToken: string,
+  thresholdDays: number = 5,
+): Promise<ApiOverdueReviewItem[]> {
+  const url = new URL(`${apiBase}/reports/overdue-reviews`, window.location.origin)
+  url.searchParams.set("threshold_days", String(thresholdDays))
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiOverdueReviewItem[]>(response)
+}
+
+export async function apiTriggerOverdueAlerts(
+  accessToken: string,
+): Promise<{ overdue_count: number; dispatched_count: number; timestamp: string }> {
+  const response = await fetch(`${apiBase}/reports/trigger-overdue-alerts`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<{ overdue_count: number; dispatched_count: number; timestamp: string }>(response)
+}
+
+export interface ApiDashboardLiveMetrics {
+  timestamp: string
+  total_theses: number
+  overdue_5day_count: number
+  on_time_review_rate: number
+  average_plagiarism_score: number
+  phases: {
+    phase1: number
+    phase2: number
+    phase3: number
+    phase4: number
+    phase5: number
+  }
+  plagiarism_breakdown: {
+    clean_count: number
+    moderate_count: number
+    flagged_count: number
+  }
+  supervisor_metrics: {
+    total_supervisors: number
+    total_assigned: number
+    total_capacity: number
+    average_utilization_pct: number
+    supervisors: ApiSupervisorCapacityItem[]
+  }
+  overdue_reviews: ApiOverdueReviewItem[]
+}
+
+export async function apiGetDashboardLiveMetrics(
+  accessToken: string,
+): Promise<ApiDashboardLiveMetrics> {
+  const response = await fetch(`${apiBase}/dashboard/live-metrics`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiDashboardLiveMetrics>(response)
+}
+
+
 
 
 

@@ -45,10 +45,27 @@ export function meta({}: Route.MetaArgs) {
 export default function Home() {
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState('catalog');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab) return tab;
+    }
+    return 'catalog';
+  });
   const [overdueCount, setOverdueCount] = useState(0);
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab && tab !== activeTab) {
+        setActiveTab(tab);
+      }
+    }
+  }, []);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -90,6 +107,7 @@ export default function Home() {
   const roleLabel = (() => {
     if (!user) return '';
     if (hasRole('system_admin')) return 'System Admin';
+    if (hasRole('deputy_rector')) return 'Deputy Rector';
     if (hasRole('head_library')) return 'Head Librarian';
     if (hasRole('librarian')) return 'Librarian';
     if (hasRole('dean')) return 'Dean';
@@ -101,11 +119,25 @@ export default function Home() {
     return user.role;
   })();
 
+  const isSystemAdmin = hasRole('system_admin');
+  const isDeputyRector = hasRole('deputy_rector');
+  const isLibrarian = !isSystemAdmin && (hasRole('librarian') || hasRole('head_library'));
+  const isAcademicLeadership = isDeputyRector || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator');
+  const isSupervisorRole = hasRole('project_supervisor') || hasRole('lecturer');
+  const isPhdStudent =
+    (user?.role === 'student' || user?.role === 'member') &&
+    (Boolean(user?.program && (user.program.toLowerCase().includes('phd') || user.program.toLowerCase().includes('doctor'))));
+
+  // PhD Hub: strictly forbidden for Librarian; accessible to System Admin, Deputy Rector, Academic Leadership, Supervisors, and PhD students.
+  const canViewPhdHub = !isLibrarian && (isSystemAdmin || isDeputyRector || isAcademicLeadership || isSupervisorRole || isPhdStudent);
+
+  // Reviewer for Approval Workflow:
   const isReviewer =
     !user?.mustChangePassword &&
-    (hasRole('librarian') || hasRole('project_coordinator') || hasRole('hod') || hasRole('lecturer') || hasRole('project_supervisor'));
-  const isAdminAreaUser = hasRole('system_admin');
-  const isAdministrationUser = isAdminAreaUser || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator') || hasRole('lecturer');
+    (isLibrarian || isAcademicLeadership || isSupervisorRole || isSystemAdmin || isDeputyRector);
+
+  const isAdminAreaUser = isSystemAdmin || isDeputyRector;
+  const isAdministrationUser = isSystemAdmin || isDeputyRector || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator');
 
   const handleTabChange = (tab: string) => {
     if (isMobile) {
@@ -119,10 +151,28 @@ export default function Home() {
       navigate('/login');
       return;
     }
+    if (tab === 'phd' && !canViewPhdHub) return;
     if (tab === 'approval' && !isReviewer) return;
-    if (tab === 'librarian' && !isAdministrationUser) return;
     setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.replaceState({}, '', url.toString());
+    }
   };
+
+  // Safety redirect if user switches roles or opens a tab they do not have rights to view
+  useEffect(() => {
+    if (activeTab === 'phd' && !canViewPhdHub) {
+      setActiveTab('dashboard');
+    }
+    if (activeTab === 'approval' && !isReviewer) {
+      setActiveTab('dashboard');
+    }
+    if (activeTab === 'librarian' && !isAdministrationUser) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, canViewPhdHub, isReviewer, isAdministrationUser]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,7 +220,7 @@ export default function Home() {
     { tab: 'catalog',   label: 'Catalog',           icon: Book,          show: true },
     { tab: 'search',    label: 'Search & Discovery', icon: Search,        show: true },
     { tab: 'dashboard', label: 'Dashboard',          icon: BarChart3,     show: isAuthenticated && user?.role !== 'guest' },
-    { tab: 'phd',       label: 'PhD Hub',            icon: GraduationCap, show: isAuthenticated && user?.role !== 'guest' },
+    { tab: 'phd',       label: 'PhD Hub',            icon: GraduationCap, show: canViewPhdHub },
     { tab: 'approval',  label: 'Approval Workflow',  icon: BookOpen,      show: isReviewer,            badge: overdueCount > 0 ? overdueCount : null },
     { tab: 'librarian', label: 'Administration',     icon: Settings,      show: isAdministrationUser },
   ] as Array<{tab:string;label:string;icon:React.ElementType;show:boolean|undefined;badge?:number|null}>).filter(item => item.show);
@@ -653,7 +703,7 @@ export default function Home() {
           {activeTab === 'dashboard' && isAuthenticated && user?.role !== 'guest' && (
             <Dashboard userRole={user?.role || 'student'} />
           )}
-          {activeTab === 'phd' && isAuthenticated && user?.role !== 'guest' && <PhdHub />}
+          {activeTab === 'phd' && canViewPhdHub && <PhdHub />}
           {activeTab === 'profile'  && isAuthenticated && user?.role !== 'guest' && <Profile />}
           {activeTab === 'approval' && isReviewer && <ApprovalWorkflow />}
           {activeTab === 'librarian' && isAdministrationUser && (

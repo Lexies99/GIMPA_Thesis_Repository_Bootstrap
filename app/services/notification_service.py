@@ -67,5 +67,8 @@ def _notification_subject(ntype: str) -> str:
         "workflow_update": "GIMPA Thesis Management System — Workflow Status Update",
         "account_activation_required": "New Account Pending Activation — GIMPA Thesis System",
         "account_activated": "Your GIMPA Thesis Management System Account is Active",
+        "phd_supervision_inactivity_student": "Regulatory Notice: Monthly Research Supervision Required — GIMPA PhD Hub",
+        "phd_supervision_inactivity_supervisor": "Accreditation Alert: Doctoral Candidate Supervision Inactivity Notice — GIMPA PhD Hub",
     }
     return subjects.get(ntype, "GIMPA Thesis Management System Notification")
+

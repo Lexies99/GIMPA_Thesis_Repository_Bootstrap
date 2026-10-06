@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+import urllib.request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -8,6 +11,32 @@ from app.core.security import hash_password, validate_password_requirements, ver
 from app.models.user import User
 from app.models.user_role import UserRole
 from app.schemas.user import UserUpdate
+
+logger = logging.getLogger(__name__)
+
+def sync_to_password_database(email: str, new_password: str) -> bool:
+    """Synchronize password update immediately to the standalone Password_database IdP."""
+    if not email or not new_password:
+        return False
+    try:
+        data = json.dumps({
+            "email": email.strip().lower(),
+            "new_password": new_password,
+            "client_app": "thesis_repository"
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8020/api/v1/auth/sync-password",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": "master-internal-auth-key-2026"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except Exception as e:
+        logger.warning("Could not sync to Password_database service: %s", e)
+        return False
 
 VALID_USER_ROLES = {
     "student",
@@ -211,10 +240,60 @@ def create_user(
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
-    user = get_user_by_email(db, email)
-    if not user or not user.is_active or not verify_password(password, user.hashed_password):
-        return None
-    return user
+    clean_email = email.strip().lower()
+    user = get_user_by_email(db, clean_email)
+    
+    # 1. Check local password hash if active user exists
+    if user and user.is_active and verify_password(password, user.hashed_password):
+        return user
+
+    # 2. Check Password_database IdP (if user not found or password changed from another connected app)
+    try:
+        data = json.dumps({
+            "email": clean_email,
+            "password": password,
+            "client_app": "thesis_repository"
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8020/api/v1/auth/verify-credentials",
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            if resp.status == 200:
+                res_json = json.loads(resp.read().decode("utf-8"))
+                if res_json.get("valid"):
+                    if user:
+                        # Update existing user
+                        user.hashed_password = hash_password(password)
+                        user.is_active = True
+                        db.add(user)
+                        db.commit()
+                        db.refresh(user)
+                        return user
+                    else:
+                        # Auto-provision user record in Thesis DB from Central IdP
+                        role_str = res_json.get("role") or "student"
+                        is_adm = bool(res_json.get("is_admin"))
+                        new_u = User(
+                            email=clean_email,
+                            full_name=res_json.get("full_name") or clean_email.split("@")[0],
+                            hashed_password=hash_password(password),
+                            role=role_str,
+                            is_admin=is_adm,
+                            is_active=True,
+                            must_change_password=False
+                        )
+                        db.add(new_u)
+                        db.flush()
+                        db.add(UserRole(user_id=new_u.id, role=role_str))
+                        db.commit()
+                        db.refresh(new_u)
+                        return new_u
+    except Exception as e:
+        logger.warning("Password_database auth fallback notice: %s", e)
+
+    return None
 
 
 def update_user(db: Session, user: User, payload: UserUpdate) -> User:
@@ -230,6 +309,12 @@ def update_user(db: Session, user: User, payload: UserUpdate) -> User:
         user.department = payload.department
     if payload.program is not None:
         user.program = payload.program.strip() or None
+    if getattr(payload, "specialization", None) is not None:
+        user.specialization = payload.specialization.strip() if payload.specialization else ""
+    if getattr(payload, "research_interests", None) is not None:
+        user.research_interests = payload.research_interests.strip() if payload.research_interests else ""
+    if getattr(payload, "max_student_ceiling", None) is not None:
+        user.max_student_ceiling = max(1, int(payload.max_student_ceiling))
     if payload.must_change_password is not None:
         user.must_change_password = payload.must_change_password
     if payload.password:
@@ -237,6 +322,7 @@ def update_user(db: Session, user: User, payload: UserUpdate) -> User:
         user.hashed_password = hash_password(payload.password)
         if payload.must_change_password is None:
             user.must_change_password = False
+        sync_to_password_database(user.email, payload.password)
     if payload.is_admin is not None:
         user.is_admin = payload.is_admin
         if payload.role is None and not payload.roles:
@@ -244,18 +330,25 @@ def update_user(db: Session, user: User, payload: UserUpdate) -> User:
     if payload.is_active is not None:
         user.is_active = payload.is_active
 
+    if payload.role is not None:
+        user.role = normalize_role(payload.role)
+
     if payload.roles is not None and len(payload.roles) > 0:
-        # Replace all roles with provided list
+        # Replace all roles with provided list, ensuring primary role is preserved
         db.query(UserRole).filter(UserRole.user_id == user.id).delete()
         db.flush()
         valid_roles = []
+        normalized_primary = normalize_role(user.role)
+        if normalized_primary in VALID_USER_ROLES:
+            valid_roles.append(normalized_primary)
+            db.add(UserRole(user_id=user.id, role=normalized_primary))
+
         for r in payload.roles:
             nr = normalize_role(r)
             if nr in VALID_USER_ROLES and nr not in valid_roles:
                 valid_roles.append(nr)
                 db.add(UserRole(user_id=user.id, role=nr))
         db.flush()
-        _sync_primary_role(user, valid_roles)
         user.is_admin = _is_admin_role_set(valid_roles)
     elif payload.role is not None:
         user = assign_role(db, user, payload.role)
@@ -277,6 +370,7 @@ def admin_reset_password(
     validate_password_requirements(new_password)
     user.hashed_password = hash_password(new_password)
     user.must_change_password = must_change_password
+    sync_to_password_database(user.email, new_password)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -289,6 +383,7 @@ def change_password(db: Session, user: User, current_password: str, new_password
     validate_password_requirements(new_password)
     user.hashed_password = hash_password(new_password)
     user.must_change_password = False
+    sync_to_password_database(user.email, new_password)
     db.add(user)
     db.commit()
     db.refresh(user)
