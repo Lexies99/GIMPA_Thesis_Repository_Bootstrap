@@ -129,10 +129,18 @@ def dispatch_5day_overdue_alerts(db: Session) -> Dict[str, Any]:
     """
     Scans for 5-day overdue supervisor reviews and dispatches escalations to Supervisor, HOD, Dean, and Deputy Rector.
     """
+    from app.models.notification import Notification
+
     overdue_items = [item for item in get_overdue_reviews_list(db, threshold_days=5) if item["is_overdue"]]
     now = datetime.now(timezone.utc)
 
+    # Pre-fetch leadership recipients once outside loop
+    hod_users = db.query(User).filter(User.role == "hod").all()
+    dean_users = db.query(User).filter(User.role == "dean").all()
+
     dispatched_count = 0
+    notifications_to_add = []
+
     for item in overdue_items:
         paper = db.query(Paper).filter(Paper.id == item["paper_id"]).first()
         if not paper:
@@ -146,11 +154,6 @@ def dispatch_5day_overdue_alerts(db: Session) -> Dict[str, Any]:
             if (now - last_alert).total_seconds() < 86400:
                 continue
 
-        # Find department HOD and Dean
-        hod_users = db.query(User).filter(User.role == "hod").all()
-        dean_users = db.query(User).filter(User.role == "dean").all()
-        deputy_rectors = db.query(User).filter(User.role == "deputy_rector").all()
-
         alert_msg = (
             f"URGENT REVIEW OVERDUE (5+ Days): Student submission '{paper.title}' (#{paper.id}) "
             f"has been waiting {item['days_pending']} days for supervisor review ({item['supervisor_name']})."
@@ -158,22 +161,32 @@ def dispatch_5day_overdue_alerts(db: Session) -> Dict[str, Any]:
 
         # Notify supervisor
         if paper.supervisor_id:
-            create_notification(db, user_id=paper.supervisor_id, paper_id=paper.id, ntype="overdue_review", message=alert_msg)
+            notifications_to_add.append(
+                Notification(user_id=paper.supervisor_id, paper_id=paper.id, type="overdue_review", message=alert_msg, is_read=False)
+            )
 
         # Notify HODs
         for h in hod_users:
-            create_notification(db, user_id=h.id, paper_id=paper.id, ntype="overdue_escalation", message=alert_msg)
+            notifications_to_add.append(
+                Notification(user_id=h.id, paper_id=paper.id, type="overdue_escalation", message=alert_msg, is_read=False)
+            )
 
         # Notify Deans
         for d in dean_users:
-            create_notification(db, user_id=d.id, paper_id=paper.id, ntype="overdue_escalation", message=alert_msg)
+            notifications_to_add.append(
+                Notification(user_id=d.id, paper_id=paper.id, type="overdue_escalation", message=alert_msg, is_read=False)
+            )
 
         paper.lecturer_overdue_alert_sent_at = now
         dispatched_count += 1
 
+    if notifications_to_add:
+        db.add_all(notifications_to_add)
     db.commit()
+
     return {
         "overdue_count": len(overdue_items),
         "dispatched_count": dispatched_count,
         "timestamp": now.isoformat(),
     }
+

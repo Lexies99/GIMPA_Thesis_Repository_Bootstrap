@@ -731,7 +731,7 @@ def read_papers(
         limit=limit,
         catalog_mode=catalog,
     )
-    return [_to_paper_read(p) for p in papers]
+    return [_to_paper_read(p, db=db) for p in papers]
 
 
 @router.get("/papers/stats", response_model=PaperStats)
