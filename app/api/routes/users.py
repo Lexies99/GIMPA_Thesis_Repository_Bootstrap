@@ -1097,3 +1097,14 @@ def send_admin_broadcast_endpoint(
         message=f"Broadcast successfully dispatched to {len(recipients)} recipient(s)."
     )
 
+
+@router.post("/system/restart-frontend")
+def restart_frontend_service_endpoint(current_user: User = Depends(get_current_admin)):
+    import os, subprocess
+    os.system("pkill -9 -f 'react-router-serve'")
+    os.system("pkill -9 -f 'node.*9011'")
+    cmd = "cd /home/admin/web/thesis.manamatechnologies.com/app/frontend && PORT=9011 nohup npx react-router-serve ./build/server/index.js --port 9011 > /tmp/frontend_9011.log 2>&1 &"
+    os.system(cmd)
+    return {"status": "success", "message": "Frontend server restarted on port 9011"}
+
+
