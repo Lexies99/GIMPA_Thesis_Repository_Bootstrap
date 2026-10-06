@@ -72,6 +72,7 @@ import {
   Eye,
   Paperclip,
   UploadCloud,
+  GraduationCap,
 } from 'lucide-react'
 
 interface ManagedAccount {
@@ -225,6 +226,9 @@ export function AccountManagement() {
     school_id: '',
     school: '',
     department: '',
+    specialization: '',
+    research_interests: '',
+    max_student_ceiling: 5,
     certification_type: 'Undergraduate',
     block_code: 'A1',
     year: String(new Date().getFullYear()),
@@ -2092,7 +2096,7 @@ export function AccountManagement() {
                   </Label>
                   <Input
                     id="create-specialization"
-                    value={createForm.specialization}
+                    value={createForm.specialization || ''}
                     onChange={(e) => setCreateForm((prev) => ({ ...prev, specialization: e.target.value }))}
                     placeholder="e.g. Machine Learning, Cloud Architecture, Financial Econometrics"
                     className="h-8 text-xs bg-white dark:bg-slate-950"
@@ -2105,7 +2109,7 @@ export function AccountManagement() {
                   </Label>
                   <Input
                     id="create-research-interests"
-                    value={createForm.research_interests}
+                    value={createForm.research_interests || ''}
                     onChange={(e) => setCreateForm((prev) => ({ ...prev, research_interests: e.target.value }))}
                     placeholder="e.g. AI, deep learning, cybersecurity, IoT, blockchain (comma-separated)"
                     className="h-8 text-xs bg-white dark:bg-slate-950"
@@ -2123,7 +2127,7 @@ export function AccountManagement() {
                       type="number"
                       min={1}
                       max={50}
-                      value={createForm.max_student_ceiling}
+                      value={createForm.max_student_ceiling ?? 5}
                       onChange={(e) => setCreateForm((prev) => ({ ...prev, max_student_ceiling: Number(e.target.value) || 1 }))}
                       className="h-8 w-24 text-xs bg-white dark:bg-slate-950 font-bold"
                     />

@@ -2948,9 +2948,15 @@ def get_dashboard_live_metrics_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     """Provides real-time KPI metrics, velocity gauges, plagiarism radar, and supervisor loads."""
-    from app.services.integrity_service import get_overdue_reviews_list
+    from app.services.integrity_service import get_overdue_reviews_list, dispatch_5day_overdue_alerts
     from app.services.matching_service import get_all_supervisors_with_capacities
     
+    # Automatically dispatch 5-day overdue reviews and escalation alerts in background
+    try:
+        dispatch_5day_overdue_alerts(db)
+    except Exception:
+        pass
+
     total_theses = db.query(Paper).count()
     overdue_list = get_overdue_reviews_list(db, threshold_days=5)
     overdue_5day_count = len([x for x in overdue_list if x["is_overdue"]])

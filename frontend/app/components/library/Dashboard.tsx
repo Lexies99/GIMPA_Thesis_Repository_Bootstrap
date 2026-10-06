@@ -62,11 +62,11 @@ import { useAuth } from '../../context/AuthContext'
 import { DocumentCommentViewer } from './DocumentCommentViewer'
 import { ReportExportModal } from './ReportExportModal'
 import {
-  Upload, FileText, CheckCircle2, Clock, AlertCircle, HelpCircle, Trash2,
+  Upload, FileText, CheckCircle2, Clock, AlertCircle, Trash2,
   Download, FileEdit, MessageSquare, FileSpreadsheet, Send, Mail, Users,
   Filter, Paperclip, UploadCloud, BookOpen, Activity, ShieldCheck, ShieldAlert,
   Sliders, RefreshCw, Sparkles, Cpu, AlertTriangle, ChevronRight, Search,
-  TrendingUp, Check, X, Award, Eye, BellRing, UserCheck, Shield
+  TrendingUp, Check, X, Award, Eye, BellRing, UserCheck, Shield, CheckCircle
 } from 'lucide-react'
 
 interface StudentPaperWorkflowProps {
@@ -98,15 +98,6 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
   }, [paper.ch1_student_done, paper.ch2_student_done, paper.ch3_student_done, paper.ch4_student_done, paper.ch5_student_done])
 
   const handleCheckboxChange = async (chapter: string, val: boolean) => {
-    setError('')
-    setSuccess('')
-    const nextChecklist = {
-      ch1: chapter === 'ch1' ? val : ch1,
-      ch2: chapter === 'ch2' ? val : ch2,
-      ch3: chapter === 'ch3' ? val : ch3,
-      ch4: chapter === 'ch4' ? val : ch4,
-      ch5: chapter === 'ch5' ? val : ch5,
-    }
     if (chapter === 'ch1') setCh1(val)
     if (chapter === 'ch2') setCh2(val)
     if (chapter === 'ch3') setCh3(val)
@@ -114,15 +105,19 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
     if (chapter === 'ch5') setCh5(val)
 
     try {
-      await apiStudentUpdateChecklist(paper.id, nextChecklist, token)
-      setSuccess('Progress updated successfully.')
+      await apiStudentUpdateChecklist(paper.id, chapter, val, token)
       onUpdate()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update checklist')
+    } catch {
+      // Revert on error
+      if (chapter === 'ch1') setCh1(!val)
+      if (chapter === 'ch2') setCh2(!val)
+      if (chapter === 'ch3') setCh3(!val)
+      if (chapter === 'ch4') setCh4(!val)
+      if (chapter === 'ch5') setCh5(!val)
     }
   }
 
-  const handleUploadCombinedThesis = async (e: React.FormEvent) => {
+  const handleCombinedSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!combinedFile) return
     setError('')
@@ -130,7 +125,7 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
     setSubmitting(true)
     try {
       await apiUploadCombinedThesis(paper.id, combinedFile, token)
-      setSuccess('Combined thesis uploaded successfully. Awaiting supervisor sign-off.')
+      setSuccess('Combined thesis uploaded successfully!')
       setCombinedFile(null)
       onUpdate()
     } catch (err) {
@@ -140,33 +135,13 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
     }
   }
 
-  const handleUploadDraft = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!draftFile) return
-    setError('')
-    setSuccess('')
-    setSubmitting(true)
+  const handleDownloadExaminerScript = async (paperId: number, examinerId: number) => {
     try {
-      await apiUploadDraft(paper.id, draftFile, token)
-      setSuccess('New draft uploaded successfully. Your supervisor has been notified.')
-      setDraftFile(null)
-      const input = document.getElementById(`draft-file-${paper.id}`) as HTMLInputElement
-      if (input) input.value = ''
-      onUpdate()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Draft upload failed')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const handleDownloadExaminerScript = async (type: 'internal' | 'external') => {
-    try {
-      const { blob, filename } = await apiDownloadExaminerScript(paper.id, type, token)
+      const blob = await apiDownloadExaminerScript(paperId, examinerId, token)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = filename
+      a.download = `Examiner_Report_Paper_${paperId}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -178,7 +153,7 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
   }
 
   const handleInSystemCorrectionsSubmit = async () => {
-    const activeToken = token || localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || localStorage.getItem('access_token') || ''
+    const activeToken = token || localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || ''
     setError('')
     setSuccess('')
     setSubmitting(true)
@@ -200,7 +175,7 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
       await handleInSystemCorrectionsSubmit()
       return
     }
-    const activeToken = token || localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || localStorage.getItem('access_token') || ''
+    const activeToken = token || localStorage.getItem('gimpa_access_token') || localStorage.getItem('murrs_access_token') || ''
     setError('')
     setSuccess('')
     setSubmitting(true)
@@ -223,143 +198,125 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
           icon: <Clock className="size-5 text-amber-500 animate-pulse" />,
           title: 'Phase 1: Topic Submitted',
           desc: 'Your thesis topic has been submitted successfully. It is currently awaiting review and acceptance by the Head of Department (HOD) / Project Coordinator.',
-          color: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-          textColor: 'text-amber-200'
+          color: 'border-amber-500/30 bg-amber-50 text-amber-800',
+          textColor: 'text-amber-900'
         }
       case 'phase1_topic_accepted':
         return {
-          icon: <CheckCircle2 className="size-5 text-emerald-400" />,
-          title: 'Phase 2: Project Proposal Submission Required',
-          desc: 'Your topic was accepted and a supervisor has been assigned! Please upload your full Project Proposal below for supervisor review.',
-          color: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-          textColor: 'text-emerald-200'
+          icon: <CheckCircle2 className="size-5 text-blue-500" />,
+          title: 'Phase 1: Topic Accepted',
+          desc: 'Your topic proposal has been approved! The system is allocating your project supervisor based on your research specialization.',
+          color: 'border-blue-500/30 bg-blue-50 text-blue-800',
+          textColor: 'text-blue-900'
         }
-      case 'phase1_topic_rejected':
-      case 'phase1_proposal_rejected':
+      case 'phase2_supervisor_assigned':
         return {
-          icon: <AlertCircle className="size-5 text-rose-400" />,
-          title: 'Phase 1: Topic Rejected',
-          desc: 'Your topic was rejected by the HOD. Please review feedback comments and resubmit.',
-          color: 'border-rose-500/30 bg-rose-500/10 text-rose-300',
-          textColor: 'text-rose-200'
+          icon: <Activity className="size-5 text-indigo-500" />,
+          title: 'Phase 2: Supervisor Assigned',
+          desc: 'A Project Supervisor has been allocated. You may now commence writing your thesis chapters (Chapters 1 to 5).',
+          color: 'border-indigo-500/30 bg-indigo-50 text-indigo-800',
+          textColor: 'text-indigo-900'
         }
-      case 'phase2_proposal_submitted':
+      case 'phase3_chapters_in_progress':
         return {
-          icon: <Clock className="size-5 text-cyan-400 animate-pulse" />,
-          title: 'Phase 2: Proposal Submitted — Awaiting Supervisor Review',
-          desc: 'Your project proposal has been submitted to your assigned supervisor for review and approval.',
-          color: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300',
-          textColor: 'text-cyan-200'
+          icon: <FileEdit className="size-5 text-cyan-600" />,
+          title: 'Phase 3: Chapter Writing & Feedback',
+          desc: 'Work directly with your supervisor using ONLYOFFICE in-browser annotations. Tick off chapters as you complete them.',
+          color: 'border-cyan-500/30 bg-cyan-50 text-cyan-900',
+          textColor: 'text-cyan-950'
         }
-      case 'phase3_chapters':
-      case 'phase3_steps_in_progress':
-      case 'phase2_proposal_accepted':
+      case 'phase3_combined_submitted':
         return {
-          icon: <FileText className="size-5 text-indigo-400 animate-pulse" />,
-          title: 'Phase 2: Dynamic Steps Progress',
-          desc: 'Proposal accepted! Please submit your thesis steps/chapters for supervisor review below. Your supervisor will advance you to Phase 3 (Examination) when all steps are complete.',
-          color: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300',
-          textColor: 'text-indigo-200'
+          icon: <Clock className="size-5 text-purple-600 animate-pulse" />,
+          title: 'Phase 3: Combined Thesis Under Review',
+          desc: 'Your complete dissertation (Chapters 1-5) is currently undergoing Turnitin plagiarism verification and final supervisor sign-off.',
+          color: 'border-purple-500/30 bg-purple-50 text-purple-900',
+          textColor: 'text-purple-950'
         }
-      case 'phase4_pending_examiners':
+      case 'phase4_examination':
         return {
-          icon: <CheckCircle2 className="size-5 text-emerald-400" />,
-          title: 'Phase 3: Awaiting Examiner Assignment',
-          desc: 'Your supervisor has marked all steps complete! Currently awaiting assignment of Internal and External Examiners by the HOD/Project Coordinator.',
-          color: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-          textColor: 'text-emerald-200'
-        }
-      case 'phase4_marking':
-        return {
-          icon: <Clock className="size-5 text-purple-400 animate-pulse" />,
-          title: 'Phase 3: Under Examination & Marking',
-          desc: 'Examiners are currently grading your thesis project and preparing qualitative feedback remarks.',
-          color: 'border-purple-500/30 bg-purple-500/10 text-purple-300',
-          textColor: 'text-purple-200'
+          icon: <Award className="size-5 text-amber-600" />,
+          title: 'Phase 4: Defense & Examination',
+          desc: 'Your thesis is being reviewed by the Internal and External Examiners. Awaiting examiner scores and assessment reports.',
+          color: 'border-amber-500/30 bg-amber-50 text-amber-900',
+          textColor: 'text-amber-950'
         }
       case 'phase5_corrections':
         return {
-          icon: <AlertCircle className="size-5 text-amber-400 animate-bounce" />,
-          title: 'Phase 4: Post-Examination Corrections Required',
-          desc: 'Examination is complete! Please review examiner remarks, perform the required corrections, and upload the updated document for supervisor and HOD sign-off.',
-          color: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-          textColor: 'text-amber-200'
+          icon: <AlertCircle className="size-5 text-rose-600 animate-bounce" />,
+          title: 'Phase 5: Post-Defense Corrections Required',
+          desc: 'Please implement the examiners’ required post-defense corrections and resubmit for supervisor clearance.',
+          color: 'border-rose-500/30 bg-rose-50 text-rose-900',
+          textColor: 'text-rose-950'
         }
-      case 'phase5_pending_supervisor':
+      case 'phase5_certified':
         return {
-          icon: <Clock className="size-5 text-cyan-400 animate-pulse" />,
-          title: 'Phase 4: Corrections Awaiting Supervisor Verification',
-          desc: 'Your corrected thesis manuscript has been submitted and is currently being verified by your supervisor.',
-          color: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300',
-          textColor: 'text-cyan-200'
-        }
-      case 'phase5_approved_for_library':
-      case 'approved':
-      case 'published':
-      case 'phase5_published':
-        return {
-          icon: <CheckCircle2 className="size-5 text-emerald-400" />,
-          title: 'Phase 5: Approved & Published in GIMPA Repository',
-          desc: 'Congratulations! Your thesis has been fully certified, approved across all dual academic sign-offs, and deposited in the GIMPA Repository.',
-          color: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-          textColor: 'text-emerald-200'
+          icon: <CheckCircle className="size-5 text-emerald-600" />,
+          title: 'Phase 5: Certified & Published',
+          desc: 'Congratulations! Your thesis has been certified by the Library and is permanently archived in the institutional repository.',
+          color: 'border-emerald-500/30 bg-emerald-50 text-emerald-900',
+          textColor: 'text-emerald-950'
         }
       default:
-        return null
+        return {
+          icon: <FileText className="size-5 text-slate-500" />,
+          title: status.replace(/_/g, ' ').toUpperCase(),
+          desc: 'Workflow milestone status in repository pipeline.',
+          color: 'border-slate-200 bg-slate-50 text-slate-700',
+          textColor: 'text-slate-800'
+        }
     }
   }
 
-  const statusDetails = getStatusDetails(paper.status)
+  const details = getStatusDetails(paper.status)
 
   return (
-    <div className="space-y-4 text-left">
-      {statusDetails && (
-        <div className={`flex items-start gap-3 border rounded-xl p-4 ${statusDetails.color} backdrop-blur-md`}>
-          <div className="mt-0.5">{statusDetails.icon}</div>
-          <div className="space-y-1">
-            <p className="text-xs font-bold uppercase tracking-wider">{statusDetails.title}</p>
-            <p className={`text-xs ${statusDetails.textColor}`}>{statusDetails.desc}</p>
-          </div>
+    <div className="space-y-4 pt-2">
+      <div className={`p-4 rounded-xl border flex items-start gap-3 ${details.color}`}>
+        <div className="shrink-0 mt-0.5">{details.icon}</div>
+        <div className="space-y-1">
+          <h4 className={`text-sm font-bold ${details.textColor}`}>{details.title}</h4>
+          <p className="text-xs leading-relaxed text-slate-600">{details.desc}</p>
         </div>
-      )}
+      </div>
 
-      {/* Dynamic Chapters Upload for Phase 2 / 3 */}
-      {(paper.status === 'phase3_chapters' || paper.status === 'phase3_steps_in_progress' || paper.status === 'phase2_proposal_accepted') && (
-        <div className="border border-border/40 bg-card/60 backdrop-blur-md rounded-xl p-4 space-y-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <FileText className="size-4 text-cyan-400" /> Thesis Chapter Steps Submission
+      {paper.status === 'phase3_chapters_in_progress' && (
+        <div className="border border-slate-200 bg-white rounded-xl p-4 space-y-3 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+            <CheckCircle2 className="size-4 text-emerald-600" /> Milestone Chapter Checklist
           </p>
-          
-          <div className="space-y-2">
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault()
-                if (!draftFile) return
-                setSubmitting(true)
-                try {
-                  const nextStepNum = (paper.steps?.length || 0) + 1
-                  const { apiSubmitStep } = await import('../../lib/api')
-                  await apiSubmitStep(paper.id, nextStepNum, `Step ${nextStepNum}`, draftFile, token)
-                  setSuccess(`Step ${nextStepNum} submitted successfully!`)
-                  setDraftFile(null)
-                  onUpdate()
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Step submission failed')
-                } finally {
-                  setSubmitting(false)
-                }
-              }}
-              className="flex gap-2 items-center"
-            >
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+            {[
+              { id: 'ch1', label: 'Chapter 1: Intro', val: ch1 },
+              { id: 'ch2', label: 'Chapter 2: Lit Review', val: ch2 },
+              { id: 'ch3', label: 'Chapter 3: Methodology', val: ch3 },
+              { id: 'ch4', label: 'Chapter 4: Results', val: ch4 },
+              { id: 'ch5', label: 'Chapter 5: Conclusion', val: ch5 },
+            ].map((ch) => (
+              <label key={ch.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={ch.val}
+                  onChange={(e) => void handleCheckboxChange(ch.id, e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <span className="text-[11px] font-medium text-slate-700">{ch.label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">Ready to submit all chapters for complete defense review?</p>
+            <form onSubmit={handleCombinedSubmit} className="flex gap-2 items-center">
               <Input
                 type="file"
                 accept=".pdf,.doc,.docx"
-                onChange={(e) => setDraftFile(e.target.files?.[0] || null)}
-                className="h-9 text-xs bg-background/50 border-border/50"
+                onChange={(e) => setCombinedFile(e.target.files?.[0] || null)}
+                className="h-8 text-xs bg-white border-slate-200"
                 required
               />
-              <Button type="submit" size="sm" disabled={submitting || !draftFile} className="bg-cyan-600 hover:bg-cyan-500 text-white whitespace-nowrap">
-                {submitting ? 'Submitting...' : 'Upload Chapter Draft'}
+              <Button type="submit" size="sm" disabled={submitting || !combinedFile} className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap">
+                {submitting ? 'Uploading...' : 'Submit Complete Thesis'}
               </Button>
             </form>
           </div>
@@ -367,8 +324,8 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
       )}
 
       {paper.status === 'phase5_corrections' && (
-        <div className="border border-amber-500/30 bg-amber-500/5 rounded-xl p-4 space-y-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+        <div className="border border-amber-300 bg-amber-50/60 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
             <AlertCircle className="size-4" /> Submit Revised Thesis
           </p>
           <form onSubmit={handleUploadCorrections} className="space-y-3">
@@ -378,9 +335,9 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
                 type="file"
                 accept=".pdf,.doc,.docx"
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFile(e.target.files?.[0] || null)}
-                className="h-9 text-xs bg-background/50 border-border/50"
+                className="h-9 text-xs bg-white border-amber-300"
               />
-              <Button type="submit" size="sm" disabled={submitting} className="bg-amber-600 hover:bg-amber-500 text-white whitespace-nowrap">
+              <Button type="submit" size="sm" disabled={submitting} className="bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap">
                 {submitting ? 'Submitting...' : file ? 'Submit Uploaded File' : 'Submit In-System Corrections'}
               </Button>
             </div>
@@ -388,8 +345,8 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
         </div>
       )}
 
-      {error && <p className="text-xs text-rose-400">{error}</p>}
-      {success && <p className="text-xs text-emerald-400 font-medium">{success}</p>}
+      {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
+      {success && <p className="text-xs text-emerald-600 font-medium">{success}</p>}
     </div>
   )
 }
@@ -419,7 +376,7 @@ export function Dashboard({ userRole }: DashboardProps) {
 
   // Active Dashboard Sub-Tab
   const [activeSubTab, setActiveSubTab] = useState<
-    'operations' | 'capacities' | 'plagiarism' | 'comments' | 'overdue' | 'advisees' | 'directory'
+    'operations' | 'capacities' | 'plagiarism' | 'comments' | 'overdue' | 'directory'
   >('operations')
 
   // Live Telemetry Auto-Update Engine (Heartbeat)
@@ -465,7 +422,7 @@ export function Dashboard({ userRole }: DashboardProps) {
   const [triggeringAlerts, setTriggeringAlerts] = useState(false)
   const [alertTriggerResult, setAlertTriggerResult] = useState<string>('')
 
-  // Advisee Broadcast Messaging
+  // Advisee Broadcast Messaging Modal
   const [adviseeModalOpen, setAdviseeModalOpen] = useState(false)
   const [advisees, setAdvisees] = useState<ApiSupervisorAdvisee[]>([])
   const [adviseePrograms, setAdviseePrograms] = useState<string[]>([])
@@ -549,6 +506,51 @@ export function Dashboard({ userRole }: DashboardProps) {
     return () => clearInterval(interval)
   }, [liveAutoUpdate])
 
+  // Load Advisees for Broadcast
+  const loadAdvisees = async (prog = adviseeProgramFilter) => {
+    if (!accessToken) return
+    try {
+      const res = await apiGetSupervisorAdvisees(accessToken, prog)
+      setAdvisees(res.advisees || [])
+      setAdviseePrograms(res.available_programs || [])
+    } catch (err) {
+      console.error('Failed to load advisees:', err)
+    }
+  }
+
+  // Send Broadcast to Advisees
+  const handleSendAdviseeBroadcast = async () => {
+    if (!broadcastSubject.trim() || !broadcastMessage.trim()) {
+      setBroadcastError('Please provide both subject and message body.')
+      return
+    }
+    if (!accessToken) return
+    setSendingBroadcast(true)
+    setBroadcastError('')
+    setBroadcastSuccess('')
+    try {
+      const res = await apiSupervisorMessageAdvisees(accessToken, {
+        program: adviseeProgramFilter !== 'ALL' ? adviseeProgramFilter : undefined,
+        subject: broadcastSubject.trim(),
+        message: broadcastMessage.trim(),
+        send_email: broadcastIncludeEmail,
+        attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
+      })
+      setBroadcastSuccess(`✓ ${res.message} (${res.notifications_sent} notifications sent, ${res.emails_queued} emails queued)`)
+      setBroadcastSubject('')
+      setBroadcastMessage('')
+      setBroadcastAttachments([])
+      setTimeout(() => {
+        setAdviseeModalOpen(false)
+        setBroadcastSuccess('')
+      }, 2000)
+    } catch (err) {
+      setBroadcastError(err instanceof Error ? err.message : 'Failed to send broadcast.')
+    } finally {
+      setSendingBroadcast(false)
+    }
+  }
+
   // Filtered Comments
   const filteredComments = useMemo(() => {
     return commentsReport.filter((c) => {
@@ -593,13 +595,13 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   }
 
-  // Trigger Overdue Alerts
+  // Manual Trigger Overdue Alerts
   const handleTrigger5DayAlerts = async () => {
     setTriggeringAlerts(true)
     setAlertTriggerResult('')
     try {
       const res = await apiTriggerOverdueAlerts(accessToken)
-      setAlertTriggerResult(`✓ Successfully dispatched escalation alerts to Supervisors, HODs, and Deans for ${res.overdue_count} overdue submission(s).`)
+      setAlertTriggerResult(`✓ Auto-Escalation dispatched to Supervisors, HODs, and Deans for ${res.overdue_count} overdue submission(s).`)
       void fetchAllDashboardData()
     } catch (err) {
       setAlertTriggerResult(err instanceof Error ? err.message : 'Failed to trigger alerts.')
@@ -623,7 +625,7 @@ export function Dashboard({ userRole }: DashboardProps) {
     }
   }
 
-  // Weekly Submissions Mock Curve Data matching Reference Image 1 & 2
+  // Weekly Submissions Mock Curve Data matching Clean Light Analytics Chart
   const weeklyData = [
     { day: 'Sunday', value: 15200, approvals: 12000 },
     { day: 'Monday', value: 21400, approvals: 17800 },
@@ -647,38 +649,38 @@ export function Dashboard({ userRole }: DashboardProps) {
   const areaPath = `M 50,220 L ${points.split(' ').join(' L ')} L 710,220 Z`
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-slate-100 p-4 sm:p-6 lg:p-8 space-y-6 font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-6 lg:p-8 space-y-6 font-sans">
       
       {/* ========================================================================= */}
       {/* 1. TOP EXECUTIVE TELEMETRY HEADER & LIVE HEARTBEAT                        */}
       {/* ========================================================================= */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-2.5">
-              <Activity className="size-7 text-cyan-400 animate-pulse" />
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 flex items-center gap-2.5">
+              <Activity className="size-7 text-blue-600 animate-pulse" />
               Executive Research & Thesis Dashboard
             </h1>
-            <Badge className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs px-2.5 py-0.5">
+            <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-xs px-2.5 py-0.5 font-semibold">
               {isDeputyRector ? '🏛️ Deputy Rector Executive' : (isSystemAdmin ? '⚡ Super Admin' : (hasRole('dean') ? '🎓 Faculty Dean' : (hasRole('hod') ? '📋 Department HOD' : '🔍 Scholar View')))}
             </Badge>
           </div>
-          <p className="text-xs sm:text-sm text-slate-400">
-            Real-time institutional thesis telemetry, supervisor workload quotas, Turnitin plagiarism radar, and 5-day SLA escalation center.
+          <p className="text-xs sm:text-sm text-slate-600">
+            Real-time institutional thesis telemetry, supervisor workload quotas, Turnitin plagiarism radar, and automated 5-day SLA escalation center.
           </p>
         </div>
 
         {/* Live Controls */}
-        <div className="flex flex-wrap items-center gap-3 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 shadow-2xl backdrop-blur-xl">
+        <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm">
           <button
             onClick={() => setLiveAutoUpdate(!liveAutoUpdate)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               liveAutoUpdate
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-lg shadow-emerald-950/50'
-                : 'bg-slate-800 text-slate-400 border border-slate-700'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm'
+                : 'bg-slate-100 text-slate-600 border border-slate-200'
             }`}
           >
-            <span className={`size-2 rounded-full ${liveAutoUpdate ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}`} />
+            <span className={`size-2 rounded-full ${liveAutoUpdate ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`} />
             {liveAutoUpdate ? `Live Auto-Update (${countdown}s)` : 'Live Update Paused'}
           </button>
 
@@ -687,9 +689,9 @@ export function Dashboard({ userRole }: DashboardProps) {
             variant="outline"
             onClick={() => void fetchAllDashboardData()}
             disabled={isRefreshing}
-            className="h-8 text-xs bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-200"
+            className="h-8 text-xs bg-white hover:bg-slate-50 border-slate-200 text-slate-700 shadow-sm"
           >
-            <RefreshCw className={`size-3.5 mr-1.5 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
+            <RefreshCw className={`size-3.5 mr-1.5 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
             Sync Telemetry
           </Button>
 
@@ -700,143 +702,143 @@ export function Dashboard({ userRole }: DashboardProps) {
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. TOP GECKOBOARD / CALL-CENTER STYLE METRIC TILES & GAUGES              */}
+      {/* 2. TOP GECKOBOARD / TELEMETRY METRIC TILES & GAUGES                      */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         
-        {/* Tile 1: CSAT / On-Time Velocity Arc Meter (Matching Geckoboard Image 3) */}
-        <div className="bg-[#161b22] border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col justify-between relative overflow-hidden group hover:border-cyan-500/40 transition-all">
-          <div className="flex justify-between items-center text-xs font-semibold text-slate-400">
+        {/* Tile 1: CSAT / On-Time Velocity Arc Meter */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-blue-300 hover:shadow transition-all">
+          <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
             <span>On-Time Review Velocity</span>
-            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">99.2% Target</Badge>
+            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">99.2% Target</Badge>
           </div>
           
           {/* Circular Semi-Arc Gauge */}
           <div className="flex flex-col items-center justify-center my-2 relative">
             <svg className="w-32 h-20" viewBox="0 0 100 55">
-              <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#21262d" strokeWidth="8" strokeLinecap="round" />
+              <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#e2e8f0" strokeWidth="8" strokeLinecap="round" />
               <path
                 d="M 10 50 A 40 40 0 0 1 90 50"
                 fill="none"
-                stroke="url(#cyanGrad)"
+                stroke="url(#blueEmeraldGrad)"
                 strokeWidth="8"
                 strokeLinecap="round"
                 strokeDasharray="125.6"
                 strokeDashoffset={125.6 * (1 - (liveMetrics?.on_time_review_rate || 94.2) / 100)}
               />
               <defs>
-                <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#06b6d4" />
+                <linearGradient id="blueEmeraldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#2563eb" />
                   <stop offset="100%" stopColor="#10b981" />
                 </linearGradient>
               </defs>
             </svg>
             <div className="absolute bottom-0 text-center">
-              <span className="text-2xl font-black text-white">{liveMetrics?.on_time_review_rate || 94.2}%</span>
+              <span className="text-2xl font-black text-slate-900">{liveMetrics?.on_time_review_rate || 94.2}%</span>
             </div>
           </div>
 
-          <div className="flex justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800/60">
+          <div className="flex justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
             <span>SLA Compliance: High</span>
-            <span className="text-emerald-400 font-bold">+2.4% this week</span>
+            <span className="text-emerald-600 font-bold">+2.4% this week</span>
           </div>
         </div>
 
         {/* Tile 2: Total Active Theses & Phase Pipeline */}
-        <div className="bg-[#161b22] border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col justify-between group hover:border-blue-500/40 transition-all">
-          <div className="flex justify-between items-center text-xs font-semibold text-slate-400">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-blue-300 hover:shadow transition-all">
+          <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
             <span>Active Repository Theses</span>
-            <FileText className="size-4 text-blue-400" />
+            <FileText className="size-4 text-blue-600" />
           </div>
           <div className="my-2">
-            <div className="text-3xl font-black text-white tracking-tight">
+            <div className="text-3xl font-black text-slate-900 tracking-tight">
               {liveMetrics?.total_theses ?? (stats?.total_papers || 112)}
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">
+            <p className="text-[11px] text-slate-500 mt-1">
               Phases 1-5 active student projects
             </p>
           </div>
-          <div className="grid grid-cols-5 gap-1 text-[10px] font-mono text-center pt-2 border-t border-slate-800/60">
-            <span className="bg-slate-800/80 rounded py-0.5 text-cyan-300">P1: {liveMetrics?.phases?.phase1 ?? 24}</span>
-            <span className="bg-slate-800/80 rounded py-0.5 text-blue-300">P2: {liveMetrics?.phases?.phase2 ?? 42}</span>
-            <span className="bg-slate-800/80 rounded py-0.5 text-indigo-300">P3: {liveMetrics?.phases?.phase3 ?? 28}</span>
-            <span className="bg-slate-800/80 rounded py-0.5 text-purple-300">P4: {liveMetrics?.phases?.phase4 ?? 12}</span>
-            <span className="bg-slate-800/80 rounded py-0.5 text-emerald-300">P5: {liveMetrics?.phases?.phase5 ?? 6}</span>
+          <div className="grid grid-cols-5 gap-1 text-[10px] font-mono text-center pt-2 border-t border-slate-100">
+            <span className="bg-blue-50 text-blue-700 rounded py-0.5 font-semibold">P1: {liveMetrics?.phases?.phase1 ?? 24}</span>
+            <span className="bg-indigo-50 text-indigo-700 rounded py-0.5 font-semibold">P2: {liveMetrics?.phases?.phase2 ?? 42}</span>
+            <span className="bg-purple-50 text-purple-700 rounded py-0.5 font-semibold">P3: {liveMetrics?.phases?.phase3 ?? 28}</span>
+            <span className="bg-amber-50 text-amber-700 rounded py-0.5 font-semibold">P4: {liveMetrics?.phases?.phase4 ?? 12}</span>
+            <span className="bg-emerald-50 text-emerald-700 rounded py-0.5 font-semibold">P5: {liveMetrics?.phases?.phase5 ?? 6}</span>
           </div>
         </div>
 
-        {/* Tile 3: 5-Day Overdue Warning Tile (Glowing Alert) */}
-        <div className="bg-[#161b22] border border-rose-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between relative overflow-hidden group hover:border-rose-500/60 transition-all">
-          <div className="flex justify-between items-center text-xs font-semibold text-rose-300">
+        {/* Tile 3: 5-Day Overdue Warning Tile (Automated System SLA) */}
+        <div className="bg-white border border-rose-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-rose-400 hover:shadow transition-all">
+          <div className="flex justify-between items-center text-xs font-semibold text-rose-700">
             <span className="flex items-center gap-1.5">
-              <AlertTriangle className="size-4 text-rose-400 animate-bounce" />
+              <AlertTriangle className="size-4 text-rose-600 animate-bounce" />
               5-Day Overdue Reviews
             </span>
-            <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/40 text-[10px]">Action Required</Badge>
+            <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px]">Auto-Managed</Badge>
           </div>
           <div className="my-2">
-            <div className="text-3xl font-black text-rose-400 tracking-tight">
+            <div className="text-3xl font-black text-rose-600 tracking-tight">
               {overdueList.filter((x) => x.is_overdue).length}
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Submissions waiting &gt; 5 days for review
+            <p className="text-[11px] text-slate-500 mt-1">
+              Automated system auto-escalation active
             </p>
           </div>
           <Button
             size="sm"
             onClick={handleTrigger5DayAlerts}
             disabled={triggeringAlerts || overdueList.filter((x) => x.is_overdue).length === 0}
-            className="w-full h-7 text-[11px] bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-lg shadow-lg shadow-rose-950/60"
+            className="w-full h-7 text-[11px] bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg shadow-sm"
           >
             <BellRing className="size-3 mr-1.5" />
-            {triggeringAlerts ? 'Alerting...' : 'Notify HOD & Dean'}
+            {triggeringAlerts ? 'Escalating...' : 'Sync & Dispatch Alerts Now'}
           </Button>
         </div>
 
         {/* Tile 4: Plagiarism Health Radar */}
-        <div className="bg-[#161b22] border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col justify-between group hover:border-emerald-500/40 transition-all">
-          <div className="flex justify-between items-center text-xs font-semibold text-slate-400">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-emerald-300 hover:shadow transition-all">
+          <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
             <span>Avg Plagiarism Index</span>
-            <ShieldCheck className="size-4 text-emerald-400" />
+            <ShieldCheck className="size-4 text-emerald-600" />
           </div>
           <div className="my-2">
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-emerald-400 tracking-tight">
+              <span className="text-3xl font-black text-emerald-600 tracking-tight">
                 {liveMetrics?.average_plagiarism_score || 8.4}%
               </span>
-              <span className="text-xs text-slate-400 font-medium">Safe Limit: &lt; 20%</span>
+              <span className="text-xs text-slate-500 font-medium">Safe: &lt; 20%</span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">Turnitin NLP token similarity</p>
+            <p className="text-[11px] text-slate-500 mt-1">Turnitin NLP token similarity</p>
           </div>
-          <div className="flex justify-between text-[11px] text-slate-300 pt-2 border-t border-slate-800/60">
-            <span className="text-emerald-400 font-mono">Clean: {liveMetrics?.plagiarism_breakdown?.clean_count ?? 35}</span>
-            <span className="text-amber-400 font-mono">Moderate: {liveMetrics?.plagiarism_breakdown?.moderate_count ?? 6}</span>
-            <span className="text-rose-400 font-mono">Flagged: {liveMetrics?.plagiarism_breakdown?.flagged_count ?? 0}</span>
+          <div className="flex justify-between text-[11px] text-slate-600 pt-2 border-t border-slate-100">
+            <span className="text-emerald-700 font-mono font-medium">Clean: {liveMetrics?.plagiarism_breakdown?.clean_count ?? 35}</span>
+            <span className="text-amber-700 font-mono font-medium">Moderate: {liveMetrics?.plagiarism_breakdown?.moderate_count ?? 6}</span>
+            <span className="text-rose-700 font-mono font-medium">Flagged: {liveMetrics?.plagiarism_breakdown?.flagged_count ?? 0}</span>
           </div>
         </div>
 
         {/* Tile 5: Supervisor Workload & Capacity Quota */}
-        <div className="bg-[#161b22] border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col justify-between group hover:border-purple-500/40 transition-all">
-          <div className="flex justify-between items-center text-xs font-semibold text-slate-400">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-purple-300 hover:shadow transition-all">
+          <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
             <span>Supervisor Quota Load</span>
-            <Users className="size-4 text-purple-400" />
+            <Users className="size-4 text-purple-600" />
           </div>
           <div className="my-2">
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-purple-300 tracking-tight">
+              <span className="text-3xl font-black text-purple-700 tracking-tight">
                 {liveMetrics?.supervisor_metrics?.average_utilization_pct || 68.5}%
               </span>
-              <span className="text-xs text-slate-400">Capacity Used</span>
+              <span className="text-xs text-slate-500">Capacity Used</span>
             </div>
             {/* Progress Bar */}
-            <div className="w-full bg-slate-800 rounded-full h-2 mt-2.5 overflow-hidden">
+            <div className="w-full bg-slate-100 rounded-full h-2 mt-2.5 overflow-hidden border border-slate-200/50">
               <div
-                className="bg-gradient-to-r from-cyan-500 via-purple-500 to-emerald-400 h-full rounded-full transition-all duration-500"
+                className="bg-gradient-to-r from-blue-600 via-purple-600 to-emerald-500 h-full rounded-full transition-all duration-500"
                 style={{ width: `${Math.min(100, liveMetrics?.supervisor_metrics?.average_utilization_pct || 68.5)}%` }}
               />
             </div>
           </div>
-          <div className="flex justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800/60">
+          <div className="flex justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
             <span>{liveMetrics?.supervisor_metrics?.total_assigned ?? 48} Assigned</span>
             <span>{liveMetrics?.supervisor_metrics?.total_capacity ?? 70} Total Slots</span>
           </div>
@@ -845,35 +847,35 @@ export function Dashboard({ userRole }: DashboardProps) {
       </div>
 
       {alertTriggerResult && (
-        <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between animate-in fade-in duration-300">
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between shadow-sm animate-in fade-in duration-300">
           <div className="flex items-center gap-2">
-            <BellRing className="size-4 text-rose-400 shrink-0" />
-            <span>{alertTriggerResult}</span>
+            <CheckCircle className="size-4 text-emerald-600 shrink-0" />
+            <span className="font-medium">{alertTriggerResult}</span>
           </div>
-          <Button size="sm" variant="ghost" onClick={() => setAlertTriggerResult('')} className="h-6 text-xs text-rose-400 hover:text-white">
+          <Button size="sm" variant="ghost" onClick={() => setAlertTriggerResult('')} className="h-6 text-xs text-emerald-700 hover:text-emerald-900">
             Dismiss
           </Button>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 3. WEEKLY ACTIVITY & PERFORMANCE LINE CHART (Matching Reference 1 & 2)    */}
+      {/* 3. WEEKLY ACTIVITY & PERFORMANCE LINE CHART (Clean Light Theme)          */}
       {/* ========================================================================= */}
-      <div className="bg-[#161b22] border border-slate-800/90 rounded-2xl p-5 shadow-2xl space-y-4">
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <TrendingUp className="size-5 text-cyan-400" />
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <TrendingUp className="size-5 text-blue-600" />
               Weekly Thesis Velocity & Submission Trajectory
             </h2>
-            <p className="text-xs text-slate-400">Real-time throughput metrics across proposal submissions, chapter approvals, and examination clearances.</p>
+            <p className="text-xs text-slate-500">Real-time throughput metrics across proposal submissions, chapter approvals, and examination clearances.</p>
           </div>
           <div className="flex items-center gap-2 text-xs">
-            <span className="flex items-center gap-1.5 text-cyan-400 font-mono">
-              <span className="size-2.5 rounded-full bg-cyan-400 inline-block" /> Submissions
+            <span className="flex items-center gap-1.5 text-blue-700 font-medium">
+              <span className="size-2.5 rounded-full bg-blue-600 inline-block" /> Submissions
             </span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-mono ml-3">
-              <span className="size-2.5 rounded-full bg-emerald-400 inline-block" /> Approvals
+            <span className="flex items-center gap-1.5 text-emerald-700 font-medium ml-3">
+              <span className="size-2.5 rounded-full bg-emerald-600 inline-block" /> Approvals
             </span>
           </div>
         </div>
@@ -882,50 +884,38 @@ export function Dashboard({ userRole }: DashboardProps) {
         <div className="w-full h-64 overflow-x-auto relative">
           <svg className="w-full h-full min-w-[700px]" viewBox="0 0 760 250">
             <defs>
-              <linearGradient id="chartGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.35" />
-                <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
+              <linearGradient id="chartGradLight" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
               </linearGradient>
             </defs>
 
             {/* Grid lines */}
-            <line x1="40" y1="40" x2="720" y2="40" stroke="#21262d" strokeDasharray="3 3" />
-            <line x1="40" y1="100" x2="720" y2="100" stroke="#21262d" strokeDasharray="3 3" />
-            <line x1="40" y1="160" x2="720" y2="160" stroke="#21262d" strokeDasharray="3 3" />
-            <line x1="40" y1="220" x2="720" y2="220" stroke="#30363d" />
+            <line x1="40" y1="40" x2="720" y2="40" stroke="#f1f5f9" strokeDasharray="3 3" />
+            <line x1="40" y1="100" x2="720" y2="100" stroke="#f1f5f9" strokeDasharray="3 3" />
+            <line x1="40" y1="160" x2="720" y2="160" stroke="#f1f5f9" strokeDasharray="3 3" />
+            <line x1="40" y1="220" x2="720" y2="220" stroke="#e2e8f0" />
 
             {/* Y Axis Labels */}
-            <text x="30" y="45" fill="#6e7681" fontSize="10" textAnchor="end">26k</text>
-            <text x="30" y="105" fill="#6e7681" fontSize="10" textAnchor="end">20k</text>
-            <text x="30" y="165" fill="#6e7681" fontSize="10" textAnchor="end">14k</text>
-            <text x="30" y="225" fill="#6e7681" fontSize="10" textAnchor="end">10k</text>
+            <text x="30" y="45" fill="#94a3b8" fontSize="10" textAnchor="end">26k</text>
+            <text x="30" y="105" fill="#94a3b8" fontSize="10" textAnchor="end">20k</text>
+            <text x="30" y="165" fill="#94a3b8" fontSize="10" textAnchor="end">14k</text>
+            <text x="30" y="225" fill="#94a3b8" fontSize="10" textAnchor="end">10k</text>
 
-            {/* Area fill */}
-            <path d={areaPath} fill="url(#chartGrad)" />
+            {/* Shaded Area */}
+            <path d={areaPath} fill="url(#chartGradLight)" />
 
-            {/* Cyan Line */}
-            <polyline
-              fill="none"
-              stroke="#06b6d4"
-              strokeWidth="3.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              points={points}
-            />
+            {/* Line Curve */}
+            <polyline fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points} />
 
-            {/* Interactive Data Points */}
+            {/* Data Points */}
             {weeklyData.map((d, i) => {
               const x = 50 + i * 110
               const y = 220 - ((d.value - minVal) / (maxVal - minVal)) * 180
               return (
-                <g key={i} className="group cursor-pointer">
-                  <circle cx={x} cy={y} r="5" fill="#06b6d4" stroke="#0d1117" strokeWidth="2.5" className="group-hover:r-7 transition-all" />
-                  <text x={x} y={y - 12} fill="#ffffff" fontSize="10" fontWeight="bold" textAnchor="middle" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    {d.value.toLocaleString()}
-                  </text>
-                  <text x={x} y="240" fill="#8b949e" fontSize="11" textAnchor="middle">
-                    {d.day}
-                  </text>
+                <g key={d.day}>
+                  <circle cx={x} cy={y} r="4.5" fill="#2563eb" stroke="#ffffff" strokeWidth="2" />
+                  <text x={x} y="240" fill="#64748b" fontSize="10" textAnchor="middle" fontWeight="500">{d.day}</text>
                 </g>
               )
             })}
@@ -934,15 +924,15 @@ export function Dashboard({ userRole }: DashboardProps) {
       </div>
 
       {/* ========================================================================= */}
-      {/* 4. MULTI-SUITE NAVIGATION TABS                                            */}
+      {/* 4. EXECUTIVE WORKFLOW TABS                                                */}
       {/* ========================================================================= */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
         <button
           onClick={() => setActiveSubTab('operations')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
             activeSubTab === 'operations'
-              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-950/40'
-              : 'bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
           }`}
         >
           <Activity className="size-4" />
@@ -954,8 +944,8 @@ export function Dashboard({ userRole }: DashboardProps) {
             onClick={() => setActiveSubTab('capacities')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
               activeSubTab === 'capacities'
-                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-lg shadow-purple-950/40'
-                : 'bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
             }`}
           >
             <Sliders className="size-4" />
@@ -967,8 +957,8 @@ export function Dashboard({ userRole }: DashboardProps) {
           onClick={() => setActiveSubTab('plagiarism')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
             activeSubTab === 'plagiarism'
-              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-lg shadow-emerald-950/40'
-              : 'bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
           }`}
         >
           <ShieldCheck className="size-4" />
@@ -980,8 +970,8 @@ export function Dashboard({ userRole }: DashboardProps) {
             onClick={() => setActiveSubTab('comments')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
               activeSubTab === 'comments'
-                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-lg shadow-blue-950/40'
-                : 'bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
             }`}
           >
             <MessageSquare className="size-4" />
@@ -993,8 +983,8 @@ export function Dashboard({ userRole }: DashboardProps) {
           onClick={() => setActiveSubTab('overdue')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
             activeSubTab === 'overdue'
-              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-lg shadow-rose-950/40'
-              : 'bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
           }`}
         >
           <AlertTriangle className="size-4" />
@@ -1007,9 +997,9 @@ export function Dashboard({ userRole }: DashboardProps) {
               void loadAdvisees()
               setAdviseeModalOpen(true)
             }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-900/60 text-slate-300 hover:text-white border border-slate-800 ml-auto"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 ml-auto shadow-sm"
           >
-            <Send className="size-4 text-cyan-400" />
+            <Send className="size-4 text-blue-600" />
             Broadcast to Advisees
           </button>
         )}
@@ -1023,19 +1013,19 @@ export function Dashboard({ userRole }: DashboardProps) {
           {/* Student's Personal Workflow if student */}
           {isStudent && myPapers.length > 0 && (
             <div className="space-y-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <BookOpen className="size-5 text-cyan-400" /> My Thesis Submissions & Milestone Progress
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <BookOpen className="size-5 text-blue-600" /> My Thesis Submissions & Milestone Progress
               </h3>
               {myPapers.map((paper) => (
-                <div key={paper.id} className="bg-[#161b22] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                <div key={paper.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                     <div>
-                      <h4 className="text-base font-bold text-white">{paper.title}</h4>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <h4 className="text-base font-bold text-slate-900">{paper.title}</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
                         Paper ID: #{paper.id} • Discipline: {paper.discipline || 'Computer Science'} • Mode: {paper.work_mode || 'Individual'}
                       </p>
                     </div>
-                    <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-500/40 text-xs px-3 py-1 self-start sm:self-center">
+                    <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs px-3 py-1 self-start sm:self-center font-semibold">
                       {paper.status}
                     </Badge>
                   </div>
@@ -1048,23 +1038,23 @@ export function Dashboard({ userRole }: DashboardProps) {
 
           {/* Department Student Pipeline for Leadership */}
           {showPipeline && pipelineMetrics && (
-            <div className="bg-[#161b22] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Filter className="size-5 text-cyan-400" />
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Filter className="size-5 text-blue-600" />
                     Department Student Pipeline & Milestone Tracker
                   </h3>
-                  <p className="text-xs text-slate-400">Filter student submissions by degree programme and inspection milestone.</p>
+                  <p className="text-xs text-slate-500">Filter student submissions by degree programme and inspection milestone.</p>
                 </div>
 
                 {/* Program Selector */}
                 <div className="flex items-center gap-2">
                   <Select value={pipelineProgram} onValueChange={(val) => setPipelineProgram(val)}>
-                    <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 w-52 text-slate-200">
+                    <SelectTrigger className="h-8 text-xs bg-white border-slate-200 w-56 text-slate-800 shadow-sm">
                       <SelectValue placeholder="All Programs" />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
+                    <SelectContent className="bg-white border-slate-200 text-slate-800">
                       <SelectItem value="ALL">All Academic Programs</SelectItem>
                       {pipelineAllPrograms.map((prog) => (
                         <SelectItem key={prog} value={prog}>{prog}</SelectItem>
@@ -1077,11 +1067,11 @@ export function Dashboard({ userRole }: DashboardProps) {
               {/* Phase Switcher Buttons */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {[
-                  { key: 'phase1_proposals' as ApiPipelinePhaseKey, label: 'Phase 1: Topics', color: 'border-cyan-500/40 text-cyan-300' },
-                  { key: 'phase2_allocation' as ApiPipelinePhaseKey, label: 'Phase 2: Allocation', color: 'border-blue-500/40 text-blue-300' },
-                  { key: 'phase3_chapters' as ApiPipelinePhaseKey, label: 'Phase 3: Chapters', color: 'border-indigo-500/40 text-indigo-300' },
-                  { key: 'phase4_examination' as ApiPipelinePhaseKey, label: 'Phase 4: Marking', color: 'border-purple-500/40 text-purple-300' },
-                  { key: 'phase5_signoff' as ApiPipelinePhaseKey, label: 'Phase 5: Certified', color: 'border-emerald-500/40 text-emerald-300' },
+                  { key: 'phase1_proposals' as ApiPipelinePhaseKey, label: 'Phase 1: Topics' },
+                  { key: 'phase2_allocation' as ApiPipelinePhaseKey, label: 'Phase 2: Allocation' },
+                  { key: 'phase3_chapters' as ApiPipelinePhaseKey, label: 'Phase 3: Chapters' },
+                  { key: 'phase4_examination' as ApiPipelinePhaseKey, label: 'Phase 4: Marking' },
+                  { key: 'phase5_signoff' as ApiPipelinePhaseKey, label: 'Phase 5: Certified' },
                 ].map((ph) => {
                   const cnt = pipelineMetrics[ph.key]?.count || 0
                   const isSelected = selectedPhaseKey === ph.key
@@ -1091,21 +1081,21 @@ export function Dashboard({ userRole }: DashboardProps) {
                       onClick={() => setSelectedPhaseKey(ph.key)}
                       className={`p-3 rounded-xl border text-left transition-all ${
                         isSelected
-                          ? 'bg-slate-800/90 border-cyan-400 shadow-lg shadow-cyan-950/40 ring-1 ring-cyan-400'
-                          : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                          ? 'bg-blue-50 border-blue-500 shadow-sm ring-1 ring-blue-500'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
-                      <p className="text-[11px] font-semibold text-slate-400">{ph.label}</p>
-                      <p className="text-xl font-black text-white mt-1">{cnt}</p>
+                      <p className="text-[11px] font-semibold text-slate-600">{ph.label}</p>
+                      <p className="text-xl font-black text-slate-900 mt-1">{cnt}</p>
                     </button>
                   )
                 })}
               </div>
 
               {/* Student Table in Selected Phase */}
-              <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-900/90 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                  <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wider border-b border-slate-200">
                     <tr>
                       <th className="py-3 px-4"># ID</th>
                       <th className="py-3 px-4">Student Author</th>
@@ -1116,19 +1106,19 @@ export function Dashboard({ userRole }: DashboardProps) {
                       <th className="py-3 px-4 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800 text-slate-200">
+                  <tbody className="divide-y divide-slate-100 text-slate-800">
                     {(pipelineMetrics[selectedPhaseKey]?.students || []).map((st: ApiPipelineStudent) => (
-                      <tr key={st.paper_id} className="hover:bg-slate-800/50 transition-colors">
-                        <td className="py-3 px-4 font-mono text-cyan-400">#{st.paper_id}</td>
-                        <td className="py-3 px-4 font-semibold text-white">{st.student_name}</td>
-                        <td className="py-3 px-4 text-slate-400">{st.program}</td>
-                        <td className="py-3 px-4 font-medium max-w-xs truncate">{st.title}</td>
-                        <td className="py-3 px-4 text-slate-300 flex items-center gap-1.5">
-                          <UserCheck className="size-3.5 text-purple-400 shrink-0" />
+                      <tr key={st.paper_id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-mono font-bold text-blue-600">#{st.paper_id}</td>
+                        <td className="py-3 px-4 font-semibold text-slate-900">{st.student_name}</td>
+                        <td className="py-3 px-4 text-slate-500">{st.program}</td>
+                        <td className="py-3 px-4 font-medium max-w-xs truncate text-slate-800">{st.title}</td>
+                        <td className="py-3 px-4 text-slate-700 flex items-center gap-1.5">
+                          <UserCheck className="size-3.5 text-purple-600 shrink-0" />
                           {st.supervisor_name || 'Unassigned'}
                         </td>
                         <td className="py-3 px-4">
-                          <Badge className="bg-slate-800 text-slate-300 border-slate-700 text-[10px]">
+                          <Badge className="bg-slate-100 text-slate-700 border-slate-200 text-[10px] font-medium">
                             {st.status}
                           </Badge>
                         </td>
@@ -1137,7 +1127,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                             size="sm"
                             variant="ghost"
                             onClick={() => navigate('/?tab=approval')}
-                            className="h-7 text-xs text-cyan-400 hover:text-white"
+                            className="h-7 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                           >
                             Inspect <ChevronRight className="size-3.5 ml-1" />
                           </Button>
@@ -1146,7 +1136,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                     ))}
                     {(pipelineMetrics[selectedPhaseKey]?.students || []).length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-500">
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
                           No student thesis records in this milestone phase.
                         </td>
                       </tr>
@@ -1163,22 +1153,22 @@ export function Dashboard({ userRole }: DashboardProps) {
       {/* TAB 2: SUPERVISOR QUOTAS & SPECIALIZATIONS MANAGER                         */}
       {/* ========================================================================= */}
       {activeSubTab === 'capacities' && canManageCeilings && (
-        <div className="bg-[#161b22] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Sliders className="size-5 text-purple-400" />
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Sliders className="size-5 text-purple-600" />
                 Supervisor Workload Quotas & Research Specializations
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 Adjust student capacity ceilings and configure research domain keywords so the system matches topics intelligently without overloading any supervisor.
               </p>
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-xs text-left">
-              <thead className="bg-slate-900/90 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-4">Academic Supervisor</th>
                   <th className="py-3 px-4">Research Specialization Domain</th>
@@ -1188,34 +1178,34 @@ export function Dashboard({ userRole }: DashboardProps) {
                   <th className="py-3 px-4 text-right">Quota Adjust</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 text-slate-200">
+              <tbody className="divide-y divide-slate-100 text-slate-800">
                 {capacities.map((sup) => (
-                  <tr key={sup.id} className="hover:bg-slate-800/50 transition-colors">
+                  <tr key={sup.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4">
-                      <p className="font-bold text-white">{sup.name}</p>
-                      <p className="text-[11px] text-slate-400 font-mono">{sup.email}</p>
+                      <p className="font-bold text-slate-900">{sup.name}</p>
+                      <p className="text-[11px] text-slate-500 font-mono">{sup.email}</p>
                     </td>
                     <td className="py-3 px-4 max-w-sm">
-                      <p className="text-slate-200 line-clamp-2">{sup.specialization || 'General Computer Science'}</p>
+                      <p className="text-slate-700 line-clamp-2">{sup.specialization || 'General Computer Science'}</p>
                     </td>
-                    <td className="py-3 px-4 font-mono font-bold text-cyan-300">
+                    <td className="py-3 px-4 font-mono font-bold text-blue-600">
                       {sup.active_students_count} student(s)
                     </td>
-                    <td className="py-3 px-4 font-mono font-bold text-white">
+                    <td className="py-3 px-4 font-mono font-bold text-slate-900">
                       {sup.max_student_ceiling} max
                     </td>
                     <td className="py-3 px-4">
                       <div className="w-32 space-y-1">
-                        <div className="flex justify-between text-[10px] text-slate-400">
+                        <div className="flex justify-between text-[10px] text-slate-500">
                           <span>{sup.utilization_pct}%</span>
-                          <span className={sup.is_at_ceiling ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
+                          <span className={sup.is_at_ceiling ? 'text-rose-600 font-bold' : 'text-emerald-600 font-medium'}>
                             {sup.is_at_ceiling ? 'Full (Ceiling Reached)' : `${sup.available_slots} slot(s)`}
                           </span>
                         </div>
-                        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden border border-slate-200/60">
                           <div
                             className={`h-full rounded-full ${
-                              sup.is_at_ceiling ? 'bg-rose-500' : (sup.utilization_pct > 75 ? 'bg-amber-400' : 'bg-emerald-400')
+                              sup.is_at_ceiling ? 'bg-rose-500' : (sup.utilization_pct > 75 ? 'bg-amber-500' : 'bg-emerald-500')
                             }`}
                             style={{ width: `${Math.min(100, sup.utilization_pct)}%` }}
                           />
@@ -1230,7 +1220,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                           setEditCeilingValue(sup.max_student_ceiling)
                           setEditSpecializationValue(sup.specialization)
                         }}
-                        className="h-7 text-xs bg-purple-600 hover:bg-purple-500 text-white font-medium"
+                        className="h-7 text-xs bg-purple-600 hover:bg-purple-700 text-white font-medium shadow-sm"
                       >
                         <Sliders className="size-3 mr-1.5" /> Adjust Ceiling
                       </Button>
@@ -1247,22 +1237,22 @@ export function Dashboard({ userRole }: DashboardProps) {
       {/* TAB 3: TURNITIN-STYLE PLAGIARISM & INTEGRITY SUITE                        */}
       {/* ========================================================================= */}
       {activeSubTab === 'plagiarism' && (
-        <div className="bg-[#161b22] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <ShieldCheck className="size-5 text-emerald-400" />
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ShieldCheck className="size-5 text-emerald-600" />
                 Turnitin-Style Plagiarism Scanner & Clearance Suite
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 Institutional similarity analysis engine. Supervisees must score below 20% similarity threshold before supervisors can approve for Phase 4 marking.
               </p>
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-xs text-left">
-              <thead className="bg-slate-900/90 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-4"># ID</th>
                   <th className="py-3 px-4">Thesis Project Title</th>
@@ -1272,44 +1262,44 @@ export function Dashboard({ userRole }: DashboardProps) {
                   <th className="py-3 px-4 text-right">Run Scanner</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 text-slate-200">
+              <tbody className="divide-y divide-slate-100 text-slate-800">
                 {myPapers.concat(pipelineMetrics?.phase3_chapters?.students as any || []).slice(0, 20).map((p: any) => {
                   const score = p.plagiarism_score !== undefined && p.plagiarism_score !== null ? p.plagiarism_score : null
                   const isClean = score !== null && score <= 15.0
                   const isModerate = score !== null && score > 15.0 && score <= 20.0
                   const isFlagged = score !== null && score > 20.0
                   return (
-                    <tr key={p.id || p.paper_id} className="hover:bg-slate-800/50 transition-colors">
-                      <td className="py-3 px-4 font-mono text-cyan-400">#{p.id || p.paper_id}</td>
-                      <td className="py-3 px-4 font-bold text-white max-w-sm truncate">{p.title}</td>
-                      <td className="py-3 px-4 text-slate-300">{p.student_name || (p.authors?.[0]?.name) || 'Scholar'}</td>
+                    <tr key={p.id || p.paper_id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-blue-600">#{p.id || p.paper_id}</td>
+                      <td className="py-3 px-4 font-bold text-slate-900 max-w-sm truncate">{p.title}</td>
+                      <td className="py-3 px-4 text-slate-600">{p.student_name || (p.authors?.[0]?.name) || 'Scholar'}</td>
                       <td className="py-3 px-4 font-mono font-bold">
                         {score !== null ? (
-                          <span className={isFlagged ? 'text-rose-400' : (isModerate ? 'text-amber-400' : 'text-emerald-400')}>
+                          <span className={isFlagged ? 'text-rose-600' : (isModerate ? 'text-amber-600' : 'text-emerald-600')}>
                             {score}% Similarity
                           </span>
                         ) : (
-                          <span className="text-slate-500">Unscanned</span>
+                          <span className="text-slate-400">Unscanned</span>
                         )}
                       </td>
                       <td className="py-3 px-4">
                         {score !== null ? (
                           <Badge className={
                             isFlagged
-                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 text-[10px]'
-                              : (isModerate ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px]' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px]')
+                              ? 'bg-rose-50 text-rose-700 border-rose-200 text-[10px]'
+                              : (isModerate ? 'bg-amber-50 text-amber-700 border-amber-200 text-[10px]' : 'bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]')
                           }>
                             {isFlagged ? 'Flagged (>20%)' : (isModerate ? 'Moderate' : 'Clean (<15%)')}
                           </Badge>
                         ) : (
-                          <Badge className="bg-slate-800 text-slate-400 text-[10px]">Pending Check</Badge>
+                          <Badge className="bg-slate-100 text-slate-600 text-[10px]">Pending Check</Badge>
                         )}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <Button
                           size="sm"
                           onClick={() => handleScanPlagiarism(p)}
-                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
                         >
                           <ShieldCheck className="size-3.5 mr-1.5" /> Scan Plagiarism
                         </Button>
@@ -1327,14 +1317,14 @@ export function Dashboard({ userRole }: DashboardProps) {
       {/* TAB 4: SUPERVISOR COMMENTS & FEEDBACK EXPLORER                            */}
       {/* ========================================================================= */}
       {activeSubTab === 'comments' && canManageCeilings && (
-        <div className="bg-[#161b22] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <MessageSquare className="size-5 text-blue-400" />
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <MessageSquare className="size-5 text-blue-600" />
                 Supervisor Qualitative Remarks & Chapter Feedback Index
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 Institutional oversight report. HOD, Dean, and Deputy Rector can filter all comments made by individual supervisors across proposals and chapters.
               </p>
             </div>
@@ -1342,10 +1332,10 @@ export function Dashboard({ userRole }: DashboardProps) {
             {/* Filter controls */}
             <div className="flex flex-wrap items-center gap-2">
               <Select value={commentsSupervisorFilter} onValueChange={(val) => setCommentsSupervisorFilter(val)}>
-                <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 w-48 text-slate-200">
+                <SelectTrigger className="h-8 text-xs bg-white border-slate-200 w-52 text-slate-800 shadow-sm">
                   <SelectValue placeholder="All Supervisors" />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
+                <SelectContent className="bg-white border-slate-200 text-slate-800">
                   <SelectItem value="ALL">All Supervisors ({supervisorsSummaryList.length})</SelectItem>
                   {supervisorsSummaryList.map((s) => (
                     <SelectItem key={s.supervisor_id} value={String(s.supervisor_id)}>
@@ -1361,15 +1351,15 @@ export function Dashboard({ userRole }: DashboardProps) {
                   placeholder="Search comments..."
                   value={commentsSearch}
                   onChange={(e) => setCommentsSearch(e.target.value)}
-                  className="h-8 pl-8 text-xs bg-slate-900 border-slate-700 w-44 text-slate-200"
+                  className="h-8 pl-8 text-xs bg-white border-slate-200 w-48 text-slate-800 shadow-sm"
                 />
               </div>
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-xs text-left">
-              <thead className="bg-slate-900/90 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-4">Date / Time</th>
                   <th className="py-3 px-4">Supervisor Reviewer</th>
@@ -1378,27 +1368,27 @@ export function Dashboard({ userRole }: DashboardProps) {
                   <th className="py-3 px-4">Qualitative Feedback Remark</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 text-slate-200">
+              <tbody className="divide-y divide-slate-100 text-slate-800">
                 {filteredComments.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-800/50 transition-colors">
-                    <td className="py-3 px-4 font-mono text-[11px] text-slate-400 whitespace-nowrap">
+                  <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-3 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
                       {c.created_at ? new Date(c.created_at).toLocaleDateString() : 'Recent'}
                     </td>
                     <td className="py-3 px-4">
-                      <p className="font-bold text-white">{c.supervisor_name}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{c.supervisor_email}</p>
+                      <p className="font-bold text-slate-900">{c.supervisor_name}</p>
+                      <p className="text-[10px] text-slate-500 font-mono">{c.supervisor_email}</p>
                     </td>
                     <td className="py-3 px-4">
-                      <p className="font-semibold text-cyan-300">{c.student_name}</p>
-                      <p className="text-[11px] text-slate-400 truncate max-w-xs">{c.thesis_title}</p>
+                      <p className="font-semibold text-blue-600">{c.student_name}</p>
+                      <p className="text-[11px] text-slate-500 truncate max-w-xs">{c.thesis_title}</p>
                     </td>
                     <td className="py-3 px-4">
-                      <Badge className="bg-slate-800 text-slate-300 border-slate-700 text-[10px]">
+                      <Badge className="bg-slate-100 text-slate-700 border-slate-200 text-[10px] font-medium">
                         {c.phase_label}
                       </Badge>
                     </td>
                     <td className="py-3 px-4 max-w-md">
-                      <p className="text-slate-200 font-sans italic bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 leading-relaxed">
+                      <p className="text-slate-800 font-sans italic bg-slate-50 p-2.5 rounded-lg border border-slate-200 leading-relaxed">
                         "{c.comment_text}"
                       </p>
                     </td>
@@ -1406,7 +1396,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                 ))}
                 {filteredComments.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-500">
+                    <td colSpan={5} className="py-8 text-center text-slate-400">
                       No qualitative feedback remarks matching your filter criteria.
                     </td>
                   </tr>
@@ -1418,18 +1408,23 @@ export function Dashboard({ userRole }: DashboardProps) {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 5: 5-DAY OVERDUE REVIEWS & SLA TRACKER                                */}
+      {/* TAB 5: 5-DAY OVERDUE REVIEWS & AUTOMATED SLA TRACKER                       */}
       {/* ========================================================================= */}
       {activeSubTab === 'overdue' && (
-        <div className="bg-[#161b22] border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <AlertTriangle className="size-5 text-rose-400" />
-                5-Day Inactivity & Overdue Review Escalation Center
-              </h3>
-              <p className="text-xs text-slate-400">
-                Automated monitoring of student submissions waiting &ge; 5 days for supervisor feedback. Alerts HOD, Dean, and Deputy Rector immediately.
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <AlertTriangle className="size-5 text-rose-600" />
+                  5-Day Inactivity & Overdue Review Escalation Center
+                </h3>
+                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                  ✓ System Auto-Monitored
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Automated continuous system monitoring: Student submissions waiting &ge; 5 days are automatically escalated to HOD, Dean, and Deputy Rector.
               </p>
             </div>
 
@@ -1437,57 +1432,69 @@ export function Dashboard({ userRole }: DashboardProps) {
               size="sm"
               onClick={handleTrigger5DayAlerts}
               disabled={triggeringAlerts}
-              className="bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs"
+              className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs shadow-sm"
             >
               <BellRing className="size-3.5 mr-1.5" />
               {triggeringAlerts ? 'Dispatching...' : 'Dispatch 5-Day Alerts to HOD & Dean'}
             </Button>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-xs text-left">
-              <thead className="bg-slate-900/90 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-4"># ID</th>
-                  <th className="py-3 px-4">Student Author</th>
                   <th className="py-3 px-4">Thesis Project</th>
+                  <th className="py-3 px-4">Student Author</th>
                   <th className="py-3 px-4">Assigned Supervisor</th>
-                  <th className="py-3 px-4">Days Pending</th>
-                  <th className="py-3 px-4">SLA Risk</th>
-                  <th className="py-3 px-4 text-right">Escalation Status</th>
+                  <th className="py-3 px-4">Days Inactive</th>
+                  <th className="py-3 px-4">Escalation Status</th>
+                  <th className="py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 text-slate-200">
+              <tbody className="divide-y divide-slate-100 text-slate-800">
                 {overdueList.map((item) => (
-                  <tr key={item.paper_id} className="hover:bg-slate-800/50 transition-colors">
-                    <td className="py-3 px-4 font-mono text-cyan-400">#{item.paper_id}</td>
-                    <td className="py-3 px-4 font-semibold text-white">{item.student_name}</td>
-                    <td className="py-3 px-4 max-w-sm truncate text-slate-300">{item.title}</td>
+                  <tr key={item.paper_id} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-3 px-4 font-mono font-bold text-rose-600">#{item.paper_id}</td>
+                    <td className="py-3 px-4 font-bold text-slate-900 max-w-xs truncate">{item.title}</td>
                     <td className="py-3 px-4">
-                      <p className="font-bold text-white">{item.supervisor_name}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{item.supervisor_email}</p>
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-base text-rose-400">
-                      {item.days_pending} days
+                      <p className="font-semibold text-slate-800">{item.student_name}</p>
+                      <p className="text-[10px] text-slate-500 font-mono">{item.student_email}</p>
                     </td>
                     <td className="py-3 px-4">
-                      <Badge className={
-                        item.is_overdue
-                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 text-[10px] animate-pulse'
-                          : 'bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px]'
-                      }>
-                        {item.is_overdue ? 'Critical (> 5 Days)' : 'Warning (In Progress)'}
-                      </Badge>
+                      <p className="font-semibold text-slate-800">{item.supervisor_name}</p>
+                      <p className="text-[10px] text-slate-500 font-mono">{item.supervisor_email}</p>
                     </td>
-                    <td className="py-3 px-4 text-right text-[11px] text-slate-400">
-                      {item.alert_sent_at ? `Alert sent ${new Date(item.alert_sent_at).toLocaleDateString()}` : 'Queued for dispatch'}
+                    <td className="py-3 px-4 font-mono font-bold text-rose-600">
+                      {item.days_pending} day(s) ({item.hours_pending} hrs)
+                    </td>
+                    <td className="py-3 px-4">
+                      {item.is_overdue ? (
+                        <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] font-semibold">
+                          OVERDUE (Auto-Escalated)
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                          Within 5-Day SLA
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate('/?tab=approval')}
+                        className="h-7 text-xs text-blue-600 hover:text-blue-800 border-slate-200 hover:bg-blue-50"
+                      >
+                        Inspect Review
+                      </Button>
                     </td>
                   </tr>
                 ))}
                 {overdueList.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-emerald-400 font-medium">
-                      ✓ All supervisor reviews are up to date! No overdue submissions pending.
+                    <td colSpan={7} className="py-8 text-center text-emerald-600 font-medium">
+                      ✓ No overdue reviews. All student submissions are actively being reviewed within the 5-day SLA.
                     </td>
                   </tr>
                 )}
@@ -1498,68 +1505,65 @@ export function Dashboard({ userRole }: DashboardProps) {
       )}
 
       {/* ========================================================================= */}
-      {/* CEILING ADJUSTMENT MODAL                                                 */}
+      {/* MODAL 1: SUPERVISOR CEILING & SPECIALIZATION EDIT MODAL                   */}
       {/* ========================================================================= */}
       {editingSupervisor && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#161b22] border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Sliders className="size-5 text-purple-400" />
-                Adjust Supervisor Student Quota Ceiling
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-200 text-slate-900">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Sliders className="size-5 text-purple-600" />
+                Adjust Supervisor Capacity & Quota
               </h3>
-              <button onClick={() => setEditingSupervisor(null)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setEditingSupervisor(null)} className="text-slate-400 hover:text-slate-600">
                 <X className="size-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
-              <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
-                <p className="font-bold text-white">{editingSupervisor.name}</p>
-                <p className="text-slate-400 font-mono">{editingSupervisor.email}</p>
-                <p className="text-cyan-400 mt-1">Currently Supervising: {editingSupervisor.active_students_count} active student(s)</p>
-              </div>
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-600">
+                Configuring workload allocation for <strong>{editingSupervisor.name}</strong> (<code>{editingSupervisor.email}</code>).
+              </p>
 
               <div className="space-y-1.5">
-                <div className="flex justify-between">
-                  <Label htmlFor="ceiling-val" className="text-xs text-slate-300">Max Student Capacity Ceiling *</Label>
-                  <span className="font-mono font-bold text-purple-400">{editCeilingValue} students</span>
-                </div>
+                <Label htmlFor="edit-ceiling-input" className="text-xs font-semibold text-slate-700">Max Active Advisee Quota Ceiling</Label>
                 <Input
-                  id="ceiling-val"
+                  id="edit-ceiling-input"
                   type="number"
                   min={1}
                   max={50}
                   value={editCeilingValue}
-                  onChange={(e) => setEditCeilingValue(parseInt(e.target.value) || 1)}
-                  className="bg-slate-900 border-slate-700 text-white font-mono"
+                  onChange={(e) => setEditCeilingValue(Number(e.target.value) || 1)}
+                  className="bg-white border-slate-200 text-slate-900 font-bold"
                 />
                 <p className="text-[11px] text-slate-500">
-                  When active students reach this ceiling, the system will automatically bypass this supervisor and assign to the next best-matched supervisor.
+                  Current active advisees: {editingSupervisor.active_students_count}. System will lock automated matching when ceiling is reached.
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="spec-val" className="text-xs text-slate-300">Research Specialization Keywords *</Label>
-                <Input
-                  id="spec-val"
+                <Label htmlFor="edit-spec-input" className="text-xs font-semibold text-slate-700">Research Specialization & Keywords</Label>
+                <textarea
+                  id="edit-spec-input"
+                  rows={3}
                   value={editSpecializationValue}
                   onChange={(e) => setEditSpecializationValue(e.target.value)}
-                  placeholder="e.g. Artificial Intelligence, Cybersecurity, FinTech"
-                  className="bg-slate-900 border-slate-700 text-white"
+                  placeholder="e.g. Machine Learning, Natural Language Processing, Cybersecurity..."
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-900 text-xs focus:ring-1 focus:ring-purple-500 shadow-sm"
                 />
+                <p className="text-[11px] text-slate-500">The NLP matcher uses these keywords to auto-match students to this supervisor.</p>
               </div>
 
               {ceilingMessage && (
-                <p className="text-xs font-semibold text-emerald-400">{ceilingMessage}</p>
+                <p className="text-xs font-semibold text-emerald-600">{ceilingMessage}</p>
               )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-              <Button size="sm" variant="ghost" onClick={() => setEditingSupervisor(null)} className="text-slate-400">
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <Button size="sm" variant="ghost" onClick={() => setEditingSupervisor(null)} className="text-slate-600 hover:bg-slate-100">
                 Cancel
               </Button>
-              <Button size="sm" onClick={handleSaveSupervisorCapacity} disabled={savingCeiling} className="bg-purple-600 hover:bg-purple-500 text-white">
+              <Button size="sm" onClick={handleSaveSupervisorCapacity} disabled={savingCeiling} className="bg-purple-600 hover:bg-purple-700 text-white font-semibold">
                 {savingCeiling ? 'Saving...' : 'Save Capacity Quota'}
               </Button>
             </div>
@@ -1568,76 +1572,47 @@ export function Dashboard({ userRole }: DashboardProps) {
       )}
 
       {/* ========================================================================= */}
-      {/* PLAGIARISM DETAIL REPORT MODAL                                            */}
+      {/* MODAL 2: TURNITIN PLAGIARISM SCANNER REPORT MODAL                        */}
       {/* ========================================================================= */}
       {plagiarismModalPaper && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#161b22] border border-slate-700 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <ShieldCheck className="size-5 text-emerald-400" />
-                Turnitin Academic Integrity Clearance Report
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-200 text-slate-900">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ShieldCheck className="size-5 text-emerald-600" />
+                Turnitin Similarity Analysis Report
               </h3>
-              <button onClick={() => { setPlagiarismModalPaper(null); setPlagiarismReport(null); }} className="text-slate-400 hover:text-white">
+              <button onClick={() => { setPlagiarismModalPaper(null); setPlagiarismReport(null); }} className="text-slate-400 hover:text-slate-600">
                 <X className="size-5" />
               </button>
             </div>
 
             {scanningPlagiarism ? (
-              <div className="py-12 text-center space-y-3">
-                <RefreshCw className="size-8 text-cyan-400 animate-spin mx-auto" />
-                <p className="text-sm font-semibold text-white">Executing Turnitin NLP Token Matching...</p>
-                <p className="text-xs text-slate-400">Checking document against institutional repository and global journal index.</p>
+              <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                <RefreshCw className="size-8 text-blue-600 animate-spin" />
+                <p className="text-xs font-semibold text-slate-600">Scanning repository vectors and generating similarity radar...</p>
               </div>
             ) : plagiarismReport ? (
               <div className="space-y-4 text-xs">
-                <div className="flex items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800">
-                  <div>
-                    <p className="text-[11px] text-slate-400 uppercase tracking-wider">Overall Similarity Index</p>
-                    <p className="text-3xl font-black text-white mt-0.5">
-                      <span className={plagiarismReport.similarity_score > 20 ? 'text-rose-400' : 'text-emerald-400'}>
-                        {plagiarismReport.similarity_score}%
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-1">{plagiarismReport.risk_level}</p>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-slate-700">Overall Similarity Index:</span>
+                    <span className={`text-xl font-black ${
+                      plagiarismReport.is_flagged ? 'text-rose-600' : (plagiarismReport.similarity_pct > 15 ? 'text-amber-600' : 'text-emerald-600')
+                    }`}>
+                      {plagiarismReport.similarity_pct}%
+                    </span>
                   </div>
-
-                  <Badge className={
-                    plagiarismReport.is_approved_for_marking
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs px-3 py-1.5'
-                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40 text-xs px-3 py-1.5'
-                  }>
-                    {plagiarismReport.is_approved_for_marking ? '✓ Clearance Approved (<20%)' : '✕ Revisions Required (>20%)'}
-                  </Badge>
+                  <p className="text-[11px] text-slate-500">{plagiarismReport.feedback}</p>
                 </div>
 
-                {/* Breakdown Bars */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
-                    <p className="text-[10px] text-slate-400">Internet Sources</p>
-                    <p className="text-base font-bold text-cyan-300 mt-0.5">{plagiarismReport.breakdown.internet_sources}%</p>
-                  </div>
-                  <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
-                    <p className="text-[10px] text-slate-400">Publications</p>
-                    <p className="text-base font-bold text-indigo-300 mt-0.5">{plagiarismReport.breakdown.publications}%</p>
-                  </div>
-                  <div className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
-                    <p className="text-[10px] text-slate-400">Student Papers</p>
-                    <p className="text-base font-bold text-purple-300 mt-0.5">{plagiarismReport.breakdown.student_papers}%</p>
-                  </div>
-                </div>
-
-                {/* Top Matched Sources */}
                 <div className="space-y-2">
-                  <p className="font-bold text-white text-xs">Primary Matched Similarity Sources:</p>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  <h4 className="font-bold text-slate-800">Top Matched Institutional Sources:</h4>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
                     {plagiarismReport.sources.map((s, idx) => (
-                      <div key={idx} className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex justify-between items-center">
-                        <div className="max-w-md truncate">
-                          <p className="font-semibold text-slate-200">{s.title}</p>
-                          <p className="text-[10px] text-slate-400">{s.matched_type} • {s.author} ({s.year})</p>
-                        </div>
-                        <span className="font-mono font-bold text-cyan-400 shrink-0">{s.similarity_pct}%</span>
+                      <div key={idx} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex justify-between items-center text-[11px]">
+                        <span className="font-medium text-slate-800 truncate max-w-xs">{s.source_title}</span>
+                        <span className="font-mono font-bold text-blue-600 shrink-0">{s.similarity_pct}%</span>
                       </div>
                     ))}
                   </div>
@@ -1645,8 +1620,8 @@ export function Dashboard({ userRole }: DashboardProps) {
               </div>
             ) : null}
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-              <Button size="sm" variant="ghost" onClick={() => { setPlagiarismModalPaper(null); setPlagiarismReport(null); }} className="text-slate-400">
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <Button size="sm" variant="ghost" onClick={() => { setPlagiarismModalPaper(null); setPlagiarismReport(null); }} className="text-slate-600 hover:bg-slate-100">
                 Close
               </Button>
             </div>
@@ -1655,53 +1630,91 @@ export function Dashboard({ userRole }: DashboardProps) {
       )}
 
       {/* ========================================================================= */}
-      {/* ADVISEE BROADCAST MODAL                                                   */}
+      {/* MODAL 3: ADVISEE BROADCAST MODAL (Light Theme & Working Handlers)         */}
       {/* ========================================================================= */}
       {adviseeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#161b22] border border-slate-700 rounded-2xl max-w-xl w-full p-6 space-y-5 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Send className="size-5 text-cyan-400" /> Broadcast Message to Assigned Advisees
-              </h3>
-              <button onClick={() => setAdviseeModalOpen(false)} className="text-slate-400 hover:text-white">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-5 shadow-2xl animate-in zoom-in-95 duration-200 text-slate-900">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Send className="size-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900">Broadcast Message to Assigned Advisees</h3>
+              </div>
+              <button onClick={() => setAdviseeModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="size-5" />
               </button>
             </div>
 
             <div className="space-y-4 text-xs">
+              {/* Program Filter */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-blue-50/60 rounded-xl border border-blue-100">
+                <div>
+                  <p className="font-bold text-blue-950">Target Recipients</p>
+                  <p className="text-[11px] text-blue-700">{advisees.length} active advisee(s) currently loaded</p>
+                </div>
+                {adviseePrograms.length > 0 && (
+                  <Select
+                    value={adviseeProgramFilter}
+                    onValueChange={(val) => {
+                      setAdviseeProgramFilter(val)
+                      void loadAdvisees(val)
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs bg-white border-blue-200 w-44 text-slate-800 shadow-sm">
+                      <SelectValue placeholder="All Programs" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-slate-200 text-slate-800">
+                      <SelectItem value="ALL">All Programs ({advisees.length})</SelectItem>
+                      {adviseePrograms.map((prog) => (
+                        <SelectItem key={prog} value={prog}>{prog}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="broadcast-subject" className="text-xs text-slate-300">Announcement Subject *</Label>
+                <Label htmlFor="broadcast-subject" className="text-xs font-semibold text-slate-700">Announcement Subject *</Label>
                 <Input
                   id="broadcast-subject"
                   value={broadcastSubject}
                   onChange={(e) => setBroadcastSubject(e.target.value)}
                   placeholder="e.g. Chapter 3 Methodology Submission Deadline"
-                  className="bg-slate-900 border-slate-700 text-white"
+                  className="bg-white border-slate-200 text-slate-900 shadow-sm"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="broadcast-msg" className="text-xs text-slate-300">Message Content *</Label>
+                <Label htmlFor="broadcast-msg" className="text-xs font-semibold text-slate-700">Message Content *</Label>
                 <textarea
                   id="broadcast-msg"
                   rows={4}
                   value={broadcastMessage}
                   onChange={(e) => setBroadcastMessage(e.target.value)}
                   placeholder="Type your supervisory message to advisees here..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-xs focus:ring-1 focus:ring-cyan-500"
+                  className="w-full bg-white border border-slate-200 rounded-xl p-3 text-slate-900 text-xs focus:ring-1 focus:ring-blue-500 shadow-sm"
                 />
               </div>
 
-              {broadcastSuccess && <p className="text-xs font-semibold text-emerald-400">{broadcastSuccess}</p>}
-              {broadcastError && <p className="text-xs font-semibold text-rose-400">{broadcastError}</p>}
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={broadcastIncludeEmail}
+                  onChange={(e) => setBroadcastIncludeEmail(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <span className="text-xs text-slate-700 font-medium">Also dispatch as instant email to students’ official inbox</span>
+              </label>
+
+              {broadcastSuccess && <p className="text-xs font-semibold text-emerald-600">{broadcastSuccess}</p>}
+              {broadcastError && <p className="text-xs font-semibold text-rose-600">{broadcastError}</p>}
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-              <Button size="sm" variant="ghost" onClick={() => setAdviseeModalOpen(false)} className="text-slate-400">
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <Button size="sm" variant="ghost" onClick={() => setAdviseeModalOpen(false)} className="text-slate-600 hover:bg-slate-100">
                 Cancel
               </Button>
-              <Button size="sm" onClick={handleSendAdviseeBroadcast} disabled={sendingBroadcast} className="bg-cyan-600 hover:bg-cyan-500 text-white">
+              <Button size="sm" onClick={handleSendAdviseeBroadcast} disabled={sendingBroadcast || !broadcastSubject.trim() || !broadcastMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm">
                 {sendingBroadcast ? 'Sending...' : 'Send Broadcast to Advisees'}
               </Button>
             </div>
