@@ -258,6 +258,7 @@ def _notify_roles(
     message: str,
     department: str | None = None,
 ) -> None:
+    from app.models.notification import Notification
     dept = (department or "").strip().lower()
     recipients = [
         user
@@ -273,14 +274,20 @@ def _notify_roles(
             for user in list_users(db, limit=500, is_active=True)
             if any(has_role(db, user, role) for role in roles)
         ]
+    notifs = []
     for recipient in recipients:
-        create_notification(
-            db,
-            user_id=recipient.id,
-            paper_id=paper_id,
-            ntype="workflow_update",
-            message=message,
+        notifs.append(
+            Notification(
+                user_id=recipient.id,
+                paper_id=paper_id,
+                type="workflow_update",
+                message=message,
+                is_read=False,
+            )
         )
+    if notifs:
+        db.add_all(notifs)
+
 
 
 def _resolve_reviewer_role(db: Session, user: User) -> str:
