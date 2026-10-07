@@ -2083,8 +2083,8 @@ export function AccountManagement() {
               </>
             )}
 
-            {/* Lecturer / Supervisor Specialization & Advisee Quota */}
-            {createForm.role !== 'student' && (
+            {/* Lecturer / Supervisor Specialization & Advisee Quota (Only for supervisory/faculty roles) */}
+            {['lecturer', 'project_supervisor', 'hod', 'project_coordinator', 'external_examiner'].includes(createForm.role) && (
               <div className="space-y-2.5 p-3 rounded-xl border border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20">
                 <div className="flex items-center gap-2">
                   <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
@@ -2382,67 +2382,69 @@ export function AccountManagement() {
                 </div>
               </div>
 
-              {/* Supervisor & Lecturer Specialization & Auto-Matching Quota Section */}
-              <div className="space-y-2.5 p-3 rounded-xl border border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20">
-                <div className="flex items-center gap-2">
-                  <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                  <div>
-                    <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                      Supervisor Research Specialization & Quota
+              {/* Supervisor & Lecturer Specialization & Auto-Matching Quota Section (Only for supervisory/faculty roles) */}
+              {(['lecturer', 'project_supervisor', 'hod', 'project_coordinator', 'external_examiner'].includes(editForm.role) || (editForm.roles || []).some((r) => ['lecturer', 'project_supervisor', 'hod', 'project_coordinator', 'external_examiner'].includes(r))) && (
+                <div className="space-y-2.5 p-3 rounded-xl border border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20">
+                  <div className="flex items-center gap-2">
+                    <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <div>
+                      <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                        Supervisor Research Specialization & Quota
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground m-0">
+                        Used by the system to automatically pair students' thesis topics with matching supervisor expertise.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 pt-1">
+                    <Label htmlFor="edit-specialization" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Research Specialization / Domain
                     </Label>
-                    <p className="text-[11px] text-muted-foreground m-0">
-                      Used by the system to automatically pair students' thesis topics with matching supervisor expertise.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-1 pt-1">
-                  <Label htmlFor="edit-specialization" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Research Specialization / Domain
-                  </Label>
-                  <Input
-                    id="edit-specialization"
-                    value={editForm.specialization}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, specialization: e.target.value }))}
-                    className="h-8 text-xs bg-white dark:bg-slate-950"
-                    placeholder="e.g. Machine Learning, Cloud Architecture, Financial Econometrics, Criminal Law"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="edit-research-interests" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Research Interests & Topic Keywords
-                  </Label>
-                  <Input
-                    id="edit-research-interests"
-                    value={editForm.research_interests}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, research_interests: e.target.value }))}
-                    className="h-8 text-xs bg-white dark:bg-slate-950"
-                    placeholder="e.g. AI, deep learning, cybersecurity, IoT, blockchain, audit, corporate governance"
-                  />
-                  <p className="text-[10px] text-muted-foreground">Comma-separated keywords for automatic topic matching algorithm</p>
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="edit-max-ceiling" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Max Student Supervision Ceiling (Quota Limit)
-                  </Label>
-                  <div className="flex items-center gap-3">
                     <Input
-                      id="edit-max-ceiling"
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={editForm.max_student_ceiling}
-                      onChange={(e) => setEditForm((prev) => ({ ...prev, max_student_ceiling: Number(e.target.value) || 1 }))}
-                      className="h-8 w-24 text-xs bg-white dark:bg-slate-950 font-bold"
+                      id="edit-specialization"
+                      value={editForm.specialization}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, specialization: e.target.value }))}
+                      className="h-8 text-xs bg-white dark:bg-slate-950"
+                      placeholder="e.g. Machine Learning, Cloud Architecture, Financial Econometrics, Criminal Law"
                     />
-                    <span className="text-[11px] text-muted-foreground">
-                      Maximum active students allowed for this supervisor before ceiling locks.
-                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="edit-research-interests" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Research Interests & Topic Keywords
+                    </Label>
+                    <Input
+                      id="edit-research-interests"
+                      value={editForm.research_interests}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, research_interests: e.target.value }))}
+                      className="h-8 text-xs bg-white dark:bg-slate-950"
+                      placeholder="e.g. AI, deep learning, cybersecurity, IoT, blockchain, audit, corporate governance"
+                    />
+                    <p className="text-[10px] text-muted-foreground">Comma-separated keywords for automatic topic matching algorithm</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="edit-max-ceiling" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Max Student Supervision Ceiling (Quota Limit)
+                    </Label>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        id="edit-max-ceiling"
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={editForm.max_student_ceiling}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, max_student_ceiling: Number(e.target.value) || 1 }))}
+                        className="h-8 w-24 text-xs bg-white dark:bg-slate-950 font-bold"
+                      />
+                      <span className="text-[11px] text-muted-foreground">
+                        Maximum active students allowed for this supervisor before ceiling locks.
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Secondary Roles & Elevated Admin Privileges */}
               <div className="space-y-2 p-3 rounded-xl border bg-slate-50/70 dark:bg-slate-900/40">
