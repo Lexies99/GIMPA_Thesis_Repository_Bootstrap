@@ -519,6 +519,28 @@ export function Dashboard({ userRole }: DashboardProps) {
   }
 
   // Send Broadcast to Advisees
+  const handleBroadcastFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0 || !accessToken) return
+    setUploadingAttachment(true)
+    setBroadcastError('')
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const item = await apiUploadBroadcastAttachment(files[i], accessToken)
+        setBroadcastAttachments((prev) => [...prev, item])
+      }
+    } catch (err) {
+      setBroadcastError(err instanceof Error ? err.message : 'Failed to upload attachment.')
+    } finally {
+      setUploadingAttachment(false)
+      if (e.target) e.target.value = ''
+    }
+  }
+
+  const handleRemoveBroadcastAttachment = (indexToRemove: number) => {
+    setBroadcastAttachments((prev) => prev.filter((_, idx) => idx !== indexToRemove))
+  }
+
   const handleSendAdviseeBroadcast = async () => {
     if (!broadcastSubject.trim() || !broadcastMessage.trim()) {
       setBroadcastError('Please provide both subject and message body.')
@@ -531,12 +553,14 @@ export function Dashboard({ userRole }: DashboardProps) {
     try {
       const res = await apiSupervisorMessageAdvisees(accessToken, {
         program: adviseeProgramFilter !== 'ALL' ? adviseeProgramFilter : undefined,
+        program_filter: adviseeProgramFilter !== 'ALL' ? adviseeProgramFilter : undefined,
         subject: broadcastSubject.trim(),
         message: broadcastMessage.trim(),
         send_email: broadcastIncludeEmail,
+        include_email: broadcastIncludeEmail,
         attachments: broadcastAttachments.length > 0 ? broadcastAttachments : undefined,
       })
-      setBroadcastSuccess(`✓ ${res.message} (${res.notifications_sent} notifications sent, ${res.emails_queued} emails queued)`)
+      setBroadcastSuccess(`✓ ${res.message} (${res.notifications_sent || res.notifications_created || 0} notifications sent, ${res.emails_queued || 0} emails queued)`)
       setBroadcastSubject('')
       setBroadcastMessage('')
       setBroadcastAttachments([])
@@ -1709,6 +1733,57 @@ export function Dashboard({ userRole }: DashboardProps) {
                   placeholder="Type your supervisory message to advisees here..."
                   className="w-full bg-white border border-slate-200 rounded-xl p-3 text-slate-900 text-xs focus:ring-1 focus:ring-blue-500 shadow-sm"
                 />
+              </div>
+
+              {/* File Attachments Section */}
+              <div className="space-y-2 p-3 bg-slate-50/90 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Paperclip className="size-4 text-slate-600" />
+                    <Label className="text-xs font-semibold text-slate-800">Attach Reference Files & Guidelines</Label>
+                  </div>
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-semibold shadow-xs transition-all">
+                    <Upload className="size-3.5 text-blue-600" />
+                    <span>{uploadingAttachment ? 'Uploading...' : 'Upload Files'}</span>
+                    <input
+                      type="file"
+                      multiple
+                      disabled={uploadingAttachment}
+                      onChange={handleBroadcastFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Upload guidelines, thesis templates, chapter rubrics, or reading materials (PDF, Word, Excel, ZIP - up to 25MB).
+                </p>
+
+                {broadcastAttachments.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {broadcastAttachments.map((att, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs shadow-xs"
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <FileText className="size-4 text-blue-600 shrink-0" />
+                          <span className="font-medium text-slate-900 truncate">{att.filename}</span>
+                          <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                            ({(att.size_bytes / 1024).toFixed(1)} KB)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveBroadcastAttachment(idx)}
+                          className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition-colors cursor-pointer"
+                          title="Remove attachment"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <label className="flex items-center gap-2 cursor-pointer pt-1">

@@ -2094,9 +2094,12 @@ export interface ApiSupervisorAdviseesResponse {
 export interface ApiSupervisorMessagePayload {
   subject: string
   message: string
+  program?: string
   program_filter?: string
+  send_email?: boolean
   include_email?: boolean
   student_ids?: number[]
+  student_user_ids?: number[]
   attachments?: BroadcastAttachmentItem[]
 }
 

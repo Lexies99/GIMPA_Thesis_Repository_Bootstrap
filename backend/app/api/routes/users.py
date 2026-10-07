@@ -850,6 +850,7 @@ def upload_broadcast_attachment_endpoint(
     is_authorized = (
         current_user.is_admin
         or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "deputy_rector")
         or has_role(db, current_user, "head_library")
         or has_role(db, current_user, "librarian")
         or has_role(db, current_user, "dean")
