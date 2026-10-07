@@ -27,7 +27,7 @@ from app.models.department_supervisor import DepartmentSupervisor
 from app.models.thesis_system import Thesis
 from app.models.user import User
 from app.models.user_role import UserRole
-from app.schemas.paper import PaperCreate, PaperRead, PaperReview, PaperStats, SupervisorReviewSummary
+from app.schemas.paper import AuthorRead, PaperCreate, PaperRead, PaperReview, PaperStats, SupervisorReviewSummary
 from app.services.notification_service import create_notification
 from app.services.email_service import send_notification_email
 from app.services.paper_service import (
