@@ -704,13 +704,13 @@ export function Dashboard({ userRole }: DashboardProps) {
       {/* ========================================================================= */}
       {/* 2. TOP GECKOBOARD / TELEMETRY METRIC TILES & GAUGES                      */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         
         {/* Tile 1: CSAT / On-Time Velocity Arc Meter */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-blue-300 hover:shadow transition-all">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-sm flex flex-col justify-between hover:border-blue-300 hover:shadow-md transition-all">
           <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
-            <span>On-Time Review Velocity</span>
-            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">99.2% Target</Badge>
+            <span>On-Time Velocity</span>
+            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">99.2% Target</Badge>
           </div>
           
           {/* Circular Semi-Arc Gauge */}
@@ -738,27 +738,30 @@ export function Dashboard({ userRole }: DashboardProps) {
             </div>
           </div>
 
-          <div className="flex justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
-            <span>SLA Compliance: High</span>
+          <div className="flex justify-between text-[11px] text-slate-500 pt-2.5 border-t border-slate-100">
+            <span>SLA: High</span>
             <span className="text-emerald-600 font-bold">+2.4% this week</span>
           </div>
         </div>
 
         {/* Tile 2: Total Active Theses & Phase Pipeline */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-blue-300 hover:shadow transition-all">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-sm flex flex-col justify-between hover:border-blue-300 hover:shadow-md transition-all">
           <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
-            <span>Active Repository Theses</span>
+            <span>Active Theses</span>
             <FileText className="size-4 text-blue-600" />
           </div>
-          <div className="my-2">
-            <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {liveMetrics?.total_theses ?? (stats?.total_papers || 112)}
+          <div className="my-2.5">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-slate-900 tracking-tight">
+                {liveMetrics?.total_theses ?? (stats?.total_papers || 112)}
+              </span>
+              <span className="text-xs text-slate-500 font-medium">In Pipeline</span>
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
               Phases 1-5 active student projects
             </p>
           </div>
-          <div className="grid grid-cols-5 gap-1 text-[10px] font-mono text-center pt-2 border-t border-slate-100">
+          <div className="grid grid-cols-5 gap-1 text-[10px] font-mono text-center pt-2.5 border-t border-slate-100">
             <span className="bg-blue-50 text-blue-700 rounded py-0.5 font-semibold">P1: {liveMetrics?.phases?.phase1 ?? 24}</span>
             <span className="bg-indigo-50 text-indigo-700 rounded py-0.5 font-semibold">P2: {liveMetrics?.phases?.phase2 ?? 42}</span>
             <span className="bg-purple-50 text-purple-700 rounded py-0.5 font-semibold">P3: {liveMetrics?.phases?.phase3 ?? 28}</span>
@@ -768,15 +771,17 @@ export function Dashboard({ userRole }: DashboardProps) {
         </div>
 
         {/* Tile 3: 5-Day Overdue Warning Tile (Automated System SLA) */}
-        <div className="bg-white border border-rose-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-rose-400 hover:shadow transition-all">
+        <div className="bg-white border border-rose-200/90 rounded-2xl p-4.5 shadow-sm flex flex-col justify-between hover:border-rose-400 hover:shadow-md transition-all">
           <div className="flex justify-between items-center text-xs font-semibold text-rose-700">
             <span className="flex items-center gap-1.5">
-              <AlertTriangle className="size-4 text-rose-600 animate-pulse" />
+              <span className="p-1 rounded bg-rose-100/80 text-rose-600 inline-flex">
+                <AlertTriangle className="size-3.5" />
+              </span>
               5-Day Overdue
             </span>
-            <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] font-semibold">Overdue SLA</Badge>
+            <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] px-1.5 py-0 font-medium">SLA Alert</Badge>
           </div>
-          <div className="my-2">
+          <div className="my-2.5">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-rose-600 tracking-tight">
                 {overdueList.filter((x) => x.is_overdue).length}
@@ -787,8 +792,8 @@ export function Dashboard({ userRole }: DashboardProps) {
               Review delays exceeding 5 days
             </p>
           </div>
-          <div className="flex items-center justify-between pt-2 border-t border-rose-100 gap-1.5">
-            <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1 shrink-0">
+          <div className="flex items-center justify-between pt-2.5 border-t border-rose-100 gap-2">
+            <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-rose-500 animate-pulse"></span>
               Auto-Escalate
             </span>
@@ -797,7 +802,7 @@ export function Dashboard({ userRole }: DashboardProps) {
               onClick={handleTrigger5DayAlerts}
               disabled={triggeringAlerts || overdueList.filter((x) => x.is_overdue).length === 0}
               title="Manually trigger immediate 5-day overdue review alert notifications"
-              className="inline-flex items-center justify-center gap-1 h-6 px-2.5 rounded-md bg-rose-600 hover:bg-rose-700 active:bg-rose-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold shadow-xs transition-all cursor-pointer shrink-0"
+              className="inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 active:bg-rose-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold shadow-xs transition-all cursor-pointer shrink-0"
             >
               <BellRing className="size-3 shrink-0" />
               <span>{triggeringAlerts ? 'Alerting...' : 'Alert Now'}</span>
@@ -806,12 +811,12 @@ export function Dashboard({ userRole }: DashboardProps) {
         </div>
 
         {/* Tile 4: Plagiarism Health Radar */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-emerald-300 hover:shadow transition-all">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-sm flex flex-col justify-between hover:border-emerald-300 hover:shadow-md transition-all">
           <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
-            <span>Avg Plagiarism Index</span>
+            <span>Plagiarism Radar</span>
             <ShieldCheck className="size-4 text-emerald-600" />
           </div>
-          <div className="my-2">
+          <div className="my-2.5">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-emerald-600 tracking-tight">
                 {liveMetrics?.average_plagiarism_score || 8.4}%
@@ -820,25 +825,25 @@ export function Dashboard({ userRole }: DashboardProps) {
             </div>
             <p className="text-[11px] text-slate-500 mt-1">Turnitin NLP token similarity</p>
           </div>
-          <div className="flex justify-between text-[11px] text-slate-600 pt-2 border-t border-slate-100">
+          <div className="flex justify-between text-[11px] text-slate-600 pt-2.5 border-t border-slate-100">
             <span className="text-emerald-700 font-mono font-medium">Clean: {liveMetrics?.plagiarism_breakdown?.clean_count ?? 35}</span>
-            <span className="text-amber-700 font-mono font-medium">Moderate: {liveMetrics?.plagiarism_breakdown?.moderate_count ?? 6}</span>
-            <span className="text-rose-700 font-mono font-medium">Flagged: {liveMetrics?.plagiarism_breakdown?.flagged_count ?? 0}</span>
+            <span className="text-amber-700 font-mono font-medium">Mod: {liveMetrics?.plagiarism_breakdown?.moderate_count ?? 6}</span>
+            <span className="text-rose-700 font-mono font-medium">Flag: {liveMetrics?.plagiarism_breakdown?.flagged_count ?? 0}</span>
           </div>
         </div>
 
         {/* Tile 5: Supervisor Workload & Capacity Quota */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-purple-300 hover:shadow transition-all">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-sm flex flex-col justify-between hover:border-purple-300 hover:shadow-md transition-all">
           <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
-            <span>Supervisor Quota Load</span>
+            <span>Supervisor Quota</span>
             <Users className="size-4 text-purple-600" />
           </div>
-          <div className="my-2">
+          <div className="my-2.5">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-purple-700 tracking-tight">
                 {liveMetrics?.supervisor_metrics?.average_utilization_pct || 68.5}%
               </span>
-              <span className="text-xs text-slate-500">Capacity Used</span>
+              <span className="text-xs text-slate-500 font-medium">Capacity Used</span>
             </div>
             {/* Progress Bar */}
             <div className="w-full bg-slate-100 rounded-full h-2 mt-2.5 overflow-hidden border border-slate-200/50">
@@ -848,7 +853,7 @@ export function Dashboard({ userRole }: DashboardProps) {
               />
             </div>
           </div>
-          <div className="flex justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
+          <div className="flex justify-between text-[11px] text-slate-500 pt-2.5 border-t border-slate-100">
             <span>{liveMetrics?.supervisor_metrics?.total_assigned ?? 48} Assigned</span>
             <span>{liveMetrics?.supervisor_metrics?.total_capacity ?? 70} Total Slots</span>
           </div>
