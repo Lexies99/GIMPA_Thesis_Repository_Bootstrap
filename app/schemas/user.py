@@ -14,6 +14,7 @@ UserRole = Literal[
     "project_supervisor",
     "hod",
     "dean",
+    "deputy_rector",
     "system_admin",
     "librarian",
     "head_library",

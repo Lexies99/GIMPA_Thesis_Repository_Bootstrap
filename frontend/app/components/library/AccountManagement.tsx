@@ -153,6 +153,7 @@ function mapApiUser(user: ApiUser): ManagedAccount {
 }
 
 function roleChipLabel(role: ApiUserRole): string {
+  if (role === 'deputy_rector') return 'Deputy Rector'
   if (role === 'project_supervisor') return 'Project Supervisor'
   if (role === 'project_coordinator') return 'Project Coordinator'
   if (role === 'system_admin') return 'System Admin'
@@ -186,16 +187,16 @@ function normalizeText(value: string | null | undefined): string {
 export function AccountManagement() {
   const { user } = useAuth()
   const hasRole = (role: ApiUserRole) => !!user && (user.role === role || (user.roles || []).includes(role))
-  const canManageAccounts = hasRole('system_admin')
-  const canBatchAssignExaminers = hasRole('hod') || hasRole('project_coordinator') || hasRole('system_admin')
-  const canCreateExternalExaminer = hasRole('hod') || hasRole('project_coordinator') || hasRole('system_admin')
-  const isHodOrCoordOnly = (hasRole('hod') || hasRole('project_coordinator')) && !hasRole('system_admin')
-  const canAssignDean = hasRole('system_admin')
-  const canAssignHod = hasRole('dean')
-  const canAssignCoordinators = hasRole('hod')
-  const canAssignSupervisors = hasRole('project_coordinator') || hasRole('hod') || hasRole('system_admin')
+  const canManageAccounts = hasRole('system_admin') || hasRole('deputy_rector')
+  const canBatchAssignExaminers = hasRole('hod') || hasRole('project_coordinator') || hasRole('system_admin') || hasRole('deputy_rector')
+  const canCreateExternalExaminer = hasRole('hod') || hasRole('project_coordinator') || hasRole('system_admin') || hasRole('deputy_rector')
+  const isHodOrCoordOnly = (hasRole('hod') || hasRole('project_coordinator')) && !hasRole('system_admin') && !hasRole('deputy_rector')
+  const canAssignDean = hasRole('system_admin') || hasRole('deputy_rector')
+  const canAssignHod = hasRole('dean') || hasRole('deputy_rector') || hasRole('system_admin')
+  const canAssignCoordinators = hasRole('hod') || hasRole('deputy_rector') || hasRole('system_admin')
+  const canAssignSupervisors = hasRole('project_coordinator') || hasRole('hod') || hasRole('system_admin') || hasRole('deputy_rector')
   const canManageAssignments = canAssignDean || canAssignHod || canAssignCoordinators || canAssignSupervisors
-  const canViewAssignments = hasRole('system_admin') || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator') || hasRole('lecturer')
+  const canViewAssignments = hasRole('system_admin') || hasRole('deputy_rector') || hasRole('dean') || hasRole('hod') || hasRole('project_coordinator') || hasRole('lecturer')
   const canManage = canManageAccounts || canManageAssignments || canViewAssignments || canBatchAssignExaminers
   const [accounts, setAccounts] = useState<ManagedAccount[]>([])
   const [candidateUsers, setCandidateUsers] = useState<ApiUser[]>([])
@@ -2005,6 +2006,7 @@ export function AccountManagement() {
                       <SelectItem value="project_coordinator">Project Coordinator</SelectItem>
                       <SelectItem value="hod">HOD</SelectItem>
                       <SelectItem value="dean">Dean</SelectItem>
+                      <SelectItem value="deputy_rector">Deputy Rector</SelectItem>
                       <SelectItem value="librarian">Librarian</SelectItem>
                       <SelectItem value="head_library">Head Librarian</SelectItem>
                       <SelectItem value="external_examiner">External Examiner</SelectItem>
@@ -2355,6 +2357,7 @@ export function AccountManagement() {
                       <SelectItem value="project_coordinator" className="text-xs">Project Coordinator</SelectItem>
                       <SelectItem value="hod" className="text-xs">HOD</SelectItem>
                       <SelectItem value="dean" className="text-xs">Dean</SelectItem>
+                      <SelectItem value="deputy_rector" className="text-xs">Deputy Rector</SelectItem>
                       <SelectItem value="librarian" className="text-xs">Librarian</SelectItem>
                       <SelectItem value="external_examiner" className="text-xs">External Examiner</SelectItem>
                       <SelectItem value="system_admin" className="text-xs">System Admin</SelectItem>
@@ -2462,6 +2465,7 @@ export function AccountManagement() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1.5">
                   {[
                     { id: 'system_admin' as ApiUserRole, label: 'System Admin', desc: 'Full Super Admin access', badge: 'bg-purple-100 text-purple-800 border-purple-300' },
+                    { id: 'deputy_rector' as ApiUserRole, label: 'Deputy Rector', desc: 'Institutional leadership & oversight', badge: 'bg-violet-100 text-violet-800 border-violet-300' },
                     { id: 'dean' as ApiUserRole, label: 'Dean', desc: 'Faculty-level approvals', badge: 'bg-blue-100 text-blue-800 border-blue-300' },
                     { id: 'hod' as ApiUserRole, label: 'HOD', desc: 'Department oversight', badge: 'bg-amber-100 text-amber-800 border-amber-300' },
                     { id: 'project_coordinator' as ApiUserRole, label: 'Project Coordinator', desc: 'Thesis workflow manager', badge: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
