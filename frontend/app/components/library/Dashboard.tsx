@@ -784,15 +784,17 @@ export function Dashboard({ userRole }: DashboardProps) {
               Automated system auto-escalation active
             </p>
           </div>
-          <Button
-            size="sm"
-            onClick={handleTrigger5DayAlerts}
-            disabled={triggeringAlerts || overdueList.filter((x) => x.is_overdue).length === 0}
-            className="w-full h-7 text-[11px] bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg shadow-sm"
-          >
-            <BellRing className="size-3 mr-1.5" />
-            {triggeringAlerts ? 'Escalating...' : 'Sync & Dispatch Alerts Now'}
-          </Button>
+          <div className="pt-2 border-t border-rose-100">
+            <Button
+              size="sm"
+              onClick={handleTrigger5DayAlerts}
+              disabled={triggeringAlerts || overdueList.filter((x) => x.is_overdue).length === 0}
+              className="w-full h-8 text-xs font-semibold bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-all"
+            >
+              <BellRing className="size-3.5 shrink-0" />
+              <span className="truncate">{triggeringAlerts ? 'Escalating...' : 'Dispatch SLA Alerts'}</span>
+            </Button>
+          </div>
         </div>
 
         {/* Tile 4: Plagiarism Health Radar */}
