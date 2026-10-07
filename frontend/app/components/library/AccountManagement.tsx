@@ -1887,12 +1887,13 @@ export function AccountManagement() {
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {createdAccountResult ? 'Account Credentials' : 'Create New Account'}
             </DialogTitle>
           </DialogHeader>
+
           {createdAccountResult ? (
             <div className="space-y-4 pt-1 text-xs">
               <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 space-y-3">
@@ -2538,8 +2539,9 @@ export function AccountManagement() {
 
       {/* 2. Admin Reset Password Dialog */}
       <Dialog open={!!resetAccount} onOpenChange={(open) => { if (!open) setResetAccount(null) }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
+
             <DialogTitle className="flex items-center gap-2 text-base font-bold">
               <Key className="h-5 w-5 text-amber-500" />
               Reset Account Password

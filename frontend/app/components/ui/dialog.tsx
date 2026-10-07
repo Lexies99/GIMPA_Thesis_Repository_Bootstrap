@@ -77,6 +77,10 @@ const DialogContent = React.forwardRef<
         ref={ref}
         className={`fixed left-[50%] top-[50%] z-50 grid w-full ${
           (className || '').includes('max-w-') ? '' : 'max-w-lg'
+        } ${
+          (className || '').includes('max-h-') ? '' : 'max-h-[90vh]'
+        } ${
+          (className || '').includes('overflow-') ? '' : 'overflow-y-auto'
         } translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg sm:rounded-lg ${className || ""}`}
         style={{
           backgroundColor: 'var(--bg-card)',
@@ -90,6 +94,7 @@ const DialogContent = React.forwardRef<
     </>
   )
 })
+
 DialogContent.displayName = "DialogContent"
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
