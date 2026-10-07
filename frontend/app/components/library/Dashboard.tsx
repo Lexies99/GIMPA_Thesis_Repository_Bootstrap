@@ -771,29 +771,37 @@ export function Dashboard({ userRole }: DashboardProps) {
         <div className="bg-white border border-rose-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between hover:border-rose-400 hover:shadow transition-all">
           <div className="flex justify-between items-center text-xs font-semibold text-rose-700">
             <span className="flex items-center gap-1.5">
-              <AlertTriangle className="size-4 text-rose-600 animate-bounce" />
-              5-Day Overdue Reviews
+              <AlertTriangle className="size-4 text-rose-600 animate-pulse" />
+              5-Day Overdue
             </span>
-            <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px]">Auto-Managed</Badge>
+            <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] font-semibold">Overdue SLA</Badge>
           </div>
           <div className="my-2">
-            <div className="text-3xl font-black text-rose-600 tracking-tight">
-              {overdueList.filter((x) => x.is_overdue).length}
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-rose-600 tracking-tight">
+                {overdueList.filter((x) => x.is_overdue).length}
+              </span>
+              <span className="text-xs text-rose-600 font-medium">Delayed Reviews</span>
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
-              Automated system auto-escalation active
+              Review delays exceeding 5 days
             </p>
           </div>
-          <div className="pt-2 border-t border-rose-100">
-            <Button
-              size="sm"
+          <div className="flex items-center justify-between pt-2 border-t border-rose-100 gap-1.5">
+            <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1 shrink-0">
+              <span className="size-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+              Auto-Escalate
+            </span>
+            <button
+              type="button"
               onClick={handleTrigger5DayAlerts}
               disabled={triggeringAlerts || overdueList.filter((x) => x.is_overdue).length === 0}
-              className="w-full h-8 text-xs font-semibold bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-all"
+              title="Manually trigger immediate 5-day overdue review alert notifications"
+              className="inline-flex items-center justify-center gap-1 h-6 px-2.5 rounded-md bg-rose-600 hover:bg-rose-700 active:bg-rose-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold shadow-xs transition-all cursor-pointer shrink-0"
             >
-              <BellRing className="size-3.5 shrink-0" />
-              <span className="truncate">{triggeringAlerts ? 'Escalating...' : 'Dispatch SLA Alerts'}</span>
-            </Button>
+              <BellRing className="size-3 shrink-0" />
+              <span>{triggeringAlerts ? 'Alerting...' : 'Alert Now'}</span>
+            </button>
           </div>
         </div>
 
