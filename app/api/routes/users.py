@@ -68,22 +68,31 @@ def _to_user_read(db: Session, user) -> UserRead:
     return result
 
 
-def _same_department(actor, target) -> bool:
+def _same_department(actor, target, db: Session | None = None) -> bool:
     actor_dept = (actor.department or "").strip().lower()
     target_dept = (target.department or "").strip().lower()
-    return bool(actor_dept and target_dept and actor_dept == target_dept)
+    if actor_dept and target_dept and (actor_dept == target_dept or actor_dept in target_dept or target_dept in actor_dept):
+        return True
+    if db is not None and getattr(actor, "id", None):
+        dept_names = {
+            (d.name or "").strip().lower()
+            for d in db.query(Department).filter(Department.hod_user_id == actor.id).all()
+        }
+        if target_dept and target_dept in dept_names:
+            return True
+    return False
 
 
 def _can_assign_role(db: Session, actor, role: str, target=None) -> bool:
     normalized = (role or "").strip().lower()
-    if actor.is_admin or has_role(db, actor, "system_admin"):
+    if actor.is_admin or has_role(db, actor, "system_admin") or has_role(db, actor, "deputy_rector"):
         return True
     if normalized == "hod":
-        return has_role(db, actor, "dean") and (target is None or _same_department(actor, target))
+        return has_role(db, actor, "dean")
     if normalized == "project_coordinator":
-        return has_role(db, actor, "hod") and (target is None or _same_department(actor, target))
+        return has_role(db, actor, "hod") and (target is None or _same_department(actor, target, db))
     if normalized == "project_supervisor":
-        return has_role(db, actor, "project_coordinator") and (target is None or _same_department(actor, target))
+        return (has_role(db, actor, "project_coordinator") or has_role(db, actor, "hod")) and (target is None or _same_department(actor, target, db))
     if normalized == "librarian":
         return has_role(db, actor, "head_library")
     return False
@@ -110,6 +119,7 @@ def read_users(
         or has_role(db, current_user, "librarian")
         or has_role(db, current_user, "head_library")
         or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "deputy_rector")
     )
     is_dean = has_role(db, current_user, "dean")
     is_hod = has_role(db, current_user, "hod")
@@ -140,7 +150,16 @@ def read_users(
                 users = [u for u in users if (u.school or "").strip().lower() == actor_school]
         elif is_hod or is_project_coordinator:
             actor_dept = (current_user.department or "").strip().lower()
-            users = [u for u in users if (u.department or "").strip().lower() == actor_dept]
+            dept_names = {
+                (d.name or "").strip().lower()
+                for d in db.query(Department).filter(Department.hod_user_id == current_user.id).all()
+            }
+            if actor_dept:
+                dept_names.add(actor_dept)
+            if dept_names:
+                users = [u for u in users if (u.department or "").strip().lower() in dept_names]
+            else:
+                users = [u for u in users if (u.department or "").strip().lower() == actor_dept]
     return [_to_user_read(db, user) for user in users]
 
 
