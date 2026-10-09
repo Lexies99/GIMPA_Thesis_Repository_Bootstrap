@@ -19,6 +19,7 @@ import {
   apiAssignDepartmentHod,
   apiDeleteUser,
   apiListDepartments,
+  apiSyncDefaultDepartments,
   apiListDepartmentSupervisors,
   apiListUsers,
   apiRemoveUserRole,
@@ -631,15 +632,27 @@ export function AccountManagement() {
     }
 
     try {
-      const [deptItems, users] = await Promise.all([
+      let [deptItems, users] = await Promise.all([
         apiListDepartments(accessToken),
         apiListUsers(accessToken, { limit: 200, is_active: true }),
       ])
+
+      if (deptItems.length === 0) {
+        try {
+          deptItems = await apiSyncDefaultDepartments(accessToken)
+        } catch {
+          // fallback gracefully
+        }
+      }
+
       setDepartments(deptItems)
       setCandidateUsers(users)
 
-      if (!selectedDepartmentId && deptItems.length > 0) {
-        setSelectedDepartmentId(String(deptItems[0].id))
+      if (deptItems.length > 0) {
+        setSelectedDepartmentId((prev) => {
+          if (prev && deptItems.some((d) => String(d.id) === prev)) return prev
+          return String(deptItems[0].id)
+        })
       }
     } catch (err) {
       setLoadingError(extractErrorMessage(err))
@@ -954,13 +967,13 @@ export function AccountManagement() {
     }
     if (hasRole('dean')) {
       const mapped = d.dean_user_id === user?.id
-      const schoolName = normalizeText(d.institution_name)
-      const sameSchool = !!actorSchool && schoolName === actorSchool
-      const inDeanVisibleSchool = schoolName ? deanVisibleSchools.has(schoolName) : false
+      const deptSchool = normalizeText(d.institution_name)
+      const sameSchool = !!actorSchool && (deptSchool === actorSchool || deptSchool.includes(actorSchool) || actorSchool.includes(deptSchool))
+      const inDeanVisibleSchool = deptSchool ? deanVisibleSchools.has(deptSchool) : false
       if (mapped) return true
-      if (actorSchool) return schoolName === actorSchool
+      if (sameSchool) return true
       if (inDeanVisibleSchool) return true
-      return deanMappedDepartments.length === 0
+      return true
     }
     if (hasRole('hod') || hasRole('project_coordinator')) {
       const sameDepartment = normalizeText(d.name) === actorDepartment
@@ -1043,16 +1056,23 @@ export function AccountManagement() {
     (u.role === role) || ((u.roles || []).includes(role))
   const targetDepartmentName = (normalizeText(selectedDepartment?.name) || actorDepartment)
   const hodCandidates = candidateUsers.filter((u) => {
-    const lecturerOnly = userHasRole(u, 'lecturer')
-    if (!lecturerOnly) return false
+    const isAcademicFaculty = ['lecturer', 'project_supervisor', 'project_coordinator', 'hod', 'staff'].some((r) =>
+      userHasRole(u, r as ApiUserRole)
+    )
+    if (!isAcademicFaculty) return false
 
-    const sameDepartment = normalizeText(u.department) === targetDepartmentName
+    const candDept = normalizeText(u.department)
+    const candSchool = normalizeText(u.school)
+    const targetDept = targetDepartmentName.toLowerCase()
+    const targetSchool = normalizeText(selectedDepartment?.institution_name)
+
+    const matchesDept = candDept && targetDept ? (candDept === targetDept || candDept.includes(targetDept) || targetDept.includes(candDept)) : false
+    const matchesSchool = candSchool && targetSchool ? (candSchool === targetSchool || candSchool.includes(targetSchool) || targetSchool.includes(candSchool)) : false
 
     if (hasRole('dean')) {
-      // Dean assigns HOD from lecturers in the selected department.
-      return sameDepartment
+      return matchesDept || matchesSchool || !candDept
     }
-    return sameDepartment
+    return matchesDept || matchesSchool || !candDept
   })
   const supervisorCandidates = candidateUsers.filter((u) => {
     const lecturerOnly = userHasRole(u, 'lecturer')
@@ -1417,21 +1437,19 @@ export function AccountManagement() {
             {visibleDepartments.length > 0 && (
               <div className="space-y-4">
                 <div>
-                  {!hasRole('system_admin') && (
-                    <>
-                      <p className="text-xs font-bold mb-1.5" style={{color:'var(--text-sub)'}}>Department</p>
-                      <Select value={selectedDepartmentId} onValueChange={setSelectedDepartmentId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select department" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {visibleDepartments.map((dept) => (
-                            <SelectItem key={dept.id} value={String(dept.id)}>{dept.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </>
-                  )}
+                  <p className="text-xs font-bold mb-1.5" style={{color:'var(--text-sub)'}}>Select Department</p>
+                  <Select value={selectedDepartmentId} onValueChange={setSelectedDepartmentId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visibleDepartments.map((dept) => (
+                        <SelectItem key={dept.id} value={String(dept.id)}>
+                          {dept.name} {dept.institution_name ? `(${dept.institution_name})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {selectedDepartment && (
@@ -2084,7 +2102,7 @@ export function AccountManagement() {
             )}
 
             {/* Lecturer / Supervisor Specialization & Advisee Quota (Only for supervisory/faculty roles) */}
-            {['lecturer', 'project_supervisor', 'hod', 'project_coordinator', 'external_examiner'].includes(createForm.role) && (
+            {['lecturer', 'project_supervisor'].includes(createForm.role) && !['dean', 'deputy_rector', 'system_admin', 'librarian', 'head_library', 'student', 'member'].includes(createForm.role) && (
               <div className="space-y-2.5 p-3 rounded-xl border border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20">
                 <div className="flex items-center gap-2">
                   <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
@@ -2383,7 +2401,7 @@ export function AccountManagement() {
               </div>
 
               {/* Supervisor & Lecturer Specialization & Auto-Matching Quota Section (Only for supervisory/faculty roles) */}
-              {(['lecturer', 'project_supervisor', 'hod', 'project_coordinator', 'external_examiner'].includes(editForm.role) || (editForm.roles || []).some((r) => ['lecturer', 'project_supervisor', 'hod', 'project_coordinator', 'external_examiner'].includes(r))) && (
+              {['lecturer', 'project_supervisor'].includes(editForm.role) && !['dean', 'deputy_rector', 'system_admin', 'librarian', 'head_library', 'student', 'member'].includes(editForm.role) && (
                 <div className="space-y-2.5 p-3 rounded-xl border border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-950/20">
                   <div className="flex items-center gap-2">
                     <GraduationCap className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />

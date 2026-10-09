@@ -58,6 +58,7 @@ backend_files = [
     "app/schemas/user.py",
     "app/schemas/token.py",
     "app/services/user_service.py",
+    "app/services/department_service.py",
     "app/services/import_service.py",
     "app/services/plagiarism_service.py",
     "app/services/matching_service.py",
@@ -68,6 +69,7 @@ backend_files = [
     "app/api/routes/theses.py",
     "app/api/routes/papers.py",
     "app/api/routes/users.py",
+    "app/api/routes/departments.py",
     "app/api/routes/auth.py",
     "app/api/routes/phd.py",
     "migrate_new_features.py"

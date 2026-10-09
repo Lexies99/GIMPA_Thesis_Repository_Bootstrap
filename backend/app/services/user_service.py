@@ -197,6 +197,41 @@ def remove_role(db: Session, user: User, role: str) -> User:
     return user
 
 
+def _sync_user_department_leadership(db: Session, user: User) -> None:
+    try:
+        from app.models.department import Department
+        from app.models.institution import Institution
+
+        user_roles = [user.role] + [r.role for r in getattr(user, "roles", []) if hasattr(r, "role")]
+
+        if "dean" in user_roles and user.school:
+            clean_school = user.school.strip().lower()
+            matching_inst = None
+            for inst in db.query(Institution).all():
+                if clean_school in inst.name.lower() or inst.name.lower() in clean_school:
+                    matching_inst = inst
+                    break
+            if matching_inst:
+                depts = db.query(Department).filter(Department.institution_id == matching_inst.id).all()
+                for d in depts:
+                    d.dean_user_id = user.id
+                    db.add(d)
+
+        if "hod" in user_roles and user.department:
+            clean_dept = user.department.strip().lower()
+            dept = db.query(Department).filter(Department.name.ilike(clean_dept)).first()
+            if not dept:
+                for d_cand in db.query(Department).all():
+                    if clean_dept in d_cand.name.lower() or d_cand.name.lower() in clean_dept:
+                        dept = d_cand
+                        break
+            if dept:
+                dept.hod_user_id = user.id
+                db.add(dept)
+    except Exception:
+        pass
+
+
 def create_user(
     db: Session,
     email: str,
@@ -234,6 +269,7 @@ def create_user(
     )
     if not existing_role:
         db.add(UserRole(user_id=user.id, role=normalized_role))
+    _sync_user_department_leadership(db, user)
     db.commit()
     db.refresh(user)
     return user
@@ -354,6 +390,7 @@ def update_user(db: Session, user: User, payload: UserUpdate) -> User:
         user = assign_role(db, user, payload.role)
 
     _validate_role_identity_fields(role=user.role, school_id=user.school_id)
+    _sync_user_department_leadership(db, user)
 
     db.add(user)
     db.commit()

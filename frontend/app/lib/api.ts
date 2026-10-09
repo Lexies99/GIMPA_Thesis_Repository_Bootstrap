@@ -1116,6 +1116,14 @@ export async function apiListDepartments(accessToken: string): Promise<ApiDepart
   return handleResponse<ApiDepartment[]>(response)
 }
 
+export async function apiSyncDefaultDepartments(accessToken: string): Promise<ApiDepartment[]> {
+  const response = await fetch(`${apiBase}/departments/sync-defaults`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return handleResponse<ApiDepartment[]>(response)
+}
+
 export async function apiAssignDepartmentDean(
   departmentId: number,
   userId: number,

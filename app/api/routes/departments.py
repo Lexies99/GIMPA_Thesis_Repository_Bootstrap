@@ -21,6 +21,7 @@ from app.services.department_service import (
     get_department_supervisors,
     get_department,
     list_departments,
+    ensure_default_departments,
 )
 from app.services.user_service import has_role
 from app.services.email_service import send_notification_email
@@ -50,6 +51,16 @@ def list_all_departments(
     return [_to_department_read(d) for d in departments]
 
 
+@router.post("/sync-defaults", response_model=list[DepartmentRead])
+def sync_default_departments_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_role("system_admin", "deputy_rector", "dean")),
+) -> list[DepartmentRead]:
+    """Ensure all default GIMPA schools & departments exist and are linked to Deans."""
+    departments = ensure_default_departments(db)
+    return [_to_department_read(d) for d in departments]
+
+
 @router.get("/{department_id}", response_model=DepartmentRead)
 def get_dept(
     department_id: int,
@@ -66,16 +77,36 @@ def get_dept(
 def assign_hod_endpoint(
     department_id: int,
     payload: AssignHODRequest,
-    current_user: User = Depends(require_any_role("dean", "system_admin")),
+    current_user: User = Depends(require_any_role("dean", "system_admin", "deputy_rector")),
     db: Session = Depends(get_db),
 ) -> DepartmentRead:
-    """Assign a user as HOD for a department. Requires Dean or Admin role."""
+    """Assign a user as HOD for a department. Requires Dean, Deputy Rector, or Admin role."""
     department = get_department(db, department_id)
     if not department:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
-    if not has_role(db, current_user, "system_admin") and not current_user.is_admin:
-        if department.dean_user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only assigned dean can set HOD for this department")
+
+    is_admin_or_rector = (
+        current_user.is_admin
+        or has_role(db, current_user, "system_admin")
+        or has_role(db, current_user, "deputy_rector")
+    )
+    if not is_admin_or_rector:
+        is_dean_of_school = False
+        if department.dean_user_id == current_user.id:
+            is_dean_of_school = True
+        elif department.institution and current_user.school:
+            cur_school = (current_user.school or "").strip().lower()
+            dept_school = (department.institution.name or "").strip().lower()
+            if cur_school == dept_school or cur_school in dept_school or dept_school in cur_school:
+                is_dean_of_school = True
+        elif has_role(db, current_user, "dean"):
+            is_dean_of_school = True
+
+        if not is_dean_of_school:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the assigned Dean of this school can set the HOD for this department.",
+            )
     try:
         department = assign_hod(db, department_id, payload.user_id, assigned_by_id=current_user.id)
         return _to_department_read(department)
@@ -87,10 +118,10 @@ def assign_hod_endpoint(
 def assign_dean_endpoint(
     department_id: int,
     payload: AssignDeanRequest,
-    current_user: User = Depends(require_any_role("system_admin")),
+    current_user: User = Depends(require_any_role("system_admin", "deputy_rector")),
     db: Session = Depends(get_db),
 ) -> DepartmentRead:
-    """Assign a user as Dean for a school (all departments). Requires Admin role."""
+    """Assign a user as Dean for a school (all departments). Requires Admin or Deputy Rector role."""
     try:
         department = assign_dean(db, department_id, payload.user_id, assigned_by_id=current_user.id)
         return _to_department_read(department)
