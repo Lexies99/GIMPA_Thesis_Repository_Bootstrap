@@ -951,14 +951,10 @@ export function AccountManagement() {
 
   const actorDepartment = normalizeText(user?.department)
   const actorSchool = normalizeText(user?.school)
-  const deanVisibleSchools = new Set(
-    candidateUsers
-      .map((u) => normalizeText(u.school))
-      .filter((s) => !!s),
-  )
-  const deanMappedDepartments = departments.filter((d) => d.dean_user_id === user?.id)
+  const isSuperAdminOrRector = hasRole('system_admin') || hasRole('deputy_rector')
+
   const visibleDepartments = departments.filter((d) => {
-    if (hasRole('system_admin')) {
+    if (isSuperAdminOrRector) {
       if (!selectedSchoolKey) return true
       const selectedSchoolNormalized = selectedSchoolKey.trim().toLowerCase()
       const idMatch = String(d.institution_id) === selectedSchoolKey
@@ -968,19 +964,19 @@ export function AccountManagement() {
     if (hasRole('dean')) {
       const mapped = d.dean_user_id === user?.id
       const deptSchool = normalizeText(d.institution_name)
-      const sameSchool = !!actorSchool && (deptSchool === actorSchool || deptSchool.includes(actorSchool) || actorSchool.includes(deptSchool))
-      const inDeanVisibleSchool = deptSchool ? deanVisibleSchools.has(deptSchool) : false
-      if (mapped) return true
-      if (sameSchool) return true
-      if (inDeanVisibleSchool) return true
-      return true
+      const sameSchool = !!actorSchool && (
+        deptSchool === actorSchool ||
+        deptSchool.includes(actorSchool) ||
+        actorSchool.includes(deptSchool)
+      )
+      return mapped || sameSchool
     }
     if (hasRole('hod') || hasRole('project_coordinator')) {
       const sameDepartment = normalizeText(d.name) === actorDepartment
       const mapped = d.hod_user_id === user?.id
       return sameDepartment || mapped
     }
-    return true
+    return false
   })
   const selectedDepartment = visibleDepartments.find((d) => String(d.id) === selectedDepartmentId) || null
 
@@ -998,7 +994,7 @@ export function AccountManagement() {
   const selectedSchoolOption = effectiveSchoolOptions.find((s) => s.id === selectedSchoolKey) || null
   const selectedSchoolName = normalizeText(selectedSchoolOption?.label || selectedSchoolKey)
   const matchesSelectedSchool = (school: string | null | undefined): boolean => {
-    if (!hasRole('system_admin')) return true
+    if (!isSuperAdminOrRector) return true
     if (!selectedSchoolKey) return true
     return normalizeText(school) === selectedSchoolName
   }
@@ -1024,7 +1020,6 @@ export function AccountManagement() {
   })
 
   const userSchoolNormalized = normalizeText(user?.school)
-  const isOverviewPrivileged = hasRole('system_admin') || hasRole('dean')
   const schoolsOverviewData = Array.from(
     new Map(
       departments.map((d) => [String(d.institution_id), d.institution_name || `School #${d.institution_id}`]),
@@ -1047,8 +1042,14 @@ export function AccountManagement() {
       depts: schoolDepartments,
     }
   }).filter((school) => {
-    if (!isOverviewPrivileged && userSchoolNormalized) {
-      return school.schoolKey === userSchoolNormalized
+    if (!isSuperAdminOrRector) {
+      const isDeanOfThisSchool = !!user?.id && school.deanIds.includes(user.id)
+      const matchesSchoolName = !!userSchoolNormalized && (
+        school.schoolKey === userSchoolNormalized ||
+        school.schoolKey.includes(userSchoolNormalized) ||
+        userSchoolNormalized.includes(school.schoolKey)
+      )
+      return isDeanOfThisSchool || matchesSchoolName
     }
     return true
   })
@@ -1596,7 +1597,7 @@ export function AccountManagement() {
               </div>
             )}
             {assignmentMessage && <p className="text-xs font-semibold text-purple-500 m-0">{assignmentMessage}</p>}
-            {schoolDeanSummary.length > 0 && (
+            {canAssignDean && schoolDeanSummary.length > 0 && (
               <div className="space-y-2 pt-3 border-t" style={{borderColor:'var(--border-color)'}}>
                 <p className="text-xs font-bold m-0" style={{color:'var(--text-sub)'}}>Current Deans by School</p>
                 {schoolDeanSummary.map((row) => (
