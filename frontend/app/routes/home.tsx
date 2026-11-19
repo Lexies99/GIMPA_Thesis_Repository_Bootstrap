@@ -27,6 +27,8 @@ import {
   Building2,
   Globe,
   HelpCircle,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { apiGetPendingPapers, apiGetNotifications, apiMarkNotificationRead, type ApiNotification } from '../lib/api';
 
@@ -52,6 +54,24 @@ export default function Home() {
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gimpa_theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+    }
+    return 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    localStorage.setItem('gimpa_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -76,11 +96,6 @@ export default function Home() {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'light');
-    localStorage.setItem('gimpa_theme', 'light');
   }, []);
 
   const hasRole = (role: string) => !!user && (user.role === role || (user.roles || []).includes(role as typeof user.role));
@@ -204,14 +219,14 @@ export default function Home() {
   ] as Array<{tab:string;label:string;icon:React.ElementType;show:boolean|undefined;badge?:number|null}>).filter(item => item.show);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#ffffff', fontFamily: "'Outfit', 'Inter', sans-serif" }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: "'Outfit', 'Inter', sans-serif" }}>
 
       {/* ─── FULL-WIDTH FINPLANNER SAGE TOP HEADER ────────────────────── */}
       <header
         className="gimpa-header"
         style={{
-          background: '#d8e5c7',
-          borderBottom: '1px solid #c9d8b6',
+          background: 'var(--bg-header)',
+          borderBottom: '1px solid var(--border-header)',
           padding: isMobile ? '0 16px' : '0 36px',
           height: 64,
           display: 'flex',
@@ -229,7 +244,7 @@ export default function Home() {
             onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
             className="gimpa-mobile-menu-btn"
             style={{
-              background: 'rgba(26,29,26,0.08)',
+              background: 'rgba(128,128,128,0.14)',
               border: 'none',
               borderRadius: 8,
               width: 36,
@@ -237,7 +252,7 @@ export default function Home() {
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              color: '#1a1d1a',
+              color: 'var(--text-main)',
             }}
             title="Toggle Menu"
           >
@@ -261,18 +276,18 @@ export default function Home() {
               width: 34,
               height: 34,
               borderRadius: '50%',
-              border: '2px solid #1a1d1a',
+              border: '2px solid var(--text-main)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#1a1d1a',
+              color: 'var(--text-main)',
             }}>
               <Globe style={{ width: 18, height: 18, strokeWidth: 2.2 }} />
             </div>
             <span style={{
               fontSize: 17,
               fontWeight: 600,
-              color: '#1a1d1a',
+              color: 'var(--text-main)',
               letterSpacing: '-0.01em',
             }}>
               GIMPA Repository
@@ -280,8 +295,8 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Right: Clean Minimal Outline Icons + Primary Action */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 18 }}>
+        {/* Right: Clean Minimal Outline Icons + Theme Toggle + Primary Action */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16 }}>
           {/* Submit Proposal Pill (Students) */}
           {user && isAuthenticated && (user.role === 'student' || user.role === 'member') && (
             <button
@@ -292,7 +307,7 @@ export default function Home() {
                 alignItems: 'center',
                 gap: 6,
                 padding: isMobile ? '7px 12px' : '8px 16px',
-                background: '#5a6552',
+                background: 'var(--fp-olive)',
                 border: 'none',
                 borderRadius: 8,
                 color: '#ffffff',
@@ -306,6 +321,38 @@ export default function Home() {
             </button>
           )}
 
+          {/* Light / Dark Mode Toggle Pill */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 12px',
+              borderRadius: 999,
+              border: '1px solid var(--border-header)',
+              background: 'var(--fp-sage)',
+              color: 'var(--fp-sage-text)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun style={{ width: 15, height: 15 }} />
+                {!isMobile && <span>Light</span>}
+              </>
+            ) : (
+              <>
+                <Moon style={{ width: 15, height: 15 }} />
+                {!isMobile && <span>Dark</span>}
+              </>
+            )}
+          </button>
+
           {/* Profile Icon */}
           {user && isAuthenticated && user.role !== 'guest' && (
             <button
@@ -316,7 +363,7 @@ export default function Home() {
                 border: 'none',
                 padding: 6,
                 cursor: 'pointer',
-                color: '#1a1d1a',
+                color: 'var(--text-main)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -339,7 +386,7 @@ export default function Home() {
                   border: 'none',
                   padding: 6,
                   cursor: 'pointer',
-                  color: '#1a1d1a',
+                  color: 'var(--text-main)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -356,7 +403,7 @@ export default function Home() {
                     minWidth: 16,
                     height: 16,
                     borderRadius: 999,
-                    background: '#5a6552',
+                    background: 'var(--fp-olive)',
                     color: '#fff',
                     fontSize: 10,
                     fontWeight: 700,
@@ -378,21 +425,21 @@ export default function Home() {
                   width: 340,
                   maxHeight: 380,
                   overflowY: 'auto',
-                  background: '#ffffff',
-                  border: '1px solid #eaece4',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
                   borderRadius: 14,
-                  boxShadow: '0 16px 40px rgba(40,48,36,0.14)',
+                  boxShadow: '0 16px 40px rgba(0,0,0,0.2)',
                   zIndex: 100,
                   padding: 16,
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #f2f4ee' }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1d1a' }}>Notifications</span>
-                    <span style={{ fontSize: 11, background: '#dce7d0', color: '#1a1d1a', borderRadius: 999, padding: '2px 10px', fontWeight: 600 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-main)' }}>Notifications</span>
+                    <span style={{ fontSize: 11, background: 'var(--fp-sage)', color: 'var(--fp-sage-text)', borderRadius: 999, padding: '2px 10px', fontWeight: 600 }}>
                       {unreadCount} new
                     </span>
                   </div>
                   {notifications.length === 0 ? (
-                    <p style={{ fontSize: 13, color: '#6e766b', textAlign: 'center', padding: '20px 0', margin: 0 }}>No new notifications.</p>
+                    <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0', margin: 0 }}>No new notifications.</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {notifications.map(n => (
@@ -407,12 +454,12 @@ export default function Home() {
                             borderRadius: 10,
                             border: 'none',
                             cursor: 'pointer',
-                            background: n.is_read ? '#fafbf8' : '#eef3e8',
-                            borderLeft: n.is_read ? '3px solid transparent' : '3px solid #5a6552',
+                            background: n.is_read ? 'var(--bg-main)' : 'var(--bg-subtle)',
+                            borderLeft: n.is_read ? '3px solid transparent' : '3px solid var(--fp-olive)',
                           }}
                         >
-                          <p style={{ margin: 0, fontSize: 12.5, fontWeight: n.is_read ? 400 : 600, color: '#1a1d1a', lineHeight: 1.45 }}>{n.message}</p>
-                          <p style={{ margin: '4px 0 0', fontSize: 11, color: '#6e766b' }}>
+                          <p style={{ margin: 0, fontSize: 12.5, fontWeight: n.is_read ? 400 : 600, color: 'var(--text-main)', lineHeight: 1.45 }}>{n.message}</p>
+                          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>
                             {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
                           </p>
                         </button>
@@ -431,7 +478,7 @@ export default function Home() {
                 border: 'none',
                 padding: 6,
                 cursor: 'pointer',
-                color: '#1a1d1a',
+                color: 'var(--text-main)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -452,7 +499,7 @@ export default function Home() {
                 border: 'none',
                 padding: 6,
                 cursor: 'pointer',
-                color: '#1a1d1a',
+                color: 'var(--text-main)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -473,7 +520,7 @@ export default function Home() {
                 border: 'none',
                 padding: 6,
                 cursor: 'pointer',
-                color: '#1a1d1a',
+                color: 'var(--text-main)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -491,7 +538,7 @@ export default function Home() {
                 alignItems: 'center',
                 gap: 6,
                 padding: '8px 16px',
-                background: '#5a6552',
+                background: 'var(--fp-olive)',
                 border: 'none',
                 borderRadius: 8,
                 color: '#ffffff',
@@ -517,7 +564,7 @@ export default function Home() {
           className={`gimpa-mobile-backdrop ${mobileDrawerOpen ? 'open' : ''}`}
         />
 
-        {/* ─── LEFT SIDEBAR (Soft Warm Cream #f7f8f3) ───────────────── */}
+        {/* ─── LEFT SIDEBAR ─────────────────────────────────────────── */}
         <aside
           className={`gimpa-sidebar ${mobileDrawerOpen ? 'open' : ''}`}
           style={{
@@ -542,31 +589,21 @@ export default function Home() {
                     borderRadius: 10,
                     border: 'none',
                     cursor: 'pointer',
-                    background: isActive ? '#dce7d0' : 'transparent',
-                    color: '#1a1d1a',
+                    background: isActive ? 'var(--fp-sage)' : 'transparent',
+                    color: isActive ? 'var(--fp-sage-text)' : 'var(--text-main)',
                     fontWeight: isActive ? 600 : 400,
                     fontSize: 14,
                     textAlign: 'left',
                     transition: 'background 0.15s ease',
                   }}
-                  onMouseEnter={e => {
-                    if (!isActive) {
-                      (e.currentTarget as HTMLButtonElement).style.background = '#eef3e8';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!isActive) {
-                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                    }
-                  }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <Icon style={{ width: 18, height: 18, color: '#1a1d1a', strokeWidth: isActive ? 2.1 : 1.7, flexShrink: 0 }} />
+                    <Icon style={{ width: 18, height: 18, color: isActive ? 'var(--fp-sage-text)' : 'var(--text-main)', strokeWidth: isActive ? 2.1 : 1.7, flexShrink: 0 }} />
                     <span>{label}</span>
                   </span>
                   {badge != null && badge > 0 && (
                     <span style={{
-                      background: '#5a6552',
+                      background: 'var(--fp-olive)',
                       color: '#ffffff',
                       fontSize: 11,
                       fontWeight: 700,
@@ -582,34 +619,34 @@ export default function Home() {
             })}
           </nav>
 
-          {/* Bottom Summary Section (Matches FinPlanner's "Total on your accounts / €35.927") */}
+          {/* Bottom Summary Section */}
           <div style={{
             marginTop: 32,
             padding: '20px 8px',
-            borderTop: '1px solid #e2e5dc',
-            borderBottom: '1px solid #e2e5dc',
+            borderTop: '1px solid var(--border-color)',
+            borderBottom: '1px solid var(--border-color)',
           }}>
-            <div style={{ fontSize: 12, color: '#6e766b', fontWeight: 400, marginBottom: 4 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400, marginBottom: 4 }}>
               {user && isAuthenticated && user.role !== 'guest' ? 'Active role & account' : 'Repository status'}
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1d1a', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
               {roleLabel}
             </div>
             {user && isAuthenticated && user.role !== 'guest' && (
-              <div style={{ fontSize: 12, color: '#5a6552', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {user.name}
               </div>
             )}
           </div>
         </aside>
 
-        {/* ─── MAIN WORKSPACE CANVAS (Pure White #ffffff) ────────────── */}
+        {/* ─── MAIN WORKSPACE CANVAS ────────────────────────────────── */}
         <main
           className="gimpa-main-content"
           style={{
             flex: 1,
             padding: isMobile ? '24px 16px 40px' : '40px 52px 64px',
-            background: '#ffffff',
+            background: 'var(--bg-main)',
             width: '100%',
             maxWidth: '100%',
             overflowX: 'hidden',
@@ -619,8 +656,8 @@ export default function Home() {
             <div style={{
               marginBottom: 28,
               padding: '16px 22px',
-              background: '#fafbf8',
-              border: '1px solid #d5e1c8',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
               borderRadius: 12,
               display: 'flex',
               alignItems: 'center',
@@ -629,10 +666,10 @@ export default function Home() {
               flexWrap: 'wrap',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Settings style={{ width: 18, height: 18, color: '#5a6552', flexShrink: 0 }} />
+                <Settings style={{ width: 18, height: 18, color: 'var(--fp-olive)', flexShrink: 0 }} />
                 <div>
-                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: '#1a1d1a' }}>First-time login — please update your password</p>
-                  <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#6e766b' }}>Go to <strong>My Profile → Change Password</strong> to secure your account.</p>
+                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)' }}>First-time login — please update your password</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Go to <strong>My Profile → Change Password</strong> to secure your account.</p>
                 </div>
               </div>
               <button

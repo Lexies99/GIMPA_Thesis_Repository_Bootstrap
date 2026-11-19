@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useAuth } from '../context/AuthContext'
-import { AlertCircle, Eye, EyeOff, Globe } from 'lucide-react'
+import { AlertCircle, Eye, EyeOff, Globe, Moon, Sun } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -11,6 +11,20 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const { login } = useAuth()
   const navigate = useNavigate()
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gimpa_theme')
+      if (saved === 'dark' || saved === 'light') return saved
+    }
+    return 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    localStorage.setItem('gimpa_theme', theme)
+  }, [theme])
 
   const handleLogin = async () => {
     setError('')
@@ -49,7 +63,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white text-[#1a1d1a] font-sans">
+    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white text-[#1a1d1a] font-sans relative">
+      {/* Top-right Theme Toggle */}
+      <button
+        type="button"
+        onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
+        className="fixed top-5 right-6 z-50 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-[#eaece4] bg-[#dce7d0] text-[#1a1d1a] cursor-pointer shadow-sm"
+        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+      >
+        {theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+        <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+      </button>
+
       {/* ── LEFT SAGE PANEL (FinPlanner Image 5) ── */}
       <div className="w-full lg:w-[44%] bg-[#d8e5c7] flex flex-col justify-between p-8 lg:p-12 relative overflow-hidden min-h-[280px] lg:min-h-screen">
         {/* Top-left Brand */}
@@ -70,41 +95,31 @@ export default function LoginPage() {
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
           >
-            {/* Large soft off-white circle backdrop */}
             <circle cx="235" cy="205" r="142" fill="#f4f6f0" />
-
-            {/* Subtle top horizontal line inside circle */}
             <line x1="150" y1="128" x2="352" y2="128" stroke="#dcdfd6" strokeWidth="1.5" />
 
-            {/* Clipped area chart inside circle */}
             <clipPath id="fpCircleClip">
               <circle cx="235" cy="205" r="142" />
             </clipPath>
             <g clipPath="url(#fpCircleClip)">
-              {/* Olive green area chart hills */}
               <path
                 d="M168 285 C172 245, 185 225, 200 223 C220 220, 238 198, 258 200 C278 202, 295 222, 315 218 C335 214, 355 185, 380 182 L380 285 Z"
                 fill="#5a6552"
               />
-              {/* Dashed guide lines */}
               <line x1="258" y1="200" x2="375" y2="200" stroke="#282838" strokeWidth="1.2" strokeDasharray="4 4" />
               <line x1="200" y1="223" x2="375" y2="223" stroke="#282838" strokeWidth="1.2" strokeDasharray="4 4" />
 
-              {/* Vertical drop lines from chart points */}
               <line x1="200" y1="223" x2="200" y2="285" stroke="#282838" strokeWidth="1.5" />
               <line x1="258" y1="200" x2="258" y2="285" stroke="#282838" strokeWidth="1.5" />
               <line x1="315" y1="218" x2="315" y2="285" stroke="#282838" strokeWidth="1.5" />
 
-              {/* Baseline */}
               <line x1="158" y1="285" x2="380" y2="285" stroke="#282838" strokeWidth="1.8" />
 
-              {/* Data node dots */}
               <circle cx="200" cy="223" r="6" fill="#282838" />
               <circle cx="258" cy="200" r="6" fill="#282838" />
               <circle cx="315" cy="218" r="6" fill="#282838" />
             </g>
 
-            {/* Small decorative botanical leaf at bottom left */}
             <path
               d="M98 378 C84 360, 78 338, 75 325 C90 330, 104 348, 102 378 Z"
               fill="#f4f6f0"
@@ -115,65 +130,51 @@ export default function LoginPage() {
               strokeWidth="1.5"
             />
 
-            {/* Character standing on the left pointing at the first chart node */}
-            {/* Ground line */}
             <line x1="65" y1="378" x2="195" y2="378" stroke="#c5d4b2" strokeWidth="1.8" />
 
-            {/* Shoes */}
             <path d="M114 371 L126 371 L130 378 L112 378 Z" fill="#282838" />
             <path d="M138 371 L150 371 L155 378 L136 378 Z" fill="#282838" />
 
-            {/* Ankles */}
             <rect x="116" y="364" width="6" height="8" fill="#f2d6ce" />
             <rect x="140" y="364" width="6" height="8" fill="#f2d6ce" />
 
-            {/* Dark trousers */}
             <path
               d="M104 282 L144 282 L148 365 L137 365 L128 310 L124 365 L113 365 Z"
               fill="#282838"
             />
 
-            {/* Right arm pointing up to first chart node (200, 223) */}
             <path
               d="M136 238 L188 222 L191 230 L142 252 Z"
               fill="#dce7d0"
             />
-            {/* Pointing hand */}
             <circle cx="192" cy="224" r="5" fill="#f2d6ce" />
 
-            {/* Torso / Sweater in soft sage */}
             <path
               d="M100 232 C100 226, 108 222, 122 222 C136 222, 144 226, 146 236 L144 284 L103 284 Z"
               fill="#dce7d0"
             />
 
-            {/* Neck & Head */}
             <rect x="117" y="212" width="10" height="12" rx="4" fill="#f2d6ce" />
             <circle cx="123" cy="203" r="12" fill="#f2d6ce" />
-            {/* Hair */}
             <path
               d="M110 204 C109 192, 118 186, 128 189 C134 191, 136 196, 134 200 C128 197, 122 198, 118 203 C116 206, 113 208, 110 204 Z"
               fill="#282838"
             />
 
-            {/* Left arm holding thesis document */}
             <path
               d="M100 234 L94 268 L116 274 L118 265 L106 260 L110 238 Z"
               fill="#dce7d0"
             />
 
-            {/* Thesis / Document card in hand */}
             <rect x="114" y="256" width="26" height="34" rx="3" fill="#ffffff" stroke="#dcdfd6" strokeWidth="1.2" />
             <line x1="119" y1="264" x2="134" y2="264" stroke="#b8c0b4" strokeWidth="2" strokeLinecap="round" />
             <line x1="119" y1="270" x2="135" y2="270" stroke="#b8c0b4" strokeWidth="2" strokeLinecap="round" />
             <line x1="119" y1="276" x2="132" y2="276" stroke="#b8c0b4" strokeWidth="2" strokeLinecap="round" />
             <line x1="119" y1="282" x2="128" y2="282" stroke="#b8c0b4" strokeWidth="2" strokeLinecap="round" />
-            {/* Hand holding document */}
             <circle cx="115" cy="272" r="4.5" fill="#f2d6ce" />
           </svg>
         </div>
 
-        {/* Subtle bottom caption */}
         <div className="text-[12px] text-[#5a6552] font-medium hidden lg:block">
           Ghana Institute of Management and Public Administration · Digital Thesis Archive
         </div>
@@ -252,7 +253,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Secondary actions */}
           <div className="mt-8 pt-6 border-t border-[#eaece4] flex flex-col gap-3 text-center">
             <button
               type="button"

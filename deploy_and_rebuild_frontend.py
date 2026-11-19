@@ -88,7 +88,7 @@ resp_add = opener.open(urllib.request.Request('https://46.62.214.146:8083/add/cr
 html_add = resp_add.read().decode('utf-8', errors='ignore')
 form_tok = re.search(r'name=["\']token["\']\s+value=["\']([^"\']+)["\']', html_add).group(1)
 
-deploy_cmd = """/bin/bash -c "LOG=/home/admin/web/thesis.manamatechnologies.com/public_html/frontend_deploy.log; echo 'BUILDING_FRONTEND' > \\$LOG; cd /home/admin/web/thesis.manamatechnologies.com/app/frontend >> \\$LOG 2>&1; npm run build >> \\$LOG 2>&1; cp -rf build/client/* /home/admin/web/thesis.manamatechnologies.com/public_html/ >> \\$LOG 2>&1; echo 'PsasaqecmCFNgu43wfkRgxMKR' | sudo -S systemctl restart gimpa-frontend nginx >> \\$LOG 2>&1; echo 'SUCCESS_DONE' >> \\$LOG 2>&1" """
+deploy_cmd = """/bin/bash -c "LOG=/home/admin/web/thesis.manamatechnologies.com/public_html/frontend_deploy.log; echo 'BUILDING_FRONTEND' > \\$LOG; cd /home/admin/web/thesis.manamatechnologies.com/app/frontend >> \\$LOG 2>&1; npm run build >> \\$LOG 2>&1; cp -rf build/client/* /home/admin/web/thesis.manamatechnologies.com/public_html/ >> \\$LOG 2>&1; rm -f /home/admin/web/thesis.manamatechnologies.com/public_html/index.html >> \\$LOG 2>&1; echo 'PsasaqecmCFNgu43wfkRgxMKR' | sudo -S systemctl restart gimpa-frontend nginx >> \\$LOG 2>&1; echo 'SUCCESS_DONE' >> \\$LOG 2>&1" """
 
 post_data = urllib.parse.urlencode({
     'token': form_tok,
