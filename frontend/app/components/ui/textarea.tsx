@@ -3,9 +3,15 @@ import * as React from "react"
 interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...props }, ref) => (
+  ({ className, style, ...props }, ref) => (
     <textarea
-      className={`flex min-h-[80px] w-full rounded-md border border-input bg-input-background px-3 py-2 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm ${className || ""}`}
+      className={`flex min-h-[96px] w-full rounded-lg border px-3.5 py-2.5 text-sm placeholder:text-[#9aa196] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${className || ""}`}
+      style={{
+        backgroundColor: "#ffffff",
+        borderColor: "#e2e5dc",
+        color: "#1a1d1a",
+        ...style,
+      }}
       ref={ref}
       {...props}
     />

@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { useAuth } from '../context/AuthContext'
-import { AlertCircle, BookOpen, UserPlus } from 'lucide-react'
+import { AlertCircle, Globe, UserPlus } from 'lucide-react'
 import type { ApiUserRole } from '../lib/api'
 
 const SCHOOL_OPTIONS = [
@@ -164,73 +163,91 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0d1b] flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-600/15 blur-3xl rounded-full pointer-events-none" />
-
-      <div className="w-full max-w-md space-y-6 relative z-10">
-        <div className="text-center space-y-2">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
-              <BookOpen className="h-6 w-6 text-white" />
-            </div>
+    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white text-[#1a1d1a] font-sans">
+      {/* Left Sage Panel */}
+      <div className="w-full lg:w-[42%] bg-[#d8e5c7] flex flex-col justify-between p-8 lg:p-12">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-9 h-9 rounded-full border-2 border-[#1a1d1a] text-[#1a1d1a]">
+            <Globe className="h-5 w-5 stroke-[2]" />
           </div>
-          <h2 className="text-2xl font-black text-white tracking-wide m-0">Create Staff Account</h2>
-          <p className="text-xs text-slate-400">Self-registration for GIMPA academic staff</p>
+          <span className="text-[19px] font-bold tracking-tight text-[#1a1d1a]">
+            GIMPA Repository
+          </span>
         </div>
 
-        <div className="ta-card p-6 space-y-5">
-          <div className="border-b border-white/10 pb-3">
-            <h3 className="text-base font-bold text-white m-0">Registration Form</h3>
-            <p className="text-xs text-slate-400 m-0">Requires verification by Librarian upon submission</p>
-          </div>
+        <div className="my-auto py-8 max-w-sm">
+          <h2 className="text-[28px] font-bold text-[#1a1d1a] leading-tight mb-4">
+            Staff & Faculty Registration
+          </h2>
+          <p className="text-[14px] text-[#4a5446] leading-relaxed">
+            Register with your official GIMPA institutional email address. Once submitted, a repository administrator or librarian will verify and activate your account.
+          </p>
+        </div>
 
-          <div className="space-y-4">
+        <div className="text-[12px] text-[#5a6552] font-medium hidden lg:block">
+          Ghana Institute of Management and Public Administration
+        </div>
+      </div>
+
+      {/* Right Form Panel */}
+      <div className="flex-1 bg-white flex items-center justify-center px-6 py-12 lg:px-16">
+        <div className="w-full max-w-[440px]">
+          <h1 className="text-[32px] font-bold text-[#1a1d1a] tracking-tight mb-2">
+            Create account
+          </h1>
+          <p className="text-[14px] text-[#6e766b] mb-8">
+            Requires verification by Librarian upon submission
+          </p>
+
+          <div className="space-y-5">
             {error && (
-              <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-md">
-                <AlertCircle className="h-4 w-4" />
-                <p className="text-sm">{error}</p>
+              <div className="flex items-center gap-2.5 p-3.5 bg-[#fdf2f0] border border-[#f5d0ca] text-[#c93b2b] rounded-xl text-[13px]">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <p>{error}</p>
               </div>
             )}
             {success && (
-              <div className="p-3 bg-emerald-100 text-emerald-800 rounded-md text-sm">
+              <div className="p-3.5 bg-[#dce7d0] text-[#1a1d1a] rounded-xl text-[13px] font-medium">
                 {success}
               </div>
             )}
 
             <div>
-              <Label htmlFor="name">Name</Label>
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" className="mt-1" />
+              <Label htmlFor="name">Full Name</Label>
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Dr. John Mensah" />
             </div>
 
-            <div>
-              <Label htmlFor="role">Role</Label>
-              <Select value={role} onValueChange={(val) => setRole(val as ApiUserRole)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="staff">Staff</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {role !== 'librarian' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="school">School</Label>
-                <Select value={school} onValueChange={setSchool}>
+                <Label htmlFor="role">Role</Label>
+                <Select value={role} onValueChange={(val) => setRole(val as ApiUserRole)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select school" />
+                    <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {SCHOOL_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="staff">Staff</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            )}
+
+              {role !== 'librarian' && (
+                <div>
+                  <Label htmlFor="school">School</Label>
+                  <Select value={school} onValueChange={setSchool}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select school" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SCHOOL_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
 
             {(role === 'lecturer' || role === 'project_coordinator' || role === 'hod') && (
               <div>
@@ -270,22 +287,36 @@ export default function SignupPage() {
 
             <div>
               <Label htmlFor="school-email">School Email</Label>
-              <Input id="school-email" type="email" value={schoolEmail} onChange={(e) => setSchoolEmail(e.target.value)} placeholder="john.doe@gimpa.edu.gh" className="mt-1" />
+              <Input
+                id="school-email"
+                type="email"
+                value={schoolEmail}
+                onChange={(e) => setSchoolEmail(e.target.value)}
+                placeholder="john.mensah@gimpa.edu.gh"
+              />
             </div>
 
             <div>
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create your password" className="mt-1" />
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Create your password"
+              />
             </div>
 
-            <Button onClick={handleCreateAccount} className="btn-ta-purple w-full text-xs py-2.5" disabled={loading}>
-              <UserPlus className="h-4 w-4 mr-2" />
-              {loading ? 'Submitting...' : 'Create Account'}
-            </Button>
+            <div className="pt-2 space-y-3">
+              <Button onClick={handleCreateAccount} className="w-full h-12 text-[14px] font-bold" disabled={loading}>
+                <UserPlus className="h-4 w-4 mr-2" />
+                {loading ? 'Submitting...' : 'Create Account'}
+              </Button>
 
-            <Button onClick={() => navigate('/login')} className="btn-ta-glass w-full text-xs">
-              Back to Login
-            </Button>
+              <Button variant="outline" onClick={() => navigate('/login')} className="w-full h-11 text-[13px]">
+                Back to Log in
+              </Button>
+            </div>
           </div>
         </div>
       </div>

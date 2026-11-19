@@ -7,7 +7,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Textarea } from '../ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
 import { useAuth } from '../../context/AuthContext'
-import { CheckCircle, Clock, FileText, Eye, MessageSquare, AlertCircle, AlertTriangle, ExternalLink, Shield, CheckSquare, Award, Download, Upload, FileSpreadsheet, FileCheck, FileEdit } from 'lucide-react'
+import {
+  CheckCircle,
+  Clock,
+  FileText,
+  Eye,
+  MessageSquare,
+  AlertCircle,
+  AlertTriangle,
+  ExternalLink,
+  Shield,
+  CheckSquare,
+  Award,
+  Download,
+  FileEdit,
+} from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Label } from '../ui/label'
 import { Input } from '../ui/input'
@@ -20,7 +34,6 @@ import {
   apiUploadCorrectedPaperFile,
   apiListUsers,
   apiAssignSupervisor,
-  apiSupervisorUpdateChecklist,
   apiCompletePhase3,
   apiAssignExaminers,
   apiUploadResults,
@@ -29,15 +42,11 @@ import {
   apiCoordinatorApproveCorrections,
   apiHodApproveCorrections,
   apiStepDecision,
-  apiSupervisorApproveCombinedThesis,
   apiListDepartments,
   apiDownloadApprovedZip,
   apiDownloadExaminerResultsZip,
   apiDownloadExaminerAssignedZip,
   apiProposalDecision,
-  apiBase,
-  apiBulkAssignExaminers,
-  apiDownloadBulkExaminerTemplate,
   apiSubmitExaminerGrading,
   apiGetStudentFeedback,
   apiGetAdminExaminationMarks,
@@ -47,22 +56,16 @@ import { DocxViewer } from './DocxViewer'
 import { convertTextOrTopicToPdf } from '../../lib/pdfGenerator'
 import { ProjectAssessmentReportDialog } from './ProjectAssessmentReportDialog'
 import { ReportExportModal } from './ReportExportModal'
-import type { ApiPaper, ApiUser, ApiBulkAssignSummary, ApiStudentFeedbackResponse, ApiAdminMarkSheetResponse } from '../../lib/api'
+import type {
+  ApiPaper,
+  ApiUser,
+  ApiBulkAssignSummary,
+  ApiStudentFeedbackResponse,
+  ApiAdminMarkSheetResponse,
+} from '../../lib/api'
 
 const ACCESS_TOKEN_KEY = 'murrs_access_token'
 type ChapterKey = 'ch1' | 'ch2' | 'ch3' | 'ch4' | 'ch5'
-
-const chapterNames = ['One', 'Two', 'Three', 'Four', 'Five']
-
-function getCurrentChapter(checklist: Record<ChapterKey, boolean>): number {
-  const chapters: ChapterKey[] = ['ch1', 'ch2', 'ch3', 'ch4', 'ch5']
-  const nextIndex = chapters.findIndex((chapter) => !checklist[chapter])
-  return nextIndex === -1 ? 5 : nextIndex + 1
-}
-
-function chapterLabel(chapterNumber: number): string {
-  return chapterNames[chapterNumber - 1] || String(chapterNumber)
-}
 
 function formatStatusLabel(status: string): string {
   switch (status) {
@@ -113,16 +116,35 @@ function formatDocumentTypeLabel(docType: string | null, status: string): string
   if (status === 'phase1_proposal_submitted' || docType === 'thesis_topic') {
     return 'Thesis Topic Submission (Phase 1)'
   }
-  if (status === 'phase2_proposal_submitted' || status === 'phase2_proposal_accepted' || status === 'phase2_pending_supervisor' || status === 'phase2_pending_coordinator') {
+  if (
+    status === 'phase2_proposal_submitted' ||
+    status === 'phase2_proposal_accepted' ||
+    status === 'phase2_pending_supervisor' ||
+    status === 'phase2_pending_coordinator'
+  ) {
     return 'Project Proposal (Phase 2)'
   }
-  if (status === 'phase3_chapters' || status === 'phase3_steps_in_progress' || status === 'phase3_all_steps_approved') {
+  if (
+    status === 'phase3_chapters' ||
+    status === 'phase3_steps_in_progress' ||
+    status === 'phase3_all_steps_approved'
+  ) {
     return 'Steps / Chapter Review (Phase 2 — Continuation)'
   }
-  if (status === 'phase4_pending_examiners' || status === 'phase4_marking' || status === 'phase4_examination_completed') {
+  if (
+    status === 'phase4_pending_examiners' ||
+    status === 'phase4_marking' ||
+    status === 'phase4_examination_completed'
+  ) {
     return 'Examination (Phase 3)'
   }
-  if (status === 'phase5_corrections' || status === 'phase5_pending_supervisor' || status === 'phase5_pending_coordinator' || status === 'phase5_pending_hod' || status === 'phase5_pending_hod_and_coordinator') {
+  if (
+    status === 'phase5_corrections' ||
+    status === 'phase5_pending_supervisor' ||
+    status === 'phase5_pending_coordinator' ||
+    status === 'phase5_pending_hod' ||
+    status === 'phase5_pending_hod_and_coordinator'
+  ) {
     return 'Corrections & Dual Approval (Phase 4)'
   }
   if (status === 'phase5_approved_for_library' || status === 'phase5_published') {
@@ -149,7 +171,6 @@ export function ApprovalWorkflow() {
   const [reviewDecision, setReviewDecision] = useState('')
   const [reviewComments, setReviewComments] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [bulkAssignError, setBulkAssignError] = useState('')
   const [reportExportOpen, setReportExportOpen] = useState(false)
   const [reviewError, setReviewError] = useState('')
   const [submittingReview, setSubmittingReview] = useState(false)
@@ -160,28 +181,38 @@ export function ApprovalWorkflow() {
   const [documentViewerName, setDocumentViewerName] = useState<string>('')
   const [documentMimeType, setDocumentMimeType] = useState<string>('')
   const [documentLoading, setDocumentLoading] = useState(false)
+
   const roles = user?.roles || (user?.role ? [user.role] : [])
-  const isLibrarian = roles.includes('librarian') || roles.includes('head_library') || user?.role === 'librarian' || user?.role === 'head_library'
-  const canUploadCorrection = roles.includes('lecturer') || roles.includes('project_supervisor') || user?.role === 'lecturer' || user?.role === 'project_supervisor'
+  const isLibrarian =
+    roles.includes('librarian') ||
+    roles.includes('head_library') ||
+    user?.role === 'librarian' ||
+    user?.role === 'head_library'
+  const canUploadCorrection =
+    roles.includes('lecturer') ||
+    roles.includes('project_supervisor') ||
+    user?.role === 'lecturer' ||
+    user?.role === 'project_supervisor'
   const correctedFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const isHOD = roles.includes('hod')
   const isCoordinator = roles.includes('project_coordinator')
-  const isSupervisor = roles.includes('project_supervisor') || roles.includes('lecturer') || roles.includes('hod')
+  const isSupervisor =
+    roles.includes('project_supervisor') || roles.includes('lecturer') || roles.includes('hod')
   const isDean = roles.includes('dean')
   const isAdmin = roles.includes('system_admin')
-  const canViewScores = roles.includes('hod') || roles.includes('project_coordinator') || roles.includes('dean') || roles.includes('system_admin')
+  const canViewScores =
+    roles.includes('hod') ||
+    roles.includes('project_coordinator') ||
+    roles.includes('dean') ||
+    roles.includes('system_admin')
 
-  // User lists for dropdowns
   const [supervisorsList, setSupervisorsList] = useState<ApiUser[]>([])
-
-  // Selection states
   const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>('')
   const [selectedInternalId, setSelectedInternalId] = useState<string>('')
   const [selectedExternalId, setSelectedExternalId] = useState<string>('')
 
-  // Checklist for supervisor
-  const [supChecklist, setSupChecklist] = useState({
+  const [, setSupChecklist] = useState<Record<ChapterKey, boolean>>({
     ch1: false,
     ch2: false,
     ch3: false,
@@ -189,21 +220,16 @@ export function ApprovalWorkflow() {
     ch5: false,
   })
 
-  // Examiner marking state
-  const [internalScore, setInternalScore] = useState<string>('')
-  const [externalScore, setExternalScore] = useState<string>('')
-  const [examinerCorrections, setExaminerCorrections] = useState<string>('')
-  const [examinerRecommendation, setExaminerRecommendation] = useState<string>('Pass')
-  const [resultsFile, setResultsFile] = useState<File | null>(null)
+  const [, setInternalScore] = useState<string>('')
+  const [, setExternalScore] = useState<string>('')
+  const [, setExaminerCorrections] = useState<string>('')
+  const [, setResultsFile] = useState<File | null>(null)
   const [assessmentModalOpen, setAssessmentModalOpen] = useState(false)
-  const [activeExaminerRole, setActiveExaminerRole] = useState<'Internal Examiner' | 'External Examiner' | 'Third Examiner' | 'Coordinator / HOD'>('Internal Examiner')
+  const [activeExaminerRole, setActiveExaminerRole] = useState<
+    'Internal Examiner' | 'External Examiner' | 'Third Examiner' | 'Coordinator / HOD'
+  >('Internal Examiner')
 
-  // Bulk Examiner Assignment states
-  const [bulkFile, setBulkFile] = useState<File | null>(null)
-  const [bulkUploading, setBulkUploading] = useState(false)
-  const [bulkSummary, setBulkSummary] = useState<ApiBulkAssignSummary | null>(null)
-
-  // Role-gated feedback and mark sheet data
+  const [, setBulkSummary] = useState<ApiBulkAssignSummary | null>(null)
   const [studentFeedbackData, setStudentFeedbackData] = useState<ApiStudentFeedbackResponse | null>(null)
   const [adminMarksData, setAdminMarksData] = useState<ApiAdminMarkSheetResponse | null>(null)
   const [selectedThirdId, setSelectedThirdId] = useState<string>('')
@@ -214,34 +240,52 @@ export function ApprovalWorkflow() {
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
     if (!token) return
     const userRoles = user?.roles || (user?.role ? [user.role] : [])
-    const hasPrivilege = userRoles.includes('hod') || userRoles.includes('project_coordinator') || userRoles.includes('system_admin') || userRoles.includes('dean')
-    
+    const hasPrivilege =
+      userRoles.includes('hod') ||
+      userRoles.includes('project_coordinator') ||
+      userRoles.includes('system_admin') ||
+      userRoles.includes('dean')
+
     if (hasPrivilege) {
-      apiListUsers(token, { limit: 1000 }).then((list) => {
-        // Filter supervisors/lecturers, HODs, and project coordinators
-        const sups = list.filter(u => {
-          const userRoles = u.roles || [u.role]
-          return userRoles.some(r => ['project_supervisor', 'lecturer', 'hod', 'project_coordinator', 'dean', 'external_examiner'].includes(r))
+      apiListUsers(token, { limit: 1000 })
+        .then((list) => {
+          const sups = list.filter((u) => {
+            const uRoles = u.roles || [u.role]
+            return uRoles.some((r) =>
+              [
+                'project_supervisor',
+                'lecturer',
+                'hod',
+                'project_coordinator',
+                'dean',
+                'external_examiner',
+              ].includes(r),
+            )
+          })
+          setSupervisorsList(sups)
         })
-        setSupervisorsList(sups)
-      }).catch(() => {})
+        .catch(() => {})
     }
   }, [user])
 
   useEffect(() => {
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
     if (!token || !user?.department) return
-    apiListDepartments(token).then((depts) => {
-      const matched = depts.find(d => (d.name || '').trim().toLowerCase() === (user.department || '').trim().toLowerCase())
-      if (matched) {
-        setDepartmentId(matched.id)
-      }
-    }).catch(() => {})
+    apiListDepartments(token)
+      .then((depts) => {
+        const matched = depts.find(
+          (d) => (d.name || '').trim().toLowerCase() === (user.department || '').trim().toLowerCase(),
+        )
+        if (matched) {
+          setDepartmentId(matched.id)
+        }
+      })
+      .catch(() => {})
   }, [user])
 
   const handleDownloadAllApprovedZip = async () => {
     if (!departmentId) {
-      window.alert("Department not resolved. Please contact administrator.")
+      window.alert('Department not resolved. Please contact administrator.')
       return
     }
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -266,7 +310,7 @@ export function ApprovalWorkflow() {
 
   const handleDownloadExaminerResultsZip = async () => {
     if (!departmentId) {
-      window.alert("Department not resolved. Please contact administrator.")
+      window.alert('Department not resolved. Please contact administrator.')
       return
     }
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -431,13 +475,20 @@ export function ApprovalWorkflow() {
     try {
       if (canUploadCorrection && correctedFile) {
         setUploadingCorrectedFile(true)
-        const updated = await apiUploadCorrectedPaperFile(selectedPaper.id, correctedFile, correctedNote, token)
+        const updated = await apiUploadCorrectedPaperFile(
+          selectedPaper.id,
+          correctedFile,
+          correctedNote,
+          token,
+        )
         setSelectedPaper(updated)
         setCorrectedFile(null)
         setCorrectedNote('')
         setUploadingCorrectedFile(false)
       }
-      const decisionForApi = (isLibrarian && reviewDecision === 'publish' ? 'approve' : reviewDecision) as 'approve' | 'revision' | 'reject'
+      const decisionForApi = (
+        isLibrarian && reviewDecision === 'publish' ? 'approve' : reviewDecision
+      ) as 'approve' | 'revision' | 'reject'
       await apiReviewPaper(selectedPaper.id, decisionForApi, reviewComments, token)
       setDialogOpen(false)
       setSelectedPaper(null)
@@ -462,8 +513,8 @@ export function ApprovalWorkflow() {
     setReviewDecision(isLibrarian ? 'publish' : '')
     setCorrectedFile(null)
     setCorrectedNote('')
+    setBulkSummary(null)
 
-    // Initialize chapter checklist from paper values
     setSupChecklist({
       ch1: !!paper.ch1_supervisor_approved,
       ch2: !!paper.ch2_supervisor_approved,
@@ -472,34 +523,51 @@ export function ApprovalWorkflow() {
       ch5: !!paper.ch5_supervisor_approved,
     })
 
-    // Initialize examiner marking fields if paper is in phase4_marking
-    setInternalScore(paper.internal_score !== null && paper.internal_score !== undefined ? String(paper.internal_score) : '')
-    setExternalScore(paper.external_score !== null && paper.external_score !== undefined ? String(paper.external_score) : '')
+    setInternalScore(
+      paper.internal_score !== null && paper.internal_score !== undefined
+        ? String(paper.internal_score)
+        : '',
+    )
+    setExternalScore(
+      paper.external_score !== null && paper.external_score !== undefined
+        ? String(paper.external_score)
+        : '',
+    )
     setExaminerCorrections(paper.examiner_corrections || '')
     setResultsFile(null)
 
-    // Reset dropdowns and feedback states
     setSelectedSupervisorId(paper.supervisor_id ? String(paper.supervisor_id) : '')
     setSelectedInternalId(paper.internal_examiner_id ? String(paper.internal_examiner_id) : '')
     setSelectedExternalId(paper.external_examiner_id ? String(paper.external_examiner_id) : '')
     setStudentFeedbackData(null)
     setAdminMarksData(null)
 
-    const initialTier = paper.degree_level || 
-      (paper.publication_type?.toLowerCase().includes('undergrad') || 
-       paper.document_type?.toLowerCase().includes('undergrad') || 
-       paper.discipline?.toLowerCase().includes('b.sc') || 
-       paper.discipline?.toLowerCase().includes('bsc') ? 'Undergraduate' : 
-       (paper.publication_type?.toLowerCase().includes('mphil') ? 'MPhil' :
-        (paper.publication_type?.toLowerCase().includes('phd') || paper.document_type?.toLowerCase().includes('phd') || paper.document_type?.toLowerCase().includes('doctoral') ? 'PhD' : 'Masters')));
+    const initialTier =
+      paper.degree_level ||
+      (paper.publication_type?.toLowerCase().includes('undergrad') ||
+      paper.document_type?.toLowerCase().includes('undergrad') ||
+      paper.discipline?.toLowerCase().includes('b.sc') ||
+      paper.discipline?.toLowerCase().includes('bsc')
+        ? 'Undergraduate'
+        : paper.publication_type?.toLowerCase().includes('mphil')
+        ? 'MPhil'
+        : paper.publication_type?.toLowerCase().includes('phd') ||
+          paper.document_type?.toLowerCase().includes('phd') ||
+          paper.document_type?.toLowerCase().includes('doctoral')
+        ? 'PhD'
+        : 'Masters')
     setSelectedDegreeTier(initialTier)
 
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
     if (token) {
       if (canViewScores) {
-        apiGetAdminExaminationMarks(paper.id, token).then(setAdminMarksData).catch(() => setAdminMarksData(null))
+        apiGetAdminExaminationMarks(paper.id, token)
+          .then(setAdminMarksData)
+          .catch(() => setAdminMarksData(null))
       }
-      apiGetStudentFeedback(paper.id, token).then(setStudentFeedbackData).catch(() => setStudentFeedbackData(null))
+      apiGetStudentFeedback(paper.id, token)
+        .then(setStudentFeedbackData)
+        .catch(() => setStudentFeedbackData(null))
     }
   }
 
@@ -533,399 +601,447 @@ export function ApprovalWorkflow() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* FinPlanner Top Heading */}
       <div>
-        <h2 className="text-2xl mb-2">{isLibrarian ? 'Publication Workflow' : 'Approval Workflow'}</h2>
-        <p className="text-muted-foreground">
+        <h1 className="text-[28px] font-bold tracking-tight text-[#1a1d1a] mb-1">
+          {isLibrarian ? 'Publication Workflow' : 'Approval Workflow'}
+        </h1>
+        <p className="text-[14px] text-[#6e746b]">
           {isLibrarian
-            ? 'Publish fully approved research papers'
-            : 'Review and manage research paper submissions'}
+            ? 'Publish fully approved research papers and assign official repository metadata.'
+            : 'Review, assign supervisors & examiners, and manage thesis submissions across all 5 phases.'}
         </p>
       </div>
 
       {loading && (
-        <Card>
-          <CardContent className="pt-6 text-muted-foreground">Loading workflow data...</CardContent>
-        </Card>
+        <div className="fp-card py-8 text-center text-[#6e746b] text-[13px]">
+          Loading workflow submissions...
+        </div>
       )}
       {error && (
-        <Card>
-          <CardContent className="pt-6 text-destructive">{error}</CardContent>
-        </Card>
+        <div className="fp-card border-[#c93b2b]/30 bg-[#fbeae8]/40 text-[#c93b2b] text-[13px] font-medium">
+          {error}
+        </div>
       )}
 
-      <Tabs defaultValue="pending" className="space-y-4">
+      <Tabs defaultValue="pending" className="space-y-6">
         <TabsList>
           <TabsTrigger value="pending" className="flex items-center gap-2">
-            <Clock className="size-4" />
-            {isLibrarian ? 'Ready to Publish' : 'Pending Review'}
-            <Badge variant="destructive" className="ml-1">
+            <Clock className="size-3.5" />
+            <span>{isLibrarian ? 'Ready to Publish' : 'Pending Review'}</span>
+            <span className="ml-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#ffffff]/20">
               {pendingSubmissions.length}
-            </Badge>
+            </span>
           </TabsTrigger>
           <TabsTrigger value="approved" className="flex items-center gap-2">
-            <CheckCircle className="size-4" />
-            {isLibrarian ? 'Published Repository Catalog' : 'Approved'}
-            <Badge variant="secondary" className="ml-1">
+            <CheckCircle className="size-3.5" />
+            <span>{isLibrarian ? 'Published Repository Catalog' : 'Approved'}</span>
+            <span className="ml-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#ffffff]/20">
               {approvedPapers.length}
-            </Badge>
+            </span>
           </TabsTrigger>
           {!isLibrarian && (
             <TabsTrigger value="revision" className="flex items-center gap-2">
-              <AlertCircle className="size-4" />
-              Revision Requested
-              <Badge variant="secondary" className="ml-1">
+              <AlertCircle className="size-3.5" />
+              <span>Revision Requested</span>
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#ffffff]/20">
                 {revisionRequested.length}
-              </Badge>
+              </span>
             </TabsTrigger>
           )}
         </TabsList>
 
         <TabsContent value="pending" className="space-y-4">
           {(isHOD || isCoordinator || isDean || isAdmin) && (
-            <div className="ta-card p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="fp-card flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
               <div>
-                <h4 className="text-sm font-bold text-white flex items-center gap-2 m-0">
-                  <Award className="size-4 text-purple-400" />
-                  {isDean ? 'School & Department Master Results Hub' : 'Department Examiner Results Hub'}
+                <h4 className="text-[15px] font-bold text-[#1a1d1a] flex items-center gap-2 m-0">
+                  <Award className="size-4 text-[#3b7a57]" />
+                  {isDean
+                    ? 'School & Department Master Results Hub'
+                    : 'Department Examiner Results Hub'}
                 </h4>
-                <p className="text-xs text-slate-400 mt-1 m-0">
-                  Open ONLYOFFICE Excel workbooks with dedicated tabs for each Certification Type (Undergraduate, Masters, MPhil, PhD).
+                <p className="text-[13px] text-[#6e746b] mt-1 m-0">
+                  Open ONLYOFFICE Excel workbooks or export filtered reports by programme and certification tier.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  className="btn-ta-purple text-xs font-semibold flex items-center gap-1.5"
-                  onClick={() => setReportExportOpen(true)}
-                >
-                  📊 Export Filtered Reports (Excel / CSV)
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Button size="sm" onClick={() => setReportExportOpen(true)}>
+                  Export Filtered Reports (Excel / CSV)
                 </Button>
                 {(isHOD || isCoordinator || isAdmin) && (
                   <Button
                     size="sm"
-                    className="btn-ta-glass text-xs"
+                    variant="outline"
                     onClick={() => window.open('/editor?type=dept_results_excel', '_blank')}
                   >
-                    📊 Department Results (ONLYOFFICE Excel)
+                    Department Results (ONLYOFFICE)
                   </Button>
                 )}
                 {(isDean || isAdmin) && (
                   <Button
                     size="sm"
-                    className="btn-ta-glass text-xs"
+                    variant="outline"
                     onClick={() => window.open('/editor?type=dean_results_excel', '_blank')}
                   >
-                    🎓 School Master Results (ONLYOFFICE Excel)
+                    School Master Results (ONLYOFFICE)
                   </Button>
                 )}
                 <Button
                   size="sm"
-                  className="btn-ta-glass text-xs"
+                  variant="olive"
                   onClick={() => window.open('/editor?type=examiner_results_excel', '_blank')}
                 >
-                  📝 My Examiner Sheet (ONLYOFFICE Excel)
+                  My Examiner Sheet
                 </Button>
               </div>
             </div>
           )}
 
-          {pendingSubmissions.some(p => p.status === 'phase4_marking' && (p.internal_examiner_id === user?.id || p.external_examiner_id === user?.id)) && !(isHOD || isCoordinator || isDean || isAdmin) && (
-            <div className="ta-card p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div>
-                <h4 className="text-sm font-bold text-white flex items-center gap-2 m-0">
-                  <Award className="size-4 text-purple-400" />
-                  Assigned Marking Works
-                </h4>
-                <p className="text-xs text-slate-400 mt-1 m-0">
-                  You are assigned as examiner for papers listed below. Mark inline via ONLYOFFICE, use Excel results sheets, or download files offline.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  className="btn-ta-glass text-xs"
-                  onClick={() => window.open('/editor?type=examiner_results_excel', '_blank')}
-                >
-                  📊 Open Results Spreadsheet (ONLYOFFICE Excel)
-                </Button>
-                <Button size="sm" className="btn-ta-purple text-xs" onClick={handleDownloadExaminerAssignedZip} disabled={downloadingZip}>
-                  {downloadingZip ? 'Downloading...' : 'Download All Assigned Papers ZIP'}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {pendingSubmissions.map((paper) => (
-            <div key={paper.id} className="ta-card p-5 space-y-4">
-              <div className="flex items-start justify-between border-b border-white/10 pb-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[10px] font-mono font-bold bg-slate-800 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
-                      PAPER-{paper.id}
-                    </span>
-                    <span className="badge-ta-purple text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                      {isLibrarian ? 'Ready to Publish' : 'Pending'}
-                    </span>
-                  </div>
-                  <h3 className="text-lg font-bold text-white mb-1">{paper.title}</h3>
-                  <p className="text-xs text-slate-400 m-0">
-                    Submitted by <strong className="text-slate-200">{paper.authors.map((a) => a.name).join(', ') || 'Unknown'}</strong> • {paper.discipline || 'General'} • {formatDocumentTypeLabel(paper.document_type, paper.status)}
+          {pendingSubmissions.some(
+            (p) =>
+              p.status === 'phase4_marking' &&
+              (p.internal_examiner_id === user?.id || p.external_examiner_id === user?.id),
+          ) &&
+            !(isHOD || isCoordinator || isDean || isAdmin) && (
+              <div className="fp-card flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-[15px] font-bold text-[#1a1d1a] flex items-center gap-2 m-0">
+                    <Award className="size-4 text-[#3b7a57]" />
+                    Assigned Marking Works
+                  </h4>
+                  <p className="text-[13px] text-[#6e746b] mt-1 m-0">
+                    You are assigned as examiner for papers listed below. Mark inline via ONLYOFFICE or download files offline.
                   </p>
                 </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center gap-6 text-xs text-slate-400">
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="size-3.5 text-purple-400" />
-                    Submitted {paper.created_at ? new Date(paper.created_at).toLocaleDateString() : '-'}
-                  </span>
-                  <span>Status: <strong className="text-purple-300">{formatStatusLabel(paper.status)}</strong></span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-white/10">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
-                    className="btn-ta-purple text-xs flex items-center gap-1.5"
-                    onClick={() => openReviewDialog(paper)}
+                    variant="outline"
+                    onClick={() => window.open('/editor?type=examiner_results_excel', '_blank')}
                   >
-                    <Eye className="size-3.5" />
-                    <span>{isLibrarian ? 'Publish / Review Work' : 'Review Paper'}</span>
+                    Open Results Spreadsheet (ONLYOFFICE)
                   </Button>
                   <Button
                     size="sm"
-                    className="btn-ta-glass text-xs flex items-center gap-1.5"
-                    onClick={() => window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')}
+                    onClick={handleDownloadExaminerAssignedZip}
+                    disabled={downloadingZip}
                   >
-                    <FileText className="size-3.5 text-purple-400" />
-                    <span>View Work (ONLYOFFICE)</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="btn-ta-glass text-xs flex items-center gap-1.5"
-                    onClick={() => window.open(`/editor?paperId=${paper.id}&type=comments`, '_blank')}
-                  >
-                    <MessageSquare className="size-3.5 text-purple-400" />
-                    <span>Open Comments (ONLYOFFICE)</span>
+                    {downloadingZip ? 'Downloading...' : 'Download All Assigned Papers ZIP'}
                   </Button>
                 </div>
               </div>
+            )}
+
+          {pendingSubmissions.length === 0 ? (
+            <div className="fp-card py-12 text-center text-[#6e746b] text-[14px]">
+              No pending submissions awaiting review.
             </div>
-          ))}
+          ) : (
+            <div className="space-y-3.5">
+              {pendingSubmissions.map((paper) => (
+                <div key={paper.id} className="fp-card space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-3 border-b border-[#eaece4] pb-4">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <Badge variant="secondary">PAPER-{paper.id}</Badge>
+                        <Badge variant="default">
+                          {isLibrarian ? 'Ready to Publish' : 'Pending Review'}
+                        </Badge>
+                        <span className="text-[12px] text-[#6e746b]">
+                          {formatDocumentTypeLabel(paper.document_type, paper.status)}
+                        </span>
+                      </div>
+                      <h3 className="text-[17px] font-bold text-[#1a1d1a] mb-1">{paper.title}</h3>
+                      <p className="text-[13px] text-[#6e746b] m-0">
+                        Submitted by{' '}
+                        <strong className="text-[#1a1d1a]">
+                          {paper.authors.map((a) => a.name).join(', ') || 'Unknown'}
+                        </strong>{' '}
+                        • {paper.discipline || 'General'}
+                      </p>
+                    </div>
+                    <div className="text-left md:text-right shrink-0">
+                      <span className="text-[11px] uppercase tracking-wider text-[#6e746b] block">
+                        Submitted
+                      </span>
+                      <span className="text-[13px] font-bold text-[#1a1d1a]">
+                        {paper.created_at ? new Date(paper.created_at).toLocaleDateString() : '—'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="text-[13px] text-[#6e746b]">
+                      Current Stage:{' '}
+                      <strong className="text-[#3b7a57]">{formatStatusLabel(paper.status)}</strong>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button size="sm" onClick={() => openReviewDialog(paper)}>
+                        <Eye className="size-3.5 mr-1" />
+                        <span>{isLibrarian ? 'Publish / Review Work' : 'Review Paper'}</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          window.open(`/editor?paperId=${paper.id}&type=paper`, '_blank')
+                        }
+                      >
+                        <FileText className="size-3.5 mr-1 text-[#5a6552]" />
+                        <span>View Work (ONLYOFFICE)</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          window.open(`/editor?paperId=${paper.id}&type=comments`, '_blank')
+                        }
+                      >
+                        <MessageSquare className="size-3.5 mr-1 text-[#5a6552]" />
+                        <span>Open Comments</span>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="approved" className="space-y-4">
-            {(isHOD || isCoordinator || isAdmin) && (
-              <Card className="border-primary/20 bg-primary/5">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Download className="size-4 text-primary" />
-                    Bulk Department Downloads
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Download all student works or examiner marked scripts for your department as a ZIP file.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex flex-col sm:flex-row gap-3 items-end">
-                    <div className="space-y-1.5 flex-1">
-                      <Label htmlFor="class-filter" className="text-xs">Filter by Class/Program (Optional, e.g. BSc. Computer Science)</Label>
-                      <Input
-                        id="class-filter"
-                        placeholder="e.g. BSc. Computer Science"
-                        value={classFilter}
-                        onChange={(e) => setClassFilter(e.target.value)}
-                        className="h-9 text-xs"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={handleDownloadAllApprovedZip} disabled={downloadingZip}>
-                        {downloadingZip ? 'Downloading...' : 'Download Approved Works ZIP'}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={handleDownloadExaminerResultsZip} disabled={downloadingZip}>
-                        {downloadingZip ? 'Downloading...' : 'Download Examiner Marked ZIP'}
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+          {(isHOD || isCoordinator || isAdmin) && (
+            <div className="fp-card space-y-4">
+              <div>
+                <h4 className="text-[15px] font-bold text-[#1a1d1a] flex items-center gap-2 m-0">
+                  <Download className="size-4 text-[#3b7a57]" />
+                  Bulk Department Downloads
+                </h4>
+                <p className="text-[13px] text-[#6e746b] mt-1 m-0">
+                  Download all student works or examiner marked scripts for your department as a ZIP archive.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 items-end">
+                <div className="space-y-1.5 flex-1 w-full">
+                  <Label htmlFor="class-filter">
+                    Filter by Class / Programme (Optional, e.g. BSc. Computer Science)
+                  </Label>
+                  <Input
+                    id="class-filter"
+                    placeholder="e.g. BSc. Computer Science"
+                    value={classFilter}
+                    onChange={(e) => setClassFilter(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={handleDownloadAllApprovedZip} disabled={downloadingZip}>
+                    {downloadingZip ? 'Downloading...' : 'Download Approved Works ZIP'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleDownloadExaminerResultsZip}
+                    disabled={downloadingZip}
+                  >
+                    {downloadingZip ? 'Downloading...' : 'Download Examiner Marked ZIP'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
-            {approvedPapers.length === 0 ? (
-              <Card className="border-dashed">
-                <CardContent className="py-8 text-center text-muted-foreground text-sm">
-                  No approved papers found.
-                </CardContent>
-              </Card>
-            ) : (
-              approvedPapers.map((paper) => (
-                <Card key={paper.id}>
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="outline">PAPER-{paper.id}</Badge>
-                          <Badge variant="default" className="bg-green-600">
-                            <CheckCircle className="size-3 mr-1" />
-                            Approved
-                          </Badge>
-                        </div>
-                        <CardTitle className="mb-2">{paper.title}</CardTitle>
-                        <CardDescription>
-                          Author: {paper.authors.map((a) => a.name).join(', ') || 'Unknown'} • {paper.discipline || 'General'}
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                      <span>Downloads: {paper.downloads}</span>
-                      <span>•</span>
-                      <span>Views: {paper.views}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </TabsContent>
+          {approvedPapers.length === 0 ? (
+            <div className="fp-card py-12 text-center text-[#6e746b] text-[14px]">
+              No approved papers found.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="fp-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Author(s)</th>
+                    <th>Department</th>
+                    <th>Views / Downloads</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvedPapers.map((paper) => (
+                    <tr key={paper.id}>
+                      <td className="font-mono text-[12px] text-[#6e746b]">PAPER-{paper.id}</td>
+                      <td className="font-semibold text-[#1a1d1a] max-w-md">{paper.title}</td>
+                      <td>{paper.authors.map((a) => a.name).join(', ') || 'Unknown'}</td>
+                      <td className="text-[#6e746b]">{paper.discipline || 'General'}</td>
+                      <td className="text-[#6e746b]">
+                        {paper.views} views • {paper.downloads} downloads
+                      </td>
+                      <td>
+                        <Badge variant="default">Approved</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </TabsContent>
 
         {!isLibrarian && (
           <TabsContent value="revision" className="space-y-4">
-          <Card>
-            <CardContent className="pt-4 text-sm text-muted-foreground">
-              Revision requested items are waiting for the student to resubmit an updated version. Reviewers cannot approve these until resubmission.
-            </CardContent>
-          </Card>
-          {revisionRequested.map((paper) => (
-            <Card key={paper.id}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="outline">PAPER-{paper.id}</Badge>
-                      <Badge variant="secondary">
-                        <AlertCircle className="size-3 mr-1" />
-                        Revision Requested
-                      </Badge>
+            <div className="fp-card text-[13px] text-[#6e746b]">
+              Revision requested items are waiting for the student to resubmit an updated version.
+            </div>
+            {revisionRequested.length === 0 ? (
+              <div className="fp-card py-12 text-center text-[#6e746b] text-[14px]">
+                No papers currently awaiting student revision.
+              </div>
+            ) : (
+              revisionRequested.map((paper) => (
+                <div key={paper.id} className="fp-card space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Badge variant="outline">PAPER-{paper.id}</Badge>
+                        <Badge variant="destructive">Revision Requested</Badge>
+                      </div>
+                      <h4 className="text-[16px] font-bold text-[#1a1d1a]">{paper.title}</h4>
+                      <p className="text-[13px] text-[#6e746b]">
+                        Author: {paper.authors.map((a) => a.name).join(', ') || 'Unknown'} •{' '}
+                        {paper.discipline || 'General'}
+                      </p>
                     </div>
-                    <CardTitle className="mb-2">{paper.title}</CardTitle>
-                    <CardDescription>
-                      Author: {paper.authors.map((a) => a.name).join(', ') || 'Unknown'} • {paper.discipline || 'General'}
-                    </CardDescription>
+                  </div>
+                  <div className="p-3.5 bg-[#ffffff] border border-[#eaece4] rounded-lg text-[13px] text-[#1a1d1a] flex items-start gap-2.5">
+                    <MessageSquare className="size-4 mt-0.5 shrink-0 text-[#c93b2b]" />
+                    <span>{paper.review_comments || 'No review comments provided.'}</span>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
-                    <p className="text-sm flex items-start gap-2">
-                      <MessageSquare className="size-4 mt-0.5 shrink-0 text-orange-600" />
-                      <span>{paper.review_comments || 'No review comments provided.'}</span>
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+              ))
+            )}
           </TabsContent>
         )}
       </Tabs>
 
+      {/* Clean White FinPlanner Review Modal */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedPaper?.title || 'Review Paper'}</DialogTitle>
             <DialogDescription>
-              {isLibrarian ? 'Finalize publication for this submission' : 'Review and provide feedback for this submission'}
+              {isLibrarian
+                ? 'Finalize publication for this submission'
+                : 'Review and provide feedback for this submission'}
             </DialogDescription>
           </DialogHeader>
 
           {selectedPaper && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl border" style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-color)' }}>
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-[#fafbf8] border border-[#eaece4]">
                 <div>
-                  <p className="text-xs font-semibold m-0" style={{ color: 'var(--text-muted)' }}>Author</p>
-                  <p className="text-sm font-bold m-0 mt-0.5" style={{ color: 'var(--text-main)' }}>{selectedPaper.authors.map((a) => a.name).join(', ') || 'Unknown'}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6e746b] m-0">
+                    Author
+                  </p>
+                  <p className="text-[14px] font-bold text-[#1a1d1a] m-0 mt-0.5">
+                    {selectedPaper.authors.map((a) => a.name).join(', ') || 'Unknown'}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold m-0" style={{ color: 'var(--text-muted)' }}>Department</p>
-                  <p className="text-sm font-bold m-0 mt-0.5" style={{ color: 'var(--text-main)' }}>{selectedPaper.discipline || 'General'}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6e746b] m-0">
+                    Department
+                  </p>
+                  <p className="text-[14px] font-bold text-[#1a1d1a] m-0 mt-0.5">
+                    {selectedPaper.discipline || 'General'}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold m-0" style={{ color: 'var(--text-muted)' }}>Submission ID</p>
-                  <p className="text-sm font-mono font-bold m-0 mt-0.5 text-purple-500">PAPER-{selectedPaper.id}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6e746b] m-0">
+                    Submission ID
+                  </p>
+                  <p className="text-[13px] font-mono font-bold text-[#5a6552] m-0 mt-0.5">
+                    PAPER-{selectedPaper.id}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold m-0" style={{ color: 'var(--text-muted)' }}>Document Type</p>
-                  <p className="text-sm font-bold m-0 mt-0.5" style={{ color: 'var(--text-main)' }}>{formatDocumentTypeLabel(selectedPaper.document_type, selectedPaper.status)}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6e746b] m-0">
+                    Document Type
+                  </p>
+                  <p className="text-[13px] font-bold text-[#1a1d1a] m-0 mt-0.5">
+                    {formatDocumentTypeLabel(selectedPaper.document_type, selectedPaper.status)}
+                  </p>
                 </div>
               </div>
 
-              <div className="border rounded-xl p-5 space-y-3" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                <div className="flex items-center gap-2 text-sm font-bold text-purple-500">
-                  <FileText className="size-5 text-purple-500" />
+              <div className="rounded-xl p-5 bg-[#fafbf8] border border-[#eaece4] space-y-3">
+                <div className="flex items-center gap-2 text-[14px] font-bold text-[#1a1d1a]">
+                  <FileText className="size-4 text-[#5a6552]" />
                   <span>
-                    {selectedPaper.status === 'phase1_proposal_submitted' || selectedPaper.document_type === 'thesis_topic'
+                    {selectedPaper.status === 'phase1_proposal_submitted' ||
+                    selectedPaper.document_type === 'thesis_topic'
                       ? 'Phase 1 — Thesis Topic Description'
-                      : selectedPaper.status === 'phase2_proposal_submitted' || selectedPaper.status === 'phase2_proposal_accepted'
+                      : selectedPaper.status === 'phase2_proposal_submitted' ||
+                        selectedPaper.status === 'phase2_proposal_accepted'
                       ? 'Phase 2 — Project Proposal Preview'
                       : 'Thesis Abstract / Summary'}
                   </span>
                 </div>
-                <p className="text-sm whitespace-pre-wrap leading-relaxed m-0 font-normal" style={{ color: 'var(--text-main)' }}>
+                <p className="text-[13px] text-[#1a1d1a] whitespace-pre-wrap leading-relaxed m-0">
                   {selectedPaper.abstract || 'No description provided.'}
                 </p>
                 {selectedPaper.file_name && (
-                  <div className="flex flex-wrap w-full items-center justify-start gap-2 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-[#eaece4]">
                     <Button
-                      variant="outline"
                       size="sm"
-                      className="min-w-[160px] btn-ta-purple text-xs"
                       onClick={() => void handleDownloadDocument(selectedPaper.id)}
                       disabled={!isAuthenticated || documentLoading}
                     >
                       <Download className="size-3.5 mr-1" />
-                      {documentLoading ? 'Downloading...' :
-                        selectedPaper.status === 'phase1_proposal_submitted' || selectedPaper.document_type === 'thesis_topic'
-                          ? 'Download Topic Submission'
-                          : selectedPaper.status === 'phase2_proposal_submitted' || selectedPaper.status === 'phase2_proposal_accepted'
-                          ? 'Download Project Proposal'
-                          : 'Download Thesis Document'}
+                      {documentLoading
+                        ? 'Downloading...'
+                        : selectedPaper.status === 'phase1_proposal_submitted' ||
+                          selectedPaper.document_type === 'thesis_topic'
+                        ? 'Download Topic Submission'
+                        : selectedPaper.status === 'phase2_proposal_submitted' ||
+                          selectedPaper.status === 'phase2_proposal_accepted'
+                        ? 'Download Project Proposal'
+                        : 'Download Thesis Document'}
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="min-w-[160px] text-xs font-semibold"
-                      style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
                       onClick={() => window.open(`/editor?paperId=${selectedPaper.id}`, '_blank')}
                     >
-                      📝 Edit in Document Editor
+                      Edit in Document Editor
                     </Button>
                   </div>
                 )}
               </div>
 
               {documentViewerUrl && (
-                <div className="space-y-2 rounded-lg border p-3">
+                <div className="space-y-2 rounded-xl border border-[#eaece4] p-4 bg-[#fafbf8]">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">
+                    <p className="text-[13px] font-semibold text-[#1a1d1a]">
                       Document Workspace: {selectedPaper.title} ({documentViewerName || 'Document'})
                     </p>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(documentViewerUrl, '_blank', 'noopener,noreferrer')}
+                      onClick={() =>
+                        window.open(documentViewerUrl, '_blank', 'noopener,noreferrer')
+                      }
                     >
-                      <ExternalLink className="size-4 mr-2" />
+                      <ExternalLink className="size-3.5 mr-1.5" />
                       Open in New Tab
                     </Button>
                   </div>
-                  {(documentMimeType || '').toLowerCase().includes('pdf') || (documentViewerName || '').toLowerCase().endsWith('.pdf') ? (
+                  {(documentMimeType || '').toLowerCase().includes('pdf') ||
+                  (documentViewerName || '').toLowerCase().endsWith('.pdf') ? (
                     <iframe
                       src={documentViewerUrl}
                       title="Paper Document Viewer"
-                      className="w-full h-[70vh] rounded border bg-white"
+                      className="w-full h-[65vh] rounded-lg border border-[#eaece4] bg-white"
                     />
                   ) : (
                     <DocxViewer
@@ -948,1372 +1064,1256 @@ export function ApprovalWorkflow() {
                   />
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={handlePickCorrectedFile}
                     disabled={uploadingCorrectedFile}
                   >
                     {correctedFile ? 'Change Corrected File' : 'Upload Corrected Version'}
                   </Button>
                   {correctedFile && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12px] text-[#6e746b]">
                       Attached: {correctedFile.name} (will send on Submit Review)
                     </p>
                   )}
                 </div>
               )}
 
-              {/* Leadership Oversight: Student Submissions & Supervisor Comments History */}
-              {selectedPaper && (isHOD || isCoordinator || isDean || isAdmin || isSupervisor) && (
-                Boolean(selectedPaper.review_comments) || Boolean(selectedPaper.steps && selectedPaper.steps.length > 0) || Boolean(selectedPaper.examiner_corrections)
-              ) && (
-                <div className="border rounded-xl p-4 bg-muted/20 space-y-3" style={{ borderColor: 'var(--border-color)' }}>
-                  <div className="flex items-center justify-between gap-2 border-b pb-2" style={{ borderColor: 'var(--border-color)' }}>
-                    <h5 className="font-bold text-xs flex items-center gap-1.5 text-primary m-0">
-                      <MessageSquare className="size-4 text-primary" />
-                      Student Submission & Supervisor Feedback History
-                    </h5>
-                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                      Institutional Oversight (HOD / Coord / Dean)
-                    </Badge>
-                  </div>
-
-                  {/* Supervisor Review Comments on Proposal */}
-                  {selectedPaper.review_comments && (
-                    <div className="rounded-lg border bg-background/80 p-3 space-y-1 text-xs">
-                      <span className="font-semibold text-muted-foreground flex items-center gap-1">
-                        <span>👨‍🏫 Supervisor / Reviewer Feedback:</span>
-                      </span>
-                      <p className="text-foreground whitespace-pre-wrap leading-relaxed m-0 font-medium">
-                        {selectedPaper.review_comments}
-                      </p>
+              {/* Leadership Oversight History */}
+              {selectedPaper &&
+                (isHOD || isCoordinator || isDean || isAdmin || isSupervisor) &&
+                (Boolean(selectedPaper.review_comments) ||
+                  Boolean(selectedPaper.steps && selectedPaper.steps.length > 0) ||
+                  Boolean(selectedPaper.examiner_corrections)) && (
+                  <div className="border border-[#eaece4] rounded-xl p-4 bg-[#fafbf8] space-y-3">
+                    <div className="flex items-center justify-between gap-2 border-b border-[#eaece4] pb-2">
+                      <h5 className="font-bold text-[13px] flex items-center gap-1.5 text-[#1a1d1a] m-0">
+                        <MessageSquare className="size-4 text-[#5a6552]" />
+                        Student Submission & Supervisor Feedback History
+                      </h5>
+                      <Badge variant="outline">Institutional Oversight</Badge>
                     </div>
-                  )}
 
-                  {/* Dynamic Thesis Steps & Chapter Comments */}
-                  {selectedPaper.steps && selectedPaper.steps.length > 0 && (
-                    <div className="space-y-2">
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                        Dynamic Step Progress & Supervisor Remarks ({selectedPaper.steps.length} Steps):
-                      </span>
-                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                        {selectedPaper.steps.map((st) => (
-                          <div key={st.id} className="rounded-lg border bg-background p-2.5 text-xs space-y-1.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold text-foreground">
-                                Step {st.step_number}: {st.title || `Chapter ${st.step_number}`}
-                              </span>
-                              <Badge
-                                variant={st.status === 'approved' ? 'default' : st.status === 'revise' ? 'destructive' : 'secondary'}
-                                className="capitalize text-[10px]"
-                              >
-                                {st.status}
-                              </Badge>
-                            </div>
-                            {st.supervisor_comment && (
-                              <div className="bg-primary/5 border border-primary/15 rounded p-2 text-[11px] text-foreground">
-                                <span className="font-semibold text-primary">Supervisor Feedback:</span> {st.supervisor_comment}
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                    {selectedPaper.review_comments && (
+                      <div className="rounded-lg border border-[#eaece4] bg-[#ffffff] p-3 space-y-1 text-[12px]">
+                        <span className="font-semibold text-[#6e746b] block">
+                          Supervisor / Reviewer Feedback:
+                        </span>
+                        <p className="text-[#1a1d1a] whitespace-pre-wrap leading-relaxed m-0">
+                          {selectedPaper.review_comments}
+                        </p>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Examiner Feedback / Corrections (Leadership View) */}
-                  {selectedPaper.examiner_corrections && canViewScores && (
-                    <div className="rounded-lg border bg-purple-500/5 border-purple-500/20 p-3 space-y-1 text-xs">
-                      <span className="font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1">
-                        <Award className="size-3.5" />
-                        <span>Examiner Evaluations & Corrections:</span>
-                      </span>
-                      <p className="text-foreground whitespace-pre-wrap leading-relaxed m-0">
-                        {selectedPaper.examiner_corrections}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Custom Phase 1 Workflow Components */}
-              {selectedPaper.status === 'phase1_proposal_submitted' && !selectedPaper.supervisor_id && (isHOD || isCoordinator || isAdmin) && (() => {
-                const paperDeptName = (selectedPaper.discipline || '').trim().toLowerCase()
-                const displaySups = supervisorsList.filter(u => {
-                  const supDept = (u.department || '').trim().toLowerCase()
-                  return supDept && paperDeptName && supDept === paperDeptName
-                })
-                const listToRender = displaySups.length > 0 ? displaySups : supervisorsList
-
-                return (
-                  <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                    <h4 className="font-bold text-sm text-primary flex items-center gap-2">
-                      <Shield className="size-4" />
-                      Phase 1 — Thesis Topic Review (HOD & Coordinator)
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      Accept or Reject the student's submitted topic (title & short description), and assign a supervisor from their department.
-                    </p>
-                    <div className="space-y-2">
-                      <Label htmlFor="assign-sup-select">Select Supervisor *</Label>
-                      <Select value={selectedSupervisorId} onValueChange={setSelectedSupervisorId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose Supervisor..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {listToRender.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.full_name || s.email} ({(s.roles && s.roles.length ? s.roles : [s.role]).join(', ')})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="proposal-comments">Feedback Comments (Optional)</Label>
-                      <Textarea 
-                        id="proposal-comments"
-                        placeholder="Add any topic feedback or guidance for the student..."
-                        value={reviewComments}
-                        onChange={(e) => setReviewComments(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-                    {reviewError && (
-                      <p className="text-xs text-destructive">{reviewError}</p>
                     )}
-                    <div className="flex gap-2 justify-end">
-                      <Button 
-                        variant="outline" 
-                        onClick={async () => {
-                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                          if (!token) return
-                          setSubmittingReview(true)
-                          try {
-                            await apiReviewPaper(selectedPaper.id, 'reject', reviewComments || 'Thesis topic rejected by HOD', token)
-                            setDialogOpen(false)
-                            setSelectedPaper(null)
-                            await loadAll()
-                          } catch (err) {
-                            setReviewError(err instanceof Error ? err.message : 'Rejection failed')
-                          } finally {
-                            setSubmittingReview(false)
-                          }
-                        }}
-                        disabled={submittingReview}
-                        className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                      >
-                        Reject Topic
-                      </Button>
-                      <Button 
-                        onClick={async () => {
-                          if (!selectedSupervisorId) {
-                            setReviewError('Please select a supervisor before accepting the topic.')
-                            return
-                          }
-                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                          if (!token) return
-                          setSubmittingReview(true)
-                          try {
-                            // Assign supervisor & transition status to phase1_topic_accepted -> Phase 2
-                            await apiAssignSupervisor(selectedPaper.id, Number(selectedSupervisorId), token)
-                            setDialogOpen(false)
-                            setSelectedPaper(null)
-                            await loadAll()
-                          } catch (err) {
-                            setReviewError(err instanceof Error ? err.message : 'Topic acceptance failed')
-                          } finally {
-                            setSubmittingReview(false)
-                          }
-                        }} 
-                        disabled={!selectedSupervisorId || submittingReview}
-                      >
-                        {submittingReview ? 'Processing...' : 'Accept Topic & Assign Supervisor'}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })()}
 
-              {selectedPaper.status === 'phase2_pending_supervisor' && (isHOD || isCoordinator || isAdmin) && (() => {
-                const paperDeptName = (selectedPaper.discipline || '').trim().toLowerCase()
-                const displaySups = supervisorsList.filter(u => {
-                  const supDept = (u.department || '').trim().toLowerCase()
-                  return supDept && paperDeptName && supDept === paperDeptName
-                })
-                const listToRender = displaySups.length > 0 ? displaySups : supervisorsList
-
-                return (
-                  <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                    <h4 className="font-bold text-sm text-primary flex items-center gap-2">
-                      <Shield className="size-4" />
-                      Phase 2: Assign Supervisor (HOD & Coordinator)
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      Assign a supervisor from the student's department to supervise chapter submissions.
-                    </p>
-                    <div className="space-y-2">
-                      <Label htmlFor="assign-sup-select">Select Supervisor *</Label>
-                      <Select value={selectedSupervisorId} onValueChange={setSelectedSupervisorId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose Supervisor..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {listToRender.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.full_name || s.email} ({(s.roles && s.roles.length ? s.roles : [s.role]).join(', ')})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="proposal-comments">Feedback Comments (Optional)</Label>
-                      <Textarea 
-                        id="proposal-comments"
-                        placeholder="Add any feedback for the student..."
-                        value={reviewComments}
-                        onChange={(e) => setReviewComments(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-                    {reviewError && (
-                      <p className="text-xs text-destructive">{reviewError}</p>
-                    )}
-                    <div className="flex gap-2 justify-end">
-                      <Button 
-                        variant="outline" 
-                        onClick={async () => {
-                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                          if (!token) return
-                          setSubmittingReview(true)
-                          try {
-                            await apiReviewPaper(selectedPaper.id, 'reject', reviewComments || 'Proposal rejected by HOD', token)
-                            setDialogOpen(false)
-                            setSelectedPaper(null)
-                            await loadAll()
-                          } catch (err) {
-                            setReviewError(err instanceof Error ? err.message : 'Rejection failed')
-                          } finally {
-                            setSubmittingReview(false)
-                          }
-                        }}
-                        disabled={submittingReview}
-                        className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                      >
-                        Reject Proposal
-                      </Button>
-                      <Button 
-                        onClick={async () => {
-                          if (!selectedSupervisorId) return
-                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                          if (!token) return
-                          setSubmittingReview(true)
-                          try {
-                            // Assign supervisor & transition status to phase3_chapters
-                            await apiAssignSupervisor(selectedPaper.id, Number(selectedSupervisorId), token)
-                            if (reviewComments.trim()) {
-                              await apiReviewPaper(selectedPaper.id, 'approve', reviewComments, token)
-                            }
-                            setDialogOpen(false)
-                            setSelectedPaper(null)
-                            await loadAll()
-                          } catch (err) {
-                            setReviewError(err instanceof Error ? err.message : 'Assignment failed')
-                          } finally {
-                            setSubmittingReview(false)
-                          }
-                        }} 
-                        disabled={!selectedSupervisorId || submittingReview}
-                      >
-                        {submittingReview ? 'Processing...' : 'Approve & Assign Supervisor'}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* ====================================================
-               * PHASE 2 — SUPERVISOR: Proposal Accept / Revise Panel
-               * Shows when student has submitted their project proposal
-               * and it is awaiting the supervisor's decision.
-               * ==================================================== */}
-              {selectedPaper.status === 'phase2_proposal_submitted' && (isSupervisor || isAdmin) && (
-                <div className="border-2 border-amber-400/40 rounded-xl p-5 bg-amber-50/50 dark:bg-amber-950/10 space-y-4">
-                  <h4 className="font-bold text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
-                    <FileText className="size-4" />
-                    Phase 2: Project Proposal Review (Supervisor Action Required)
-                  </h4>
-                  <p className="text-xs text-muted-foreground">
-                    The student has submitted their <strong>Project Proposal</strong> for your review. Download the document above, 
-                    then choose to <strong>Accept</strong> the proposal (which will allow the student to begin submitting thesis steps) 
-                    or <strong>Request Revision</strong> (which sends it back to the student with your feedback).
-                  </p>
-
-                  {/* Show previous supervisor comment if any */}
-                  {selectedPaper.review_comments && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-3">
-                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1">Previous Feedback Sent to Student:</p>
-                      <p className="text-xs text-muted-foreground whitespace-pre-line">{selectedPaper.review_comments}</p>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label className="text-xs font-semibold">Feedback / Comments for Student</Label>
-                    <Textarea
-                      placeholder="Enter your feedback for the student (required when requesting revision, optional when accepting)..."
-                      value={reviewComments}
-                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setReviewComments(e.target.value)}
-                      rows={4}
-                      className="text-sm"
-                    />
-                  </div>
-
-                  {reviewError && (
-                    <p className="text-xs text-destructive font-medium">{reviewError}</p>
-                  )}
-
-                  <div className="flex flex-col sm:flex-row gap-3 justify-end pt-3 border-t border-amber-300/30">
-                    <Button
-                      variant="outline"
-                      className="border-amber-500 text-amber-600 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-500/70 hover:bg-amber-100 dark:hover:bg-amber-900/60 font-semibold shadow-sm"
-                      disabled={submittingReview || !reviewComments.trim()}
-                      onClick={async () => {
-                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                        if (!token || !selectedPaper) return
-                        setSubmittingReview(true)
-                        setReviewError('')
-                        try {
-                          await apiProposalDecision(selectedPaper.id, 'revise', reviewComments, token)
-                          setDialogOpen(false)
-                          setSelectedPaper(null)
-                          setReviewComments('')
-                          await loadAll()
-                        } catch (err) {
-                          setReviewError(err instanceof Error ? err.message : 'Failed to request revision')
-                        } finally {
-                          setSubmittingReview(false)
-                        }
-                      }}
-                    >
-                      {submittingReview ? 'Sending...' : '↺ Request Revision (Send Back)'}
-                    </Button>
-                    <Button
-                      className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white dark:bg-emerald-600 dark:hover:bg-emerald-500 dark:text-white font-bold shadow-md border-0"
-                      disabled={submittingReview}
-                      onClick={async () => {
-                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                        if (!token || !selectedPaper) return
-                        setSubmittingReview(true)
-                        setReviewError('')
-                        try {
-                          await apiProposalDecision(selectedPaper.id, 'accepted', reviewComments, token)
-                          setDialogOpen(false)
-                          setSelectedPaper(null)
-                          setReviewComments('')
-                          await loadAll()
-                        } catch (err) {
-                          setReviewError(err instanceof Error ? err.message : 'Failed to accept proposal')
-                        } finally {
-                          setSubmittingReview(false)
-                        }
-                      }}
-                    >
-                      {submittingReview ? 'Processing...' : '✓ Accept Proposal (Advance to Steps Phase)'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* ====================================================
-               * PHASE 2 — Dynamic Steps Review & Oversight
-               * Shows when proposal is accepted & student submits steps.
-               * Supervisor can take action; Coordinator, HOD, Dean, Admin have oversight!
-               * ==================================================== */}
-              {(selectedPaper.status === 'phase3_chapters' || selectedPaper.status === 'phase3_steps_in_progress' || (selectedPaper.steps && selectedPaper.steps.length > 0)) && (isSupervisor || isAdmin || isHOD || isCoordinator || isDean) && (
-                <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="font-bold text-sm text-primary flex items-center gap-2 m-0">
-                      <CheckSquare className="size-4" />
-                      Phase 2: Dynamic Steps Review & Oversight
-                    </h4>
-                    {!(isSupervisor || isAdmin) && (
-                      <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">
-                        Leadership View (Coordinator / HOD / Dean)
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Review thesis steps/chapters submitted by the student and supervisor feedback.
-                    {isSupervisor || isAdmin ? ' Approve or request revisions per step, and click Finish Steps when completed.' : ' Full oversight is granted to HOD, Coordinator, and Dean.'}
-                  </p>
-
-                  {/* List of Student Steps */}
-                  {selectedPaper.steps && selectedPaper.steps.length > 0 ? (
-                    <div className="space-y-3">
-                      {selectedPaper.steps.map((st) => (
-                        <div key={st.id} className="rounded-lg border bg-background p-3 text-xs space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-semibold text-foreground text-sm">
-                              Step {st.step_number}: {st.title || `Step ${st.step_number}`}
-                            </span>
-                            <Badge variant={st.status === 'approved' ? 'default' : st.status === 'revise' ? 'destructive' : 'secondary'} className="capitalize text-[10px]">
-                              {st.status}
-                            </Badge>
-                          </div>
-                          {st.supervisor_comment && (
-                            <p className="text-muted-foreground bg-muted/40 p-2 rounded text-[11px]">
-                              <strong className="text-foreground">Feedback:</strong> {st.supervisor_comment}
-                            </p>
-                          )}
-                          <div className="flex flex-wrap gap-2 pt-1">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={async () => {
-                                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                                if (!token) return
-                                try {
-                                  const { apiDownloadStepFile } = await import('../../lib/api')
-                                  const { blob, filename } = await apiDownloadStepFile(st.id, token)
-                                  const url = window.URL.createObjectURL(blob)
-                                  const a = document.createElement('a')
-                                  a.href = url
-                                  a.download = filename
-                                  document.body.appendChild(a)
-                                  a.click()
-                                  a.remove()
-                                  window.URL.revokeObjectURL(url)
-                                } catch (err) {
-                                  window.alert(err instanceof Error ? err.message : 'Download failed')
-                                }
-                              }}
-                              className="text-xs h-8 text-primary border-primary/30 hover:bg-primary/10 font-semibold"
-                            >
-                              <Download className="size-3 mr-1" /> Download Step {st.step_number} File
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                window.open(`/editor?stepId=${st.id}`, '_blank')
-                              }}
-                              className="text-xs h-8 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold"
-                            >
-                              📝 View & Edit Step {st.step_number} in Editor
-                            </Button>
-                            {(isSupervisor || isAdmin) && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
-                                    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                                    if (!token) return
-                                    setSubmittingReview(true)
-                                    try {
-                                      await apiStepDecision(st.id, 'approved', reviewComments, token)
-                                      setReviewComments('')
-                                      await loadAll()
-                                    } catch (err) {
-                                      setReviewError(err instanceof Error ? err.message : 'Step approval failed')
-                                    } finally {
-                                      setSubmittingReview(false)
-                                    }
-                                  }}
-                                  disabled={submittingReview}
-                                  className="text-xs h-8 text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-700 dark:hover:bg-emerald-950/40 font-semibold"
-                                >
-                                  ✓ Approve Step {st.step_number}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
-                                    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                                    if (!token) return
-                                    setSubmittingReview(true)
-                                    try {
-                                      await apiStepDecision(st.id, 'revise', reviewComments || 'Revision requested on step', token)
-                                      setReviewComments('')
-                                      await loadAll()
-                                    } catch (err) {
-                                      setReviewError(err instanceof Error ? err.message : 'Step revision request failed')
-                                    } finally {
-                                      setSubmittingReview(false)
-                                    }
-                                  }}
-                                  disabled={submittingReview}
-                                  className="text-xs h-8 text-destructive border-destructive/30 hover:bg-destructive/10 font-semibold"
-                                >
-                                  Revise Step {st.step_number}
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="border border-dashed rounded p-3 text-center text-xs text-muted-foreground">
-                      No steps submitted by student yet.
-                    </div>
-                  )}
-
-                  <div className="space-y-2 pt-2 border-t">
-                    <Label htmlFor="step-overall-comments">Step Feedback Comments (Optional)</Label>
-                    <Textarea
-                      id="step-overall-comments"
-                      placeholder="Add feedback notes when approving or requesting revisions on a step..."
-                      value={reviewComments}
-                      onChange={(e) => setReviewComments(e.target.value)}
-                      rows={2}
-                    />
-                  </div>
-
-                  {reviewError && (
-                    <p className="text-xs text-destructive">{reviewError}</p>
-                  )}
-
-                  <div className="flex justify-end border-t pt-3">
-                    <Button
-                      onClick={async () => {
-                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                        if (!token) return
-                        setSubmittingReview(true)
-                        try {
-                          await apiCompletePhase3(selectedPaper.id, token)
-                          setDialogOpen(false)
-                          setSelectedPaper(null)
-                          await loadAll()
-                        } catch (err) {
-                          setReviewError(err instanceof Error ? err.message : 'Finish steps failed')
-                        } finally {
-                          setSubmittingReview(false)
-                        }
-                      }}
-                      disabled={submittingReview}
-                      className="bg-primary text-primary-foreground font-semibold"
-                    >
-                      {submittingReview ? 'Completing...' : 'Finish Steps (Advance to Phase 3 — Examination)'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {selectedPaper.status === 'phase4_pending_examiners' && (isHOD || isCoordinator || isDean || isAdmin) && (() => {
-                const currentTier = selectedDegreeTier || selectedPaper.degree_level || 
-                  (selectedPaper.publication_type?.toLowerCase().includes('undergrad') || 
-                   selectedPaper.document_type?.toLowerCase().includes('undergrad') || 
-                   selectedPaper.discipline?.toLowerCase().includes('b.sc') || 
-                   selectedPaper.discipline?.toLowerCase().includes('bsc') ? 'Undergraduate' : 
-                   (selectedPaper.publication_type?.toLowerCase().includes('mphil') ? 'MPhil' :
-                    (selectedPaper.publication_type?.toLowerCase().includes('phd') || selectedPaper.document_type?.toLowerCase().includes('phd') || selectedPaper.document_type?.toLowerCase().includes('doctoral') ? 'PhD' : 'Masters')));
-
-                const isUndergrad = currentTier === 'Undergraduate';
-                const isMPhilOrPhD = currentTier === 'PhD' || currentTier === 'MPhil';
-                const isMasters = !isUndergrad && !isMPhilOrPhD;
-
-                // Internal faculty vs external faculty
-                const internalFacultyList = supervisorsList.filter(s => s.role !== 'external_examiner');
-                const externalFacultyList = supervisorsList.filter(s => s.role === 'external_examiner' || s.roles?.includes('external_examiner'));
-                const externalOptionsList = externalFacultyList.length > 0 ? externalFacultyList : supervisorsList;
-
-                return (
-                  <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-primary/10">
-                      <h4 className="font-bold text-sm text-primary flex items-center gap-2 m-0">
-                        <Shield className="size-4" />
-                        {isUndergrad 
-                          ? 'Phase 3: Undergraduate Examination (Single Internal Examiner / Supervisor)' 
-                          : isMasters 
-                          ? 'Phase 3: Master\'s Examination (Two Internal Examiners)' 
-                          : 'Phase 3: Postgraduate Research Examination (1 Internal + 1 External Examiner)'}
-                      </h4>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[11px] text-muted-foreground font-medium">Program Tier:</span>
-                        <div className="inline-flex rounded-lg border border-primary/20 p-0.5 bg-background text-xs">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDegreeTier('Undergraduate')}
-                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${isUndergrad ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                          >
-                            Undergraduate (1 Internal)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDegreeTier('Masters')}
-                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${isMasters ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                          >
-                            Masters (2 Internal)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDegreeTier('PhD')}
-                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${isMPhilOrPhD ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                          >
-                            MPhil / PhD (Internal + External)
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground m-0">
-                      {isUndergrad && 'Undergraduate (B.Sc./B.A./Diploma) projects are examined internally by the assigned Project Supervisor or 1 Internal Assessor. No external examiner is required.'}
-                      {isMasters && 'Master\'s degree programs (MBA, MSc, MA, MPA) require exactly 2 Internal Examiners from faculty. No external examiner is required by GIMPA regulations.'}
-                      {isMPhilOrPhD && 'MPhil and Doctoral (PhD) theses require 1 Internal Examiner and 1 External Examiner as mandated by postgraduate academic regulations.'}
-                    </p>
-
-                    {/* Individual Examiner Selection */}
-                    <div className={`grid grid-cols-1 ${isUndergrad ? 'md:grid-cols-1' : 'md:grid-cols-2'} gap-4`}>
+                    {selectedPaper.steps && selectedPaper.steps.length > 0 && (
                       <div className="space-y-2">
-                        <Label htmlFor="assign-internal-select">
-                          {isUndergrad 
-                            ? 'Select Project Supervisor / Internal Examiner *' 
-                            : isMasters 
-                            ? 'Select Internal Examiner 1 *' 
-                            : 'Select Internal Examiner *'}
-                        </Label>
-                        <Select 
-                          value={selectedInternalId || (isUndergrad && selectedPaper.supervisor_id ? String(selectedPaper.supervisor_id) : '')} 
-                          onValueChange={setSelectedInternalId}
-                        >
+                        <span className="text-[11px] font-semibold text-[#6e746b] uppercase tracking-wider block">
+                          Dynamic Step Progress & Supervisor Remarks ({selectedPaper.steps.length}{' '}
+                          Steps):
+                        </span>
+                        <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                          {selectedPaper.steps.map((st) => (
+                            <div
+                              key={st.id}
+                              className="rounded-lg border border-[#eaece4] bg-[#ffffff] p-3 text-[12px] space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold text-[#1a1d1a]">
+                                  Step {st.step_number}: {st.title || `Chapter ${st.step_number}`}
+                                </span>
+                                <Badge
+                                  variant={
+                                    st.status === 'approved'
+                                      ? 'default'
+                                      : st.status === 'revise'
+                                      ? 'destructive'
+                                      : 'secondary'
+                                  }
+                                >
+                                  {st.status}
+                                </Badge>
+                              </div>
+                              {st.supervisor_comment && (
+                                <div className="bg-[#fafbf8] border border-[#eaece4] rounded p-2 text-[11px] text-[#1a1d1a]">
+                                  <span className="font-semibold text-[#3b7a57]">
+                                    Supervisor Feedback:
+                                  </span>{' '}
+                                  {st.supervisor_comment}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedPaper.examiner_corrections && canViewScores && (
+                      <div className="rounded-lg border border-[#eaece4] bg-[#ffffff] p-3 space-y-1 text-[12px]">
+                        <span className="font-semibold text-[#5a6552] flex items-center gap-1">
+                          <Award className="size-3.5" />
+                          <span>Examiner Evaluations & Corrections:</span>
+                        </span>
+                        <p className="text-[#1a1d1a] whitespace-pre-wrap leading-relaxed m-0">
+                          {selectedPaper.examiner_corrections}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {/* Phase 1 — HOD & Coordinator Supervisor Assignment */}
+              {selectedPaper.status === 'phase1_proposal_submitted' &&
+                !selectedPaper.supervisor_id &&
+                (isHOD || isCoordinator || isAdmin) &&
+                (() => {
+                  const paperDeptName = (selectedPaper.discipline || '').trim().toLowerCase()
+                  const displaySups = supervisorsList.filter((u) => {
+                    const supDept = (u.department || '').trim().toLowerCase()
+                    return supDept && paperDeptName && supDept === paperDeptName
+                  })
+                  const listToRender = displaySups.length > 0 ? displaySups : supervisorsList
+
+                  return (
+                    <div className="border border-[#eaece4] rounded-xl p-5 bg-[#fafbf8] space-y-4">
+                      <h4 className="font-bold text-[14px] text-[#1a1d1a] flex items-center gap-2 m-0">
+                        <Shield className="size-4 text-[#3b7a57]" />
+                        Phase 1 — Thesis Topic Review (HOD & Coordinator)
+                      </h4>
+                      <p className="text-[13px] text-[#6e746b] m-0">
+                        Accept or reject the student's submitted topic and assign a supervisor from their department.
+                      </p>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="assign-sup-select">Select Supervisor *</Label>
+                        <Select value={selectedSupervisorId} onValueChange={setSelectedSupervisorId}>
                           <SelectTrigger>
-                            <SelectValue placeholder={isUndergrad ? 'Choose Supervisor / Examiner...' : isMasters ? 'Choose Internal Examiner 1...' : 'Choose Internal Examiner...'} />
+                            <SelectValue placeholder="Choose Supervisor..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {(isMasters ? internalFacultyList : supervisorsList).map((s) => (
+                            {listToRender.map((s) => (
                               <SelectItem key={s.id} value={String(s.id)}>
-                                {s.full_name || s.email} {selectedPaper.supervisor_id === s.id ? '(Assigned Supervisor)' : ''}
+                                {s.full_name || s.email} (
+                                {(s.roles && s.roles.length ? s.roles : [s.role]).join(', ')})
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="proposal-comments">Feedback Comments (Optional)</Label>
+                        <Textarea
+                          id="proposal-comments"
+                          placeholder="Add any topic feedback or guidance for the student..."
+                          value={reviewComments}
+                          onChange={(e) => setReviewComments(e.target.value)}
+                          rows={3}
+                        />
+                      </div>
+                      {reviewError && <p className="text-[12px] text-[#c93b2b]">{reviewError}</p>}
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          onClick={async () => {
+                            const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                            if (!token) return
+                            setSubmittingReview(true)
+                            try {
+                              await apiReviewPaper(
+                                selectedPaper.id,
+                                'reject',
+                                reviewComments || 'Thesis topic rejected by HOD',
+                                token,
+                              )
+                              setDialogOpen(false)
+                              setSelectedPaper(null)
+                              await loadAll()
+                            } catch (err) {
+                              setReviewError(err instanceof Error ? err.message : 'Rejection failed')
+                            } finally {
+                              setSubmittingReview(false)
+                            }
+                          }}
+                          disabled={submittingReview}
+                          className="text-[#c93b2b] border-[#c93b2b]/30"
+                        >
+                          Reject Topic
+                        </Button>
+                        <Button
+                          onClick={async () => {
+                            if (!selectedSupervisorId) {
+                              setReviewError(
+                                'Please select a supervisor before accepting the topic.',
+                              )
+                              return
+                            }
+                            const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                            if (!token) return
+                            setSubmittingReview(true)
+                            try {
+                              await apiAssignSupervisor(
+                                selectedPaper.id,
+                                Number(selectedSupervisorId),
+                                token,
+                              )
+                              setDialogOpen(false)
+                              setSelectedPaper(null)
+                              await loadAll()
+                            } catch (err) {
+                              setReviewError(
+                                err instanceof Error ? err.message : 'Topic acceptance failed',
+                              )
+                            } finally {
+                              setSubmittingReview(false)
+                            }
+                          }}
+                          disabled={!selectedSupervisorId || submittingReview}
+                        >
+                          {submittingReview ? 'Processing...' : 'Accept Topic & Assign Supervisor'}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })()}
 
-                      {!isUndergrad && (
-                        <div className="space-y-2">
-                          <Label htmlFor="assign-external-select">
-                            {isMasters ? 'Select Internal Examiner 2 *' : 'Select External Examiner *'}
+              {/* Phase 2 — Pending Supervisor */}
+              {selectedPaper.status === 'phase2_pending_supervisor' &&
+                (isHOD || isCoordinator || isAdmin) &&
+                (() => {
+                  const paperDeptName = (selectedPaper.discipline || '').trim().toLowerCase()
+                  const displaySups = supervisorsList.filter((u) => {
+                    const supDept = (u.department || '').trim().toLowerCase()
+                    return supDept && paperDeptName && supDept === paperDeptName
+                  })
+                  const listToRender = displaySups.length > 0 ? displaySups : supervisorsList
+
+                  return (
+                    <div className="border border-[#eaece4] rounded-xl p-5 bg-[#fafbf8] space-y-4">
+                      <h4 className="font-bold text-[14px] text-[#1a1d1a] flex items-center gap-2 m-0">
+                        <Shield className="size-4 text-[#3b7a57]" />
+                        Phase 2: Assign Supervisor (HOD & Coordinator)
+                      </h4>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="assign-sup-select">Select Supervisor *</Label>
+                        <Select value={selectedSupervisorId} onValueChange={setSelectedSupervisorId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choose Supervisor..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {listToRender.map((s) => (
+                              <SelectItem key={s.id} value={String(s.id)}>
+                                {s.full_name || s.email} (
+                                {(s.roles && s.roles.length ? s.roles : [s.role]).join(', ')})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="proposal-comments">Feedback Comments (Optional)</Label>
+                        <Textarea
+                          id="proposal-comments"
+                          placeholder="Add any feedback for the student..."
+                          value={reviewComments}
+                          onChange={(e) => setReviewComments(e.target.value)}
+                          rows={3}
+                        />
+                      </div>
+                      {reviewError && <p className="text-[12px] text-[#c93b2b]">{reviewError}</p>}
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          onClick={async () => {
+                            const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                            if (!token) return
+                            setSubmittingReview(true)
+                            try {
+                              await apiReviewPaper(
+                                selectedPaper.id,
+                                'reject',
+                                reviewComments || 'Proposal rejected by HOD',
+                                token,
+                              )
+                              setDialogOpen(false)
+                              setSelectedPaper(null)
+                              await loadAll()
+                            } catch (err) {
+                              setReviewError(err instanceof Error ? err.message : 'Rejection failed')
+                            } finally {
+                              setSubmittingReview(false)
+                            }
+                          }}
+                          disabled={submittingReview}
+                          className="text-[#c93b2b]"
+                        >
+                          Reject Proposal
+                        </Button>
+                        <Button
+                          onClick={async () => {
+                            if (!selectedSupervisorId) return
+                            const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                            if (!token) return
+                            setSubmittingReview(true)
+                            try {
+                              await apiAssignSupervisor(
+                                selectedPaper.id,
+                                Number(selectedSupervisorId),
+                                token,
+                              )
+                              if (reviewComments.trim()) {
+                                await apiReviewPaper(
+                                  selectedPaper.id,
+                                  'approve',
+                                  reviewComments,
+                                  token,
+                                )
+                              }
+                              setDialogOpen(false)
+                              setSelectedPaper(null)
+                              await loadAll()
+                            } catch (err) {
+                              setReviewError(
+                                err instanceof Error ? err.message : 'Assignment failed',
+                              )
+                            } finally {
+                              setSubmittingReview(false)
+                            }
+                          }}
+                          disabled={!selectedSupervisorId || submittingReview}
+                        >
+                          {submittingReview ? 'Processing...' : 'Approve & Assign Supervisor'}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+              {/* Phase 2 — Supervisor Proposal Accept / Revise */}
+              {selectedPaper.status === 'phase2_proposal_submitted' &&
+                (isSupervisor || isAdmin) && (
+                  <div className="border border-[#eaece4] rounded-xl p-5 bg-[#fafbf8] space-y-4">
+                    <h4 className="font-bold text-[14px] text-[#1a1d1a] flex items-center gap-2 m-0">
+                      <FileText className="size-4 text-[#3b7a57]" />
+                      Phase 2: Project Proposal Review (Supervisor Action Required)
+                    </h4>
+                    <p className="text-[13px] text-[#6e746b] m-0">
+                      Review the student's Project Proposal and choose to Accept (advancing to thesis chapters) or Request Revision.
+                    </p>
+
+                    <div className="space-y-1.5">
+                      <Label>Feedback / Comments for Student</Label>
+                      <Textarea
+                        placeholder="Enter your feedback for the student (required when requesting revision)..."
+                        value={reviewComments}
+                        onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                          setReviewComments(e.target.value)
+                        }
+                        rows={4}
+                      />
+                    </div>
+
+                    {reviewError && <p className="text-[12px] text-[#c93b2b]">{reviewError}</p>}
+
+                    <div className="flex flex-col sm:flex-row gap-2.5 justify-end pt-2">
+                      <Button
+                        variant="outline"
+                        disabled={submittingReview || !reviewComments.trim()}
+                        onClick={async () => {
+                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                          if (!token || !selectedPaper) return
+                          setSubmittingReview(true)
+                          setReviewError('')
+                          try {
+                            await apiProposalDecision(
+                              selectedPaper.id,
+                              'revise',
+                              reviewComments,
+                              token,
+                            )
+                            setDialogOpen(false)
+                            setSelectedPaper(null)
+                            setReviewComments('')
+                            await loadAll()
+                          } catch (err) {
+                            setReviewError(
+                              err instanceof Error ? err.message : 'Failed to request revision',
+                            )
+                          } finally {
+                            setSubmittingReview(false)
+                          }
+                        }}
+                      >
+                        {submittingReview ? 'Sending...' : 'Request Revision'}
+                      </Button>
+                      <Button
+                        disabled={submittingReview}
+                        onClick={async () => {
+                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                          if (!token || !selectedPaper) return
+                          setSubmittingReview(true)
+                          setReviewError('')
+                          try {
+                            await apiProposalDecision(
+                              selectedPaper.id,
+                              'accepted',
+                              reviewComments,
+                              token,
+                            )
+                            setDialogOpen(false)
+                            setSelectedPaper(null)
+                            setReviewComments('')
+                            await loadAll()
+                          } catch (err) {
+                            setReviewError(
+                              err instanceof Error ? err.message : 'Failed to accept proposal',
+                            )
+                          } finally {
+                            setSubmittingReview(false)
+                          }
+                        }}
+                      >
+                        {submittingReview ? 'Processing...' : 'Accept Proposal'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+              {/* Phase 2 — Dynamic Steps Review */}
+              {(selectedPaper.status === 'phase3_chapters' ||
+                selectedPaper.status === 'phase3_steps_in_progress' ||
+                (selectedPaper.steps && selectedPaper.steps.length > 0)) &&
+                (isSupervisor || isAdmin || isHOD || isCoordinator || isDean) && (
+                  <div className="border border-[#eaece4] rounded-xl p-5 bg-[#fafbf8] space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-bold text-[14px] text-[#1a1d1a] flex items-center gap-2 m-0">
+                        <CheckSquare className="size-4 text-[#3b7a57]" />
+                        Phase 2: Dynamic Steps Review & Oversight
+                      </h4>
+                      {!(isSupervisor || isAdmin) && (
+                        <Badge variant="outline">Leadership View</Badge>
+                      )}
+                    </div>
+
+                    {selectedPaper.steps && selectedPaper.steps.length > 0 ? (
+                      <div className="space-y-3">
+                        {selectedPaper.steps.map((st) => (
+                          <div
+                            key={st.id}
+                            className="rounded-lg border border-[#eaece4] bg-[#ffffff] p-3.5 text-[12px] space-y-2"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-bold text-[#1a1d1a] text-[13px]">
+                                Step {st.step_number}: {st.title || `Step ${st.step_number}`}
+                              </span>
+                              <Badge
+                                variant={
+                                  st.status === 'approved'
+                                    ? 'default'
+                                    : st.status === 'revise'
+                                    ? 'destructive'
+                                    : 'secondary'
+                                }
+                              >
+                                {st.status}
+                              </Badge>
+                            </div>
+                            {st.supervisor_comment && (
+                              <p className="text-[#6e746b] bg-[#fafbf8] p-2 rounded text-[11px] m-0">
+                                <strong className="text-[#1a1d1a]">Feedback:</strong>{' '}
+                                {st.supervisor_comment}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                  if (!token) return
+                                  try {
+                                    const { apiDownloadStepFile } = await import('../../lib/api')
+                                    const { blob, filename } = await apiDownloadStepFile(
+                                      st.id,
+                                      token,
+                                    )
+                                    const url = window.URL.createObjectURL(blob)
+                                    const a = document.createElement('a')
+                                    a.href = url
+                                    a.download = filename
+                                    document.body.appendChild(a)
+                                    a.click()
+                                    a.remove()
+                                    window.URL.revokeObjectURL(url)
+                                  } catch (err) {
+                                    window.alert(
+                                      err instanceof Error ? err.message : 'Download failed',
+                                    )
+                                  }
+                                }}
+                              >
+                                <Download className="size-3 mr-1" /> Download Step {st.step_number}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => window.open(`/editor?stepId=${st.id}`, '_blank')}
+                              >
+                                View & Edit in Editor
+                              </Button>
+                              {(isSupervisor || isAdmin) && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    onClick={async () => {
+                                      const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                      if (!token) return
+                                      setSubmittingReview(true)
+                                      try {
+                                        await apiStepDecision(
+                                          st.id,
+                                          'approved',
+                                          reviewComments,
+                                          token,
+                                        )
+                                        setReviewComments('')
+                                        await loadAll()
+                                      } catch (err) {
+                                        setReviewError(
+                                          err instanceof Error
+                                            ? err.message
+                                            : 'Step approval failed',
+                                        )
+                                      } finally {
+                                        setSubmittingReview(false)
+                                      }
+                                    }}
+                                    disabled={submittingReview}
+                                  >
+                                    Approve Step {st.step_number}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={async () => {
+                                      const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                      if (!token) return
+                                      setSubmittingReview(true)
+                                      try {
+                                        await apiStepDecision(
+                                          st.id,
+                                          'revise',
+                                          reviewComments || 'Revision requested on step',
+                                          token,
+                                        )
+                                        setReviewComments('')
+                                        await loadAll()
+                                      } catch (err) {
+                                        setReviewError(
+                                          err instanceof Error
+                                            ? err.message
+                                            : 'Step revision request failed',
+                                        )
+                                      } finally {
+                                        setSubmittingReview(false)
+                                      }
+                                    }}
+                                    disabled={submittingReview}
+                                    className="text-[#c93b2b]"
+                                  >
+                                    Revise Step {st.step_number}
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="border border-dashed border-[#eaece4] rounded-lg p-4 text-center text-[12px] text-[#6e746b]">
+                        No steps submitted by student yet.
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5 pt-2 border-t border-[#eaece4]">
+                      <Label htmlFor="step-overall-comments">Step Feedback Comments (Optional)</Label>
+                      <Textarea
+                        id="step-overall-comments"
+                        placeholder="Add feedback notes when approving or requesting revisions on a step..."
+                        value={reviewComments}
+                        onChange={(e) => setReviewComments(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+
+                    {reviewError && <p className="text-[12px] text-[#c93b2b]">{reviewError}</p>}
+
+                    <div className="flex justify-end border-t border-[#eaece4] pt-3">
+                      <Button
+                        variant="olive"
+                        onClick={async () => {
+                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                          if (!token) return
+                          setSubmittingReview(true)
+                          try {
+                            await apiCompletePhase3(selectedPaper.id, token)
+                            setDialogOpen(false)
+                            setSelectedPaper(null)
+                            await loadAll()
+                          } catch (err) {
+                            setReviewError(
+                              err instanceof Error ? err.message : 'Finish steps failed',
+                            )
+                          } finally {
+                            setSubmittingReview(false)
+                          }
+                        }}
+                        disabled={submittingReview}
+                      >
+                        {submittingReview
+                          ? 'Completing...'
+                          : 'Finish Steps (Advance to Phase 3 — Examination)'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+              {/* Phase 3 — Examiner Assignment */}
+              {selectedPaper.status === 'phase4_pending_examiners' &&
+                (isHOD || isCoordinator || isDean || isAdmin) &&
+                (() => {
+                  const currentTier =
+                    selectedDegreeTier ||
+                    selectedPaper.degree_level ||
+                    (selectedPaper.publication_type?.toLowerCase().includes('undergrad') ||
+                    selectedPaper.document_type?.toLowerCase().includes('undergrad') ||
+                    selectedPaper.discipline?.toLowerCase().includes('b.sc') ||
+                    selectedPaper.discipline?.toLowerCase().includes('bsc')
+                      ? 'Undergraduate'
+                      : selectedPaper.publication_type?.toLowerCase().includes('mphil')
+                      ? 'MPhil'
+                      : selectedPaper.publication_type?.toLowerCase().includes('phd') ||
+                        selectedPaper.document_type?.toLowerCase().includes('phd') ||
+                        selectedPaper.document_type?.toLowerCase().includes('doctoral')
+                      ? 'PhD'
+                      : 'Masters')
+
+                  const isUndergrad = currentTier === 'Undergraduate'
+                  const isMPhilOrPhD = currentTier === 'PhD' || currentTier === 'MPhil'
+                  const isMasters = !isUndergrad && !isMPhilOrPhD
+
+                  const internalFacultyList = supervisorsList.filter(
+                    (s) => s.role !== 'external_examiner',
+                  )
+                  const externalFacultyList = supervisorsList.filter(
+                    (s) =>
+                      s.role === 'external_examiner' || s.roles?.includes('external_examiner'),
+                  )
+                  const externalOptionsList =
+                    externalFacultyList.length > 0 ? externalFacultyList : supervisorsList
+
+                  return (
+                    <div className="border border-[#eaece4] rounded-xl p-5 bg-[#fafbf8] space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#eaece4]">
+                        <h4 className="font-bold text-[14px] text-[#1a1d1a] flex items-center gap-2 m-0">
+                          <Shield className="size-4 text-[#3b7a57]" />
+                          {isUndergrad
+                            ? 'Phase 3: Undergraduate Examination (Single Internal Examiner)'
+                            : isMasters
+                            ? "Phase 3: Master's Examination (Two Internal Examiners)"
+                            : 'Phase 3: Postgraduate Examination (1 Internal + 1 External)'}
+                        </h4>
+                        <div className="inline-flex rounded-lg border border-[#eaece4] p-0.5 bg-[#ffffff] text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDegreeTier('Undergraduate')}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${
+                              isUndergrad
+                                ? 'bg-[#5a6552] text-white'
+                                : 'text-[#6e746b] hover:text-[#1a1d1a]'
+                            }`}
+                          >
+                            Undergraduate
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDegreeTier('Masters')}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${
+                              isMasters
+                                ? 'bg-[#5a6552] text-white'
+                                : 'text-[#6e746b] hover:text-[#1a1d1a]'
+                            }`}
+                          >
+                            Masters
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDegreeTier('PhD')}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${
+                              isMPhilOrPhD
+                                ? 'bg-[#5a6552] text-white'
+                                : 'text-[#6e746b] hover:text-[#1a1d1a]'
+                            }`}
+                          >
+                            MPhil / PhD
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`grid grid-cols-1 ${
+                          isUndergrad ? 'md:grid-cols-1' : 'md:grid-cols-2'
+                        } gap-4`}
+                      >
+                        <div className="space-y-1.5">
+                          <Label>
+                            {isUndergrad
+                              ? 'Select Project Supervisor / Internal Examiner *'
+                              : isMasters
+                              ? 'Select Internal Examiner 1 *'
+                              : 'Select Internal Examiner *'}
                           </Label>
-                          <Select value={selectedExternalId} onValueChange={setSelectedExternalId}>
+                          <Select
+                            value={
+                              selectedInternalId ||
+                              (isUndergrad && selectedPaper.supervisor_id
+                                ? String(selectedPaper.supervisor_id)
+                                : '')
+                            }
+                            onValueChange={setSelectedInternalId}
+                          >
                             <SelectTrigger>
-                              <SelectValue placeholder={isMasters ? 'Choose Internal Examiner 2...' : 'Choose External Examiner...'} />
+                              <SelectValue placeholder="Choose Examiner..." />
                             </SelectTrigger>
                             <SelectContent>
-                              {(isMasters ? internalFacultyList : externalOptionsList).map((s) => (
+                              {(isMasters ? internalFacultyList : supervisorsList).map((s) => (
                                 <SelectItem key={s.id} value={String(s.id)}>
-                                  {s.full_name || s.email}
+                                  {s.full_name || s.email}{' '}
+                                  {selectedPaper.supervisor_id === s.id
+                                    ? '(Assigned Supervisor)'
+                                    : ''}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
-                      )}
-                    </div>
 
-                    <div className="flex flex-col gap-2 items-end">
-                      <Button 
-                        onClick={async () => {
-                          setReviewError('')
-                          const effectiveInternalId = selectedInternalId || (isUndergrad && selectedPaper.supervisor_id ? String(selectedPaper.supervisor_id) : '')
-                          if (!effectiveInternalId) {
-                            setReviewError(isUndergrad ? 'Please select a Project Supervisor / Internal Examiner.' : isMasters ? 'Please select Internal Examiner 1.' : 'Please select an Internal Examiner.')
-                            return
-                          }
-                          if (!isUndergrad && !selectedExternalId) {
-                            setReviewError(isMasters ? 'Please select Internal Examiner 2.' : 'Please select an External Examiner.')
-                            return
-                          }
-                          if (!isUndergrad && effectiveInternalId === selectedExternalId) {
-                            setReviewError(isMasters ? 'Internal Examiner 1 and Internal Examiner 2 must be different faculty members.' : 'Internal and External examiners must be different users.')
-                            return
-                          }
-                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                          if (!token) {
-                            setReviewError('Authentication token missing. Please log in again.')
-                            return
-                          }
-                          setSubmittingReview(true)
-                          try {
-                            await apiAssignExaminers(
-                              selectedPaper.id, 
-                              Number(effectiveInternalId), 
-                              isUndergrad ? null : Number(selectedExternalId), 
-                              token,
-                              currentTier
-                            )
-                            setDialogOpen(false)
-                            setSelectedPaper(null)
-                            await loadAll()
-                          } catch (err) {
-                            const msg = err instanceof Error ? err.message : 'Assignment failed'
-                            if (msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('Failed to execute')) {
-                              setReviewError('Unable to connect to the backend server. Please refresh the page or ensure the backend server is active.')
-                            } else {
-                              try {
-                                const parsed = JSON.parse(msg)
-                                setReviewError(parsed.detail || msg)
-                              } catch {
-                                setReviewError(msg)
-                              }
+                        {!isUndergrad && (
+                          <div className="space-y-1.5">
+                            <Label>
+                              {isMasters
+                                ? 'Select Internal Examiner 2 *'
+                                : 'Select External Examiner *'}
+                            </Label>
+                            <Select value={selectedExternalId} onValueChange={setSelectedExternalId}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choose Second Examiner..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(isMasters ? internalFacultyList : externalOptionsList).map(
+                                  (s) => (
+                                    <SelectItem key={s.id} value={String(s.id)}>
+                                      {s.full_name || s.email}
+                                    </SelectItem>
+                                  ),
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2 items-end">
+                        <Button
+                          onClick={async () => {
+                            setReviewError('')
+                            const effectiveInternalId =
+                              selectedInternalId ||
+                              (isUndergrad && selectedPaper.supervisor_id
+                                ? String(selectedPaper.supervisor_id)
+                                : '')
+                            if (!effectiveInternalId) {
+                              setReviewError('Please select the primary examiner.')
+                              return
                             }
-                          } finally {
-                            setSubmittingReview(false)
+                            if (!isUndergrad && !selectedExternalId) {
+                              setReviewError('Please select the second examiner.')
+                              return
+                            }
+                            if (!isUndergrad && effectiveInternalId === selectedExternalId) {
+                              setReviewError('Both examiners must be different faculty members.')
+                              return
+                            }
+                            const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                            if (!token) return
+                            setSubmittingReview(true)
+                            try {
+                              await apiAssignExaminers(
+                                selectedPaper.id,
+                                Number(effectiveInternalId),
+                                isUndergrad ? null : Number(selectedExternalId),
+                                token,
+                                currentTier,
+                              )
+                              setDialogOpen(false)
+                              setSelectedPaper(null)
+                              await loadAll()
+                            } catch (err) {
+                              setReviewError(
+                                err instanceof Error ? err.message : 'Assignment failed',
+                              )
+                            } finally {
+                              setSubmittingReview(false)
+                            }
+                          }}
+                          disabled={
+                            submittingReview ||
+                            (!isUndergrad && (!selectedInternalId || !selectedExternalId))
                           }
-                        }} 
-                        disabled={submittingReview || (!isUndergrad && (!selectedInternalId || !selectedExternalId))}
+                        >
+                          {submittingReview ? 'Assigning...' : 'Assign Examiners & Advance'}
+                        </Button>
+                        {reviewError && <p className="text-[12px] text-[#c93b2b]">{reviewError}</p>}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+              {/* Phase 4: Marking & Assessment */}
+              {selectedPaper.status === 'phase4_marking' &&
+                (isSupervisor ||
+                  isAdmin ||
+                  isHOD ||
+                  isCoordinator ||
+                  isDean ||
+                  selectedPaper.internal_examiner_id === user?.id ||
+                  selectedPaper.external_examiner_id === user?.id) && (
+                  <div className="border border-[#eaece4] rounded-xl p-5 bg-[#fafbf8] space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#eaece4]">
+                      <div>
+                        <h4 className="font-bold text-[14px] text-[#1a1d1a] flex items-center gap-2 m-0">
+                          <Award className="size-4 text-[#3b7a57]" />
+                          Phase 4: Official Project Assessment & Examiner Evaluation
+                        </h4>
+                        <p className="text-[12px] text-[#6e746b] m-0 mt-0.5">
+                          GIMPA Official Marking & Assessment Rubric
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleDownloadDocument(selectedPaper.id)}
+                        disabled={documentLoading}
                       >
-                        {submittingReview ? 'Assigning...' : (isUndergrad ? 'Assign & Advance to Grading' : isMasters ? 'Assign 2 Internal Examiners' : 'Assign Internal & External Examiners')}
+                        <Download className="size-3.5 mr-1" />
+                        {documentLoading ? 'Downloading...' : 'Download Student Thesis'}
                       </Button>
-                      {reviewError && (
-                        <p className="text-xs font-semibold text-destructive mt-1">{reviewError}</p>
-                      )}
                     </div>
-                  </div>
-                )
-              })()}
 
-              {/* Phase 4: Official GIMPA Examiner Project Assessment & Marking Panel */}
-              {selectedPaper.status === 'phase4_marking' && (isSupervisor || isAdmin || isHOD || isCoordinator || isDean || selectedPaper.internal_examiner_id === user?.id || selectedPaper.external_examiner_id === user?.id) && (
-                <div className="border rounded-xl p-5 space-y-4" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                    <div>
-                      <h4 className="font-bold text-sm text-purple-500 flex items-center gap-2 m-0">
-                        <Award className="size-4 text-purple-500" />
-                        Phase 4: Official Project Assessment Report & Examiner Evaluation
-                      </h4>
-                      <p className="text-xs text-muted-foreground m-0 mt-0.5">
-                        GHANA INSTITUTE OF MANAGEMENT & PUBLIC ADMINISTRATION (GIMPA) Official Marking & Assessment
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      className="btn-ta-purple text-xs flex items-center gap-1.5 shrink-0"
-                      onClick={() => void handleDownloadDocument(selectedPaper.id)}
-                      disabled={documentLoading}
-                    >
-                      <Download className="size-3.5" />
-                      {documentLoading ? 'Downloading...' : 'Download Student Thesis File'}
-                    </Button>
-                  </div>
-
-                  {/* Summary of Examiner Scores */}
-                  {(() => {
-                    const tier = selectedDegreeTier || selectedPaper.degree_level || 
-                      (selectedPaper.publication_type?.toLowerCase().includes('undergrad') || 
-                       selectedPaper.document_type?.toLowerCase().includes('undergrad') || 
-                       selectedPaper.discipline?.toLowerCase().includes('b.sc') || 
-                       selectedPaper.discipline?.toLowerCase().includes('bsc') ? 'Undergraduate' : 
-                       (selectedPaper.publication_type?.toLowerCase().includes('mphil') ? 'MPhil' :
-                        (selectedPaper.publication_type?.toLowerCase().includes('phd') || selectedPaper.document_type?.toLowerCase().includes('phd') || selectedPaper.document_type?.toLowerCase().includes('doctoral') ? 'PhD' : 'Masters')));
-
-                    const isUndergradPaper = tier === 'Undergraduate';
-                    const isMPhilOrPhD = tier === 'PhD' || tier === 'MPhil';
-                    const isMastersPaper = !isUndergradPaper && !isMPhilOrPhD;
-                    const hasExternal = Boolean(selectedPaper.external_examiner_id);
-
-                    const examiner1Label = isUndergradPaper ? 'Supervisor / Internal Examiner Score' : isMastersPaper ? 'Internal Examiner 1 Score' : 'Internal Examiner Score';
-                    const examiner2Label = isMastersPaper ? 'Internal Examiner 2 Score' : 'External Examiner Score';
-
-                    return (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
-                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                            {examiner1Label}
-                          </span>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                              {selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined
-                                ? `${selectedPaper.internal_score} / 100`
-                                : 'Pending Evaluation'}
-                            </span>
-                            {selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined && (
-                              <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                                Evaluated
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="p-3 rounded-lg border bg-muted/20 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
-                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{examiner2Label}</span>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                              {isUndergradPaper && !hasExternal
-                                ? 'Not Required (Undergrad)'
-                                : selectedPaper.external_score !== null && selectedPaper.external_score !== undefined
-                                ? `${selectedPaper.external_score} / 100`
-                                : 'Pending Evaluation'}
-                            </span>
-                            {selectedPaper.external_score !== null && selectedPaper.external_score !== undefined ? (
-                              <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                                Evaluated
-                              </Badge>
-                            ) : isUndergradPaper && !hasExternal ? (
-                              <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground border-border">
-                                Single Examiner
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        <div className="p-3 rounded-lg border bg-muted/20 space-y-1 sm:col-span-2 lg:col-span-1" style={{ borderColor: 'var(--border-color)' }}>
-                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Overall Status</span>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold">
-                              {isUndergradPaper && !hasExternal
-                                ? selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined
-                                  ? `Score: ${selectedPaper.internal_score}% (Single Examiner)`
-                                  : 'Awaiting Evaluation'
-                                : selectedPaper.internal_score !== null && selectedPaper.external_score !== null
-                                ? `Average: ${((Number(selectedPaper.internal_score) + Number(selectedPaper.external_score)) / 2).toFixed(1)}%`
-                                : 'Awaiting Both Submissions'}
-                            </span>
-                            <Badge variant="outline" className="text-[10px] border-purple-500/30 text-purple-600">
-                              Phase 4
-                            </Badge>
-                          </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="p-3.5 rounded-lg border border-[#eaece4] bg-[#ffffff] space-y-1">
+                        <span className="text-[11px] font-semibold text-[#6e746b] uppercase tracking-wider">
+                          Examiner 1 Score
+                        </span>
+                        <div className="text-[15px] font-bold text-[#1a1d1a]">
+                          {selectedPaper.internal_score !== null &&
+                          selectedPaper.internal_score !== undefined
+                            ? `${selectedPaper.internal_score} / 100`
+                            : 'Pending'}
                         </div>
                       </div>
-                    );
-                  })()}
+                      <div className="p-3.5 rounded-lg border border-[#eaece4] bg-[#ffffff] space-y-1">
+                        <span className="text-[11px] font-semibold text-[#6e746b] uppercase tracking-wider">
+                          Examiner 2 Score
+                        </span>
+                        <div className="text-[15px] font-bold text-[#1a1d1a]">
+                          {selectedPaper.external_score !== null &&
+                          selectedPaper.external_score !== undefined
+                            ? `${selectedPaper.external_score} / 100`
+                            : 'Pending'}
+                        </div>
+                      </div>
+                      <div className="p-3.5 rounded-lg border border-[#eaece4] bg-[#ffffff] space-y-1">
+                        <span className="text-[11px] font-semibold text-[#6e746b] uppercase tracking-wider">
+                          Average Status
+                        </span>
+                        <div className="text-[14px] font-bold text-[#3b7a57]">
+                          {selectedPaper.internal_score !== null &&
+                          selectedPaper.external_score !== null
+                            ? `${(
+                                (Number(selectedPaper.internal_score) +
+                                  Number(selectedPaper.external_score)) /
+                                2
+                              ).toFixed(1)}%`
+                            : 'In Progress'}
+                        </div>
+                      </div>
+                    </div>
 
-                  {/* Primary Action: Open Project Assessment Report Dialog */}
-                  <div className="p-4 rounded-xl border border-purple-500/30 bg-purple-500/5 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="p-4 rounded-xl border border-[#eaece4] bg-[#ffffff] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <h5 className="font-bold text-xs text-purple-600 dark:text-purple-400 m-0 flex items-center gap-1.5">
-                          <FileText className="size-4" />
+                        <h5 className="font-bold text-[13px] text-[#1a1d1a] m-0">
                           Official Project Assessment Report Form
                         </h5>
-                        <p className="text-xs text-muted-foreground m-0 mt-0.5">
-                          Fill out the 8-part assessment rubric, enter qualitative feedback for research areas, auto-calculate grade, and generate the official Word (.docx) report.
+                        <p className="text-[12px] text-[#6e746b] m-0 mt-0.5">
+                          Complete the 8-part rubric, enter qualitative feedback, and generate the official Word report.
                         </p>
                       </div>
                       <Button
                         type="button"
-                        className="btn-ta-purple text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-sm"
                         onClick={() => {
-                          const isInternal = selectedPaper.internal_examiner_id === user?.id;
-                          const isExternal = selectedPaper.external_examiner_id === user?.id;
-                          const tier = selectedDegreeTier || selectedPaper.degree_level;
-                          const isMastersTier = tier === 'Masters';
-                          setActiveExaminerRole(isInternal ? (isMastersTier ? 'Internal Examiner 1' : 'Internal Examiner') : (isExternal ? (isMastersTier ? 'Internal Examiner 2' : 'External Examiner') : (isHOD || isCoordinator ? 'Coordinator / HOD' : 'Internal Examiner')));
-                          setAssessmentModalOpen(true);
+                          const isInternal = selectedPaper.internal_examiner_id === user?.id
+                          const isExternal = selectedPaper.external_examiner_id === user?.id
+                          setActiveExaminerRole(
+                            isInternal
+                              ? 'Internal Examiner'
+                              : isExternal
+                              ? 'External Examiner'
+                              : isHOD || isCoordinator
+                              ? 'Coordinator / HOD'
+                              : 'Internal Examiner',
+                          )
+                          setAssessmentModalOpen(true)
                         }}
                       >
-                        <FileEdit className="size-4 mr-1" />
-                        Fill Project Assessment Report
+                        <FileEdit className="size-3.5 mr-1.5" />
+                        Fill Assessment Report
                       </Button>
                     </div>
-                  </div>
 
-                  {/* ONLYOFFICE & Auxiliary Tools Panel */}
-                  <div className="border rounded-xl p-4 space-y-3" style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-color)' }}>
-                    <h5 className="font-semibold text-xs text-purple-500 flex items-center gap-1.5 m-0">
-                      <FileEdit className="size-4 text-purple-500" />
-                      ONLYOFFICE In-App Marking & Evaluation Tools
-                    </h5>
-                    <p className="text-xs m-0" style={{ color: 'var(--text-muted)' }}>
-                      You can also view the student's submitted thesis directly in the browser or edit comments in ONLYOFFICE:
-                    </p>
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=paper`, '_blank')}
+                        onClick={() =>
+                          window.open(`/editor?paperId=${selectedPaper.id}&type=paper`, '_blank')
+                        }
                       >
-                        📝 View / Edit Student Work (ONLYOFFICE)
+                        View / Edit Work (ONLYOFFICE)
                       </Button>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=comments`, '_blank')}
+                        onClick={() =>
+                          window.open(`/editor?paperId=${selectedPaper.id}&type=comments`, '_blank')
+                        }
                       >
-                        💬 Open Comments Document (ONLYOFFICE Word)
+                        Open Comments (ONLYOFFICE)
                       </Button>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }}
-                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=excel`, '_blank')}
+                        onClick={() =>
+                          window.open(`/editor?paperId=${selectedPaper.id}&type=excel`, '_blank')
+                        }
                       >
-                        📊 Open Marks Sheet (ONLYOFFICE Excel)
+                        Open Marks Sheet (ONLYOFFICE)
                       </Button>
-                      {selectedPaper.examiner_result_file_name && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
-                          onClick={() => void handleDownloadPaper(selectedPaper.id)}
-                        >
-                          <Download className="size-3.5 mr-1" />
-                          Download Assessment Report ({selectedPaper.examiner_result_file_name})
-                        </Button>
-                      )}
                     </div>
                   </div>
+                )}
 
-                  {reviewError && (
-                    <p className="text-xs text-destructive">{reviewError}</p>
-                  )}
-                </div>
-              )}
-
-
-
-              {/* Student Feedback View (Role-Based Privacy: Numerical Marks Omitted) */}
+              {/* Student Feedback View */}
               {studentFeedbackData && !canViewScores && (
-                <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-3">
-                  <h4 className="font-bold text-xs uppercase tracking-wider text-primary flex items-center gap-2">
-                    <MessageSquare className="size-3.5" />
+                <div className="border border-[#eaece4] rounded-xl p-4 bg-[#fafbf8] space-y-3">
+                  <h4 className="font-bold text-[12px] uppercase tracking-wider text-[#1a1d1a] flex items-center gap-2 m-0">
+                    <MessageSquare className="size-3.5 text-[#5a6552]" />
                     Examiner Feedback & Revision Instructions
                   </h4>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-medium">Status:</span>
-                    <Badge variant="secondary" className="text-xs font-semibold">
-                      {studentFeedbackData.revision_status || 'Under Examination'}
-                    </Badge>
-                  </div>
-
                   {studentFeedbackData.compiled_comments && (
-                    <div className="bg-background border rounded-lg p-3 text-xs space-y-1">
-                      <p className="font-semibold text-muted-foreground">Compiled Examiner Feedback:</p>
-                      <p className="whitespace-pre-line text-foreground">{studentFeedbackData.compiled_comments}</p>
-                    </div>
-                  )}
-
-                  {studentFeedbackData.qualitative_feedback.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground">Examiner Comments:</p>
-                      {studentFeedbackData.qualitative_feedback.map((fb, i) => (
-                        <div key={i} className="p-2.5 bg-background border rounded-lg text-xs space-y-1">
-                          <div className="flex justify-between items-center text-[11px] text-muted-foreground font-medium">
-                            <span className="capitalize">{fb.examiner_type} Examiner</span>
-                            <span>{fb.recommendation}</span>
-                          </div>
-                          {fb.general_comments && (
-                            <p className="text-foreground">{fb.general_comments}</p>
-                          )}
-                        </div>
-                      ))}
+                    <div className="bg-[#ffffff] border border-[#eaece4] rounded-lg p-3 text-[12px] space-y-1">
+                      <p className="font-semibold text-[#6e746b] m-0">Compiled Examiner Feedback:</p>
+                      <p className="whitespace-pre-line text-[#1a1d1a] m-0">
+                        {studentFeedbackData.compiled_comments}
+                      </p>
                     </div>
                   )}
                 </div>
               )}
 
-              {(selectedPaper.status === 'phase5_pending_supervisor' || selectedPaper.status === 'phase5_corrections') && (isSupervisor || isAdmin || isHOD || isCoordinator || isDean) && (
-                <div className="border border-primary/20 rounded-xl p-5 bg-primary/5 space-y-4">
-                  <h4 className="font-bold text-sm text-primary flex items-center gap-2">
-                    <CheckCircle className="size-4" />
-                    Phase 4: Supervisor — Confirm or Deny Corrected Work
-                  </h4>
-                  <p className="text-xs text-muted-foreground">
-                    Review the student's corrected thesis against the examiner's evaluation remarks. Confirm the student has properly addressed all corrections to forward for final sign-off, or deny to request further revisions.
-                  </p>
-
-                  {selectedPaper.examiner_corrections && (
-                    <div className="bg-background border border-amber-300 dark:border-amber-900/60 rounded-lg p-3 text-xs space-y-1">
-                      <p className="font-bold text-amber-700 dark:text-amber-400">Examiner Feedback & Required Corrections to Verify:</p>
-                      <p className="text-foreground whitespace-pre-line">{selectedPaper.examiner_corrections}</p>
+              {/* Phase 5 — Supervisor Corrections Approval */}
+              {(selectedPaper.status === 'phase5_pending_supervisor' ||
+                selectedPaper.status === 'phase5_corrections') &&
+                (isSupervisor || isAdmin || isHOD || isCoordinator || isDean) && (
+                  <div className="border border-[#eaece4] rounded-xl p-5 bg-[#fafbf8] space-y-4">
+                    <h4 className="font-bold text-[14px] text-[#1a1d1a] flex items-center gap-2 m-0">
+                      <CheckCircle className="size-4 text-[#3b7a57]" />
+                      Phase 4: Supervisor — Confirm or Deny Corrected Work
+                    </h4>
+                    <div className="space-y-1.5">
+                      <Label>Supervisor Feedback / Revision Instructions</Label>
+                      <Textarea
+                        placeholder="Enter specific guidance if requesting further changes..."
+                        value={reviewComments}
+                        onChange={(e) => setReviewComments(e.target.value)}
+                        rows={3}
+                      />
                     </div>
-                  )}
-
-                  {/* ONLYOFFICE & Download Tools Panel for Supervisor Review */}
-                  <div className="bg-background border border-primary/20 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                      <FileEdit className="size-4" />
-                      ONLYOFFICE In-App Inspection & Verification Tools
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Inspect the student's corrected thesis in ONLYOFFICE Word to verify their edits, or review the compiled examiner feedback document:
-                    </p>
-                    <div className="flex flex-wrap gap-2 pt-1">
+                    {reviewError && <p className="text-[12px] text-[#c93b2b]">{reviewError}</p>}
+                    <div className="flex gap-2 justify-end">
                       <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=paper`, '_blank')}
-                        className="btn-ta-purple text-xs font-bold"
-                      >
-                        <FileEdit className="size-3.5 mr-1" />
-                        📝 View Student's Corrected Thesis (ONLYOFFICE Word)
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
                         variant="outline"
-                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=comments`, '_blank')}
-                        className="text-xs font-semibold"
+                        onClick={async () => {
+                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                          if (!token) return
+                          if (!reviewComments.trim()) {
+                            setReviewError('Please provide revision notes.')
+                            return
+                          }
+                          setSubmittingReview(true)
+                          try {
+                            await apiSupervisorRejectCorrections(
+                              selectedPaper.id,
+                              reviewComments.trim(),
+                              token,
+                            )
+                            setDialogOpen(false)
+                            setSelectedPaper(null)
+                            setReviewComments('')
+                            await loadAll()
+                          } catch (err) {
+                            setReviewError(
+                              err instanceof Error ? err.message : 'Denial action failed',
+                            )
+                          } finally {
+                            setSubmittingReview(false)
+                          }
+                        }}
+                        disabled={submittingReview}
+                        className="text-[#c93b2b]"
                       >
-                        <MessageSquare className="size-3.5 mr-1" />
-                        💬 View Examiners' Comments (ONLYOFFICE Word)
+                        Deny & Request Further Revisions
                       </Button>
-                      {(selectedPaper as any).file_path && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => void handleDownloadPaper(selectedPaper.id)}
-                          className="text-xs font-semibold"
-                        >
-                          <Download className="size-3.5 mr-1" />
-                          📥 Download Corrected File
-                        </Button>
-                      )}
+                      <Button
+                        onClick={async () => {
+                          const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                          if (!token) return
+                          setSubmittingReview(true)
+                          try {
+                            await apiSupervisorApproveCorrections(selectedPaper.id, token)
+                            setDialogOpen(false)
+                            setSelectedPaper(null)
+                            setReviewComments('')
+                            await loadAll()
+                          } catch (err) {
+                            setReviewError(err instanceof Error ? err.message : 'Approval failed')
+                          } finally {
+                            setSubmittingReview(false)
+                          }
+                        }}
+                        disabled={submittingReview}
+                      >
+                        Confirm & Approve Corrections
+                      </Button>
                     </div>
                   </div>
+                )}
 
-                  {/* Supervisor Denial Notes / Feedback Input */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Supervisor Feedback / Revision Instructions (Required if denying):</Label>
-                    <Textarea
-                      placeholder="Enter specific guidance or feedback for the student if denying or requesting further changes..."
-                      value={reviewComments}
-                      onChange={(e) => setReviewComments(e.target.value)}
-                      rows={3}
-                      className="text-xs"
-                    />
-                  </div>
+              {/* Phase 5 — HOD & Coordinator Dual Sign-off */}
+              {(selectedPaper.status === 'phase5_pending_coordinator' ||
+                selectedPaper.status === 'phase5_pending_hod') &&
+                (isHOD || isCoordinator || isDean || isAdmin) && (
+                  <div className="border border-[#eaece4] rounded-xl p-5 bg-[#fafbf8] space-y-4">
+                    <h4 className="font-bold text-[14px] text-[#1a1d1a] flex items-center gap-2 m-0">
+                      <Shield className="size-4 text-[#3b7a57]" />
+                      Phase 4: Dual Sign-off (HOD & Coordinator)
+                    </h4>
 
-                  {reviewError && (
-                    <p className="text-xs text-destructive">{reviewError}</p>
-                  )}
-
-                  <div className="flex gap-2 justify-end pt-2">
-                    <Button 
-                      variant="outline"
-                      onClick={async () => {
-                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                        if (!token) return
-                        if (!reviewComments.trim()) {
-                          setReviewError('Please provide revision notes explaining what the student still needs to fix.')
-                          return
-                        }
-                        setSubmittingReview(true)
-                        try {
-                          await apiSupervisorRejectCorrections(selectedPaper.id, reviewComments.trim(), token)
-                          setDialogOpen(false)
-                          setSelectedPaper(null)
-                          setReviewComments('')
-                          await loadAll()
-                        } catch (err) {
-                          setReviewError(err instanceof Error ? err.message : 'Denial action failed')
-                        } finally {
-                          setSubmittingReview(false)
-                        }
-                      }}
-                      disabled={submittingReview}
-                      className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                    >
-                      {submittingReview ? 'Processing...' : '✕ Deny & Request Further Revisions'}
-                    </Button>
-
-                    <Button 
-                      onClick={async () => {
-                        const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                        if (!token) return
-                        setSubmittingReview(true)
-                        try {
-                          await apiSupervisorApproveCorrections(selectedPaper.id, token)
-                          setDialogOpen(false)
-                          setSelectedPaper(null)
-                          setReviewComments('')
-                          await loadAll()
-                        } catch (err) {
-                          setReviewError(err instanceof Error ? err.message : 'Approval failed')
-                        } finally {
-                          setSubmittingReview(false)
-                        }
-                      }} 
-                      disabled={submittingReview}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                    >
-                      {submittingReview ? 'Approving...' : '✓ Confirm & Approve Corrections (Forward to Sign-off)'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {(selectedPaper.status === 'phase5_pending_coordinator' || selectedPaper.status === 'phase5_pending_hod') && (isHOD || isCoordinator || isDean || isAdmin) && (
-                <div className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-4">
-                  <h4 className="font-bold text-sm text-primary flex items-center gap-2">
-                    <Shield className="size-4" />
-                    Phase 4: Dual Sign-off (HOD & Coordinator)
-                  </h4>
-                  <p className="text-xs text-muted-foreground">
-                    Supervisor approved. HOD and Coordinator must sign off to send the corrected thesis to the Librarian for publication.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div className="border rounded p-2 bg-background/50">
-                      <span className="font-semibold text-muted-foreground">Coordinator Signed:</span>{' '}
-                      {selectedPaper.project_coordinator_approved_at || selectedPaper.status === 'phase5_pending_hod' ? (
-                        <span className="text-green-600 font-semibold">Yes ({selectedPaper.project_coordinator_approved_at ? new Date(selectedPaper.project_coordinator_approved_at).toLocaleDateString() : 'Signed'})</span>
-                      ) : (
-                        <span className="text-red-500 font-semibold">Awaiting Coordinator Signature</span>
-                      )}
-                    </div>
-                    <div className="border rounded p-2 bg-background/50">
-                      <span className="font-semibold text-muted-foreground">HOD Signed:</span>{' '}
-                      {selectedPaper.hod_approved_at ? (
-                        <span className="text-green-600 font-semibold">Yes ({new Date(selectedPaper.hod_approved_at).toLocaleDateString()})</span>
-                      ) : (
-                        <span className="text-red-500 font-semibold">Awaiting Signature</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {canViewScores && (
-                    <div className="border rounded-lg p-3 text-xs bg-background/50 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold text-muted-foreground flex items-center gap-1.5">
-                          <Award className="size-4 text-primary" />
-                          Examiner Score Breakdown & Degree Rules:
-                        </p>
-                        {adminMarksData?.degree_level && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
-                            {adminMarksData.degree_level}
-                          </span>
+                    <div className="grid grid-cols-2 gap-4 text-[12px]">
+                      <div className="border border-[#eaece4] rounded-lg p-3 bg-[#ffffff]">
+                        <span className="font-semibold text-[#6e746b]">Coordinator Signed:</span>{' '}
+                        {selectedPaper.project_coordinator_approved_at ||
+                        selectedPaper.status === 'phase5_pending_hod' ? (
+                          <span className="text-[#3b7a57] font-bold">Signed</span>
+                        ) : (
+                          <span className="text-[#c93b2b] font-bold">Awaiting Signature</span>
                         )}
                       </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground pt-1">
-                        <div className="border rounded p-1.5 bg-background text-center">
-                          <span className="block text-[10px] uppercase font-medium">Internal Examiner</span>
-                          <strong className="text-foreground text-sm">
-                            {adminMarksData?.internal_score !== null && adminMarksData?.internal_score !== undefined
-                              ? `${adminMarksData.internal_score}%`
-                              : selectedPaper.internal_score !== null && selectedPaper.internal_score !== undefined
-                              ? `${selectedPaper.internal_score}%`
-                              : 'Pending'}
-                          </strong>
-                        </div>
-                        <div className="border rounded p-1.5 bg-background text-center">
-                          <span className="block text-[10px] uppercase font-medium">External Examiner</span>
-                          <strong className="text-foreground text-sm">
-                            {adminMarksData?.external_score !== null && adminMarksData?.external_score !== undefined
-                              ? `${adminMarksData.external_score}%`
-                              : selectedPaper.external_score !== null && selectedPaper.external_score !== undefined
-                              ? `${selectedPaper.external_score}%`
-                              : 'Pending'}
-                          </strong>
-                        </div>
-                        <div className="border rounded p-1.5 bg-background text-center">
-                          <span className="block text-[10px] uppercase font-medium">3rd Examiner</span>
-                          <strong className="text-foreground text-sm">
-                            {adminMarksData?.third_examiner_score !== null && adminMarksData?.third_examiner_score !== undefined
-                              ? `${adminMarksData.third_examiner_score}%`
-                              : 'N/A'}
-                          </strong>
-                        </div>
-                        <div className="border rounded p-1.5 bg-primary/10 border-primary/20 text-center">
-                          <span className="block text-[10px] uppercase font-bold text-primary">Final Average Score</span>
-                          <strong className="text-primary text-sm font-black">
-                            {adminMarksData?.average_score !== null && adminMarksData?.average_score !== undefined
-                              ? `${adminMarksData.average_score}%`
-                              : 'Pending'}
-                          </strong>
-                        </div>
+                      <div className="border border-[#eaece4] rounded-lg p-3 bg-[#ffffff]">
+                        <span className="font-semibold text-[#6e746b]">HOD Signed:</span>{' '}
+                        {selectedPaper.hod_approved_at ? (
+                          <span className="text-[#3b7a57] font-bold">Signed</span>
+                        ) : (
+                          <span className="text-[#c93b2b] font-bold">Awaiting Signature</span>
+                        )}
                       </div>
+                    </div>
 
-                      {adminMarksData?.calculation_note && (
-                        <p className="text-[11px] text-muted-foreground italic bg-muted/30 p-2 rounded border">
-                          ℹ️ {adminMarksData.calculation_note}
-                        </p>
-                      )}
-
-                      {adminMarksData?.requires_third_examiner && (
-                        <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded-md space-y-2">
-                          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold">
-                            <AlertTriangle className="size-4" />
-                            <span>Score Difference exceeds 20 Marks ({adminMarksData.score_difference} marks)! 3rd Examiner Required.</span>
+                    {canViewScores && adminMarksData?.requires_third_examiner && (
+                      <div className="p-3.5 border border-[#c93b2b]/30 bg-[#fbeae8]/30 rounded-lg space-y-2">
+                        <div className="flex items-center gap-2 text-[#c93b2b] font-bold text-[12px]">
+                          <AlertTriangle className="size-4" />
+                          <span>
+                            Score Difference exceeds 20 Marks ({adminMarksData.score_difference}{' '}
+                            marks)! 3rd Examiner Required.
+                          </span>
+                        </div>
+                        {(isHOD || isCoordinator || isAdmin) && (
+                          <div className="flex items-center gap-2 pt-1">
+                            <Select value={selectedThirdId} onValueChange={setSelectedThirdId}>
+                              <SelectTrigger className="h-9 text-xs bg-[#ffffff]">
+                                <SelectValue placeholder="Select 3rd Examiner" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {supervisorsList.map((u) => (
+                                  <SelectItem key={u.id} value={String(u.id)}>
+                                    {u.full_name || u.email} ({u.role})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              size="sm"
+                              disabled={!selectedThirdId || assigningThird}
+                              onClick={async () => {
+                                if (!selectedPaper || !selectedThirdId) return
+                                const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                                if (!token) return
+                                setAssigningThird(true)
+                                try {
+                                  await apiAssignThirdExaminer(
+                                    selectedPaper.id,
+                                    Number(selectedThirdId),
+                                    token,
+                                  )
+                                  const updated = await apiGetAdminExaminationMarks(
+                                    selectedPaper.id,
+                                    token,
+                                  )
+                                  setAdminMarksData(updated)
+                                  setSelectedThirdId('')
+                                  await loadAll()
+                                } catch (err) {
+                                  setReviewError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Failed to assign 3rd examiner',
+                                  )
+                                } finally {
+                                  setAssigningThird(false)
+                                }
+                              }}
+                            >
+                              {assigningThird ? 'Assigning...' : 'Assign 3rd Examiner'}
+                            </Button>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            Per regulation rules, when the difference between examiner scores exceeds 20 marks, a 3rd examiner must evaluate the work. The final score will be the average of all 3 scores.
-                          </p>
-                          {(isHOD || isCoordinator || isAdmin) && (
-                            <div className="flex items-center gap-2 pt-1">
-                              <Select value={selectedThirdId} onValueChange={setSelectedThirdId}>
-                                <SelectTrigger className="h-8 text-xs bg-background">
-                                  <SelectValue placeholder="Select 3rd Examiner" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {supervisorsList.map((u) => (
-                                    <SelectItem key={u.id} value={String(u.id)}>
-                                      {u.full_name || u.email} ({u.role})
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <Button
-                                size="sm"
-                                variant="default"
-                                className="h-8 text-xs shrink-0"
-                                disabled={!selectedThirdId || assigningThird}
-                                onClick={async () => {
-                                  if (!selectedPaper || !selectedThirdId) return
-                                  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                                  if (!token) return
-                                  setAssigningThird(true)
-                                  try {
-                                    await apiAssignThirdExaminer(selectedPaper.id, Number(selectedThirdId), token)
-                                    const updated = await apiGetAdminExaminationMarks(selectedPaper.id, token)
-                                    setAdminMarksData(updated)
-                                    setSelectedThirdId('')
-                                    await loadAll()
-                                  } catch (err) {
-                                    setReviewError(err instanceof Error ? err.message : 'Failed to assign 3rd examiner')
-                                  } finally {
-                                    setAssigningThird(false)
-                                  }
-                                }}
-                              >
-                                {assigningThird ? 'Assigning...' : 'Assign 3rd Examiner'}
-                              </Button>
-                            </div>
-                          )}
+                        )}
+                      </div>
+                    )}
+
+                    {((selectedPaper.status === 'phase5_pending_coordinator' &&
+                      (isCoordinator || isAdmin)) ||
+                      (selectedPaper.status === 'phase5_pending_hod' && (isHOD || isAdmin))) && (
+                      <div className="space-y-3 pt-2">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="final-sig-comments">Approval / Revision Comments</Label>
+                          <Textarea
+                            id="final-sig-comments"
+                            rows={3}
+                            value={reviewComments}
+                            onChange={(e) => setReviewComments(e.target.value)}
+                            placeholder="Add comments or instructions..."
+                          />
                         </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ONLYOFFICE & Download Tools Panel for Dual Sign-off */}
-                  <div className="bg-background border border-primary/20 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                      <FileEdit className="size-4" />
-                      ONLYOFFICE In-App Inspection & Verification Tools
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Inspect the student's corrected thesis in ONLYOFFICE Word before final sign-off, or view the compiled examiner feedback document:
-                    </p>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=paper`, '_blank')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow transition-colors cursor-pointer border border-emerald-500"
-                      >
-                        <FileEdit className="size-3.5 text-white" />
-                        📝 View Student's Corrected Thesis (ONLYOFFICE Word)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => window.open(`/editor?paperId=${selectedPaper.id}&type=comments`, '_blank')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white shadow-sm transition-all cursor-pointer hover:opacity-90"
-                        style={{ background: 'linear-gradient(135deg, #5D6EC7, #7c3aed)', color: '#ffffff', border: '1px solid #5D6EC7' }}
-                      >
-                        <MessageSquare className="size-3.5 text-purple-200" />
-                        💬 View Examiners' Comments Document (ONLYOFFICE Word)
-                      </button>
-                      {(selectedPaper as any).file_path && (
-                        <button
-                          type="button"
-                          onClick={() => void handleDownloadPaper(selectedPaper.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white shadow-sm transition-all cursor-pointer hover:opacity-90"
-                          style={{ background: 'linear-gradient(135deg, #1e3f6d, #2a528a)', color: '#ffffff', border: '1px solid #1e3f6d' }}
-                        >
-                          <Download className="size-3.5 text-blue-200" />
-                          📥 Download Corrected File
-                        </button>
-                      )}
-                    </div>
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            variant="outline"
+                            onClick={async () => {
+                              const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                              if (!token) return
+                              setSubmittingReview(true)
+                              try {
+                                if (isCoordinator) {
+                                  await apiCoordinatorApproveCorrections(
+                                    selectedPaper.id,
+                                    'revise',
+                                    reviewComments || 'Revision requested by Coordinator',
+                                    token,
+                                  )
+                                } else {
+                                  await apiHodApproveCorrections(
+                                    selectedPaper.id,
+                                    'revise',
+                                    reviewComments || 'Revision requested by HOD',
+                                    token,
+                                  )
+                                }
+                                setDialogOpen(false)
+                                setSelectedPaper(null)
+                                await loadAll()
+                              } catch (err) {
+                                setReviewError(
+                                  err instanceof Error ? err.message : 'Submission failed',
+                                )
+                              } finally {
+                                setSubmittingReview(false)
+                              }
+                            }}
+                            disabled={submittingReview}
+                          >
+                            Request Revisions
+                          </Button>
+                          <Button
+                            onClick={async () => {
+                              const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+                              if (!token) return
+                              setSubmittingReview(true)
+                              try {
+                                if (isCoordinator) {
+                                  await apiCoordinatorApproveCorrections(
+                                    selectedPaper.id,
+                                    'approved',
+                                    reviewComments,
+                                    token,
+                                  )
+                                } else {
+                                  await apiHodApproveCorrections(
+                                    selectedPaper.id,
+                                    'approved',
+                                    reviewComments,
+                                    token,
+                                  )
+                                }
+                                setDialogOpen(false)
+                                setSelectedPaper(null)
+                                await loadAll()
+                              } catch (err) {
+                                setReviewError(
+                                  err instanceof Error ? err.message : 'Approval failed',
+                                )
+                              } finally {
+                                setSubmittingReview(false)
+                              }
+                            }}
+                            disabled={submittingReview}
+                          >
+                            {submittingReview
+                              ? 'Signing...'
+                              : isCoordinator
+                              ? 'Sign as Project Coordinator'
+                              : 'Sign & Approve Final Work (HOD)'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                )}
 
-                  {((selectedPaper.status === 'phase5_pending_coordinator' && (isCoordinator || isAdmin)) ||
-                    (selectedPaper.status === 'phase5_pending_hod' && (isHOD || isAdmin))) ? (
-                    <div className="space-y-4 pt-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="final-sig-comments">Approval/Revision Comments</Label>
-                        <Textarea 
-                          id="final-sig-comments"
-                          rows={3}
-                          value={reviewComments} 
-                          onChange={(e) => setReviewComments(e.target.value)} 
-                          placeholder="Add comments or instructions..."
-                        />
-                      </div>
-                      {reviewError && (
-                        <p className="text-xs text-destructive">{reviewError}</p>
-                      )}
-                      <div className="flex gap-2 justify-end">
-                        <Button 
-                          variant="outline"
-                          onClick={async () => {
-                            const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                            if (!token) return
-                            setSubmittingReview(true)
-                            try {
-                              if (isCoordinator) {
-                                await apiCoordinatorApproveCorrections(selectedPaper.id, 'revise', reviewComments || 'Revision requested by Project Coordinator', token)
-                              } else {
-                                await apiHodApproveCorrections(selectedPaper.id, 'revise', reviewComments || 'Revision requested by HOD', token)
-                              }
-                              setDialogOpen(false)
-                              setSelectedPaper(null)
-                              await loadAll()
-                            } catch (err) {
-                              setReviewError(err instanceof Error ? err.message : 'Submission failed')
-                            } finally {
-                              setSubmittingReview(false)
-                            }
-                          }} 
-                          disabled={submittingReview}
-                          className="text-orange-600 border-orange-200 hover:bg-orange-50"
-                        >
-                          Request Revisions
-                        </Button>
-                        <Button 
-                          onClick={async () => {
-                            const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-                            if (!token) return
-                            setSubmittingReview(true)
-                            try {
-                              if (isCoordinator) {
-                                await apiCoordinatorApproveCorrections(selectedPaper.id, 'approved', reviewComments, token)
-                              } else {
-                                await apiHodApproveCorrections(selectedPaper.id, 'approved', reviewComments, token)
-                              }
-                              setDialogOpen(false)
-                              setSelectedPaper(null)
-                              await loadAll()
-                            } catch (err) {
-                              setReviewError(err instanceof Error ? err.message : 'Approval failed')
-                            } finally {
-                              setSubmittingReview(false)
-                            }
-                          }} 
-                          disabled={submittingReview}
-                        >
-                          {submittingReview ? 'Signing...' : isCoordinator ? 'Sign as Project Coordinator' : 'Sign & Approve Final Work (HOD)'}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 p-3 rounded-lg">
-                      Awaiting sign-off signatures from Supervisor, Project Coordinator, and HOD.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {(!selectedPaper.status.startsWith('phase') || isLibrarian || selectedPaper.status === 'phase5_approved_for_library') && (
+              {(!selectedPaper.status.startsWith('phase') ||
+                isLibrarian ||
+                selectedPaper.status === 'phase5_approved_for_library') && (
                 <div className="space-y-4">
                   {isLibrarian ? (
-                    <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 space-y-2">
-                      <h4 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5 m-0">
+                    <div className="p-4 rounded-xl border border-[#eaece4] bg-[#fafbf8] space-y-1.5">
+                      <h4 className="text-[14px] font-bold text-[#3b7a57] flex items-center gap-1.5 m-0">
                         <CheckCircle className="size-4" />
                         Final Publication to GIMPA Public Repository Catalog
                       </h4>
-                      <p className="text-xs text-slate-300 m-0 leading-relaxed">
-                        This thesis has successfully completed all previous stages (Proposal Approval, Chapter Reviews, External & Internal Marking, Post-Exam Corrections, and Dual HOD / Coordinator Sign-off). Publishing will convert the submission to official PDF, assign a DOI, and make it publicly discoverable in the catalog.
+                      <p className="text-[12px] text-[#6e746b] m-0 leading-relaxed">
+                        Publishing will convert the submission to official PDF, assign a repository DOI, and make it discoverable in the public catalog.
                       </p>
                     </div>
                   ) : (
-                    <div>
+                    <div className="space-y-1.5">
                       <Label htmlFor="decision">Review Decision</Label>
                       <Select value={reviewDecision} onValueChange={setReviewDecision}>
                         <SelectTrigger>
@@ -2328,11 +2328,17 @@ export function ApprovalWorkflow() {
                     </div>
                   )}
 
-                  <div>
-                    <Label htmlFor="comments">{isLibrarian ? 'Publication / Archival Notes (Optional)' : 'Review Comments'}</Label>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="comments">
+                      {isLibrarian ? 'Publication / Archival Notes (Optional)' : 'Review Comments'}
+                    </Label>
                     <Textarea
                       id="comments"
-                      placeholder={isLibrarian ? 'Optional notes regarding publication or archiving...' : 'Provide detailed feedback for the author...'}
+                      placeholder={
+                        isLibrarian
+                          ? 'Optional notes regarding publication...'
+                          : 'Provide detailed feedback for the author...'
+                      }
                       rows={4}
                       value={reviewComments}
                       onChange={(e) => setReviewComments(e.target.value)}
@@ -2341,7 +2347,7 @@ export function ApprovalWorkflow() {
 
                   <div className="flex justify-end gap-2">
                     {reviewError && (
-                      <p className="mr-auto text-sm text-destructive">{reviewError}</p>
+                      <p className="mr-auto text-[13px] text-[#c93b2b]">{reviewError}</p>
                     )}
                     <Button variant="outline" onClick={handleCancel}>
                       Cancel
@@ -2349,9 +2355,12 @@ export function ApprovalWorkflow() {
                     <Button
                       onClick={() => void handleReview()}
                       disabled={(!reviewDecision && !isLibrarian) || submittingReview}
-                      className={isLibrarian ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold' : ''}
                     >
-                      {submittingReview ? 'Publishing...' : isLibrarian ? '🏛️ Publish Work to Public Catalog & Assign DOI' : 'Submit Review'}
+                      {submittingReview
+                        ? 'Publishing...'
+                        : isLibrarian
+                        ? 'Publish Work to Public Catalog'
+                        : 'Submit Review'}
                     </Button>
                   </div>
                 </div>
@@ -2369,24 +2378,42 @@ export function ApprovalWorkflow() {
           examinerName={user?.name || user?.email || 'Nana Assyne'}
           examinerRole={activeExaminerRole}
           onSaveReport={async (totalScore, comments, docxFile) => {
-            const isUserInternal = activeExaminerRole === 'Internal Examiner' || (!roles.includes('external_examiner') && selectedPaper.internal_examiner_id === user?.id)
-            const isUserExternal = activeExaminerRole === 'External Examiner' || roles.includes('external_examiner') || selectedPaper.external_examiner_id === user?.id
+            const isUserInternal =
+              activeExaminerRole === 'Internal Examiner' ||
+              (!roles.includes('external_examiner') &&
+                selectedPaper.internal_examiner_id === user?.id)
+            const isUserExternal =
+              activeExaminerRole === 'External Examiner' ||
+              roles.includes('external_examiner') ||
+              selectedPaper.external_examiner_id === user?.id
             const token = localStorage.getItem(ACCESS_TOKEN_KEY)
             if (!token) return
 
-            await apiUploadResults(selectedPaper.id, {
-              internalScore: isUserInternal ? totalScore : (selectedPaper.internal_score ?? undefined),
-              externalScore: isUserExternal ? totalScore : (selectedPaper.external_score ?? undefined),
-              examinerCorrections: comments,
-              file: docxFile,
-            }, token)
+            await apiUploadResults(
+              selectedPaper.id,
+              {
+                internalScore: isUserInternal
+                  ? totalScore
+                  : selectedPaper.internal_score ?? undefined,
+                externalScore: isUserExternal
+                  ? totalScore
+                  : selectedPaper.external_score ?? undefined,
+                examinerCorrections: comments,
+                file: docxFile,
+              },
+              token,
+            )
 
-            await apiSubmitExaminerGrading(selectedPaper.id, {
-              score: totalScore,
-              recommendation: 'Pass',
-              general_comments: comments,
-              file: docxFile,
-            }, token)
+            await apiSubmitExaminerGrading(
+              selectedPaper.id,
+              {
+                score: totalScore,
+                recommendation: 'Pass',
+                general_comments: comments,
+                file: docxFile,
+              },
+              token,
+            )
 
             await loadAll()
             setSelectedPaper((prev) =>
@@ -2398,7 +2425,7 @@ export function ApprovalWorkflow() {
                     examiner_result_file_name: docxFile.name,
                     examiner_corrections: comments,
                   }
-                : null
+                : null,
             )
           }}
         />

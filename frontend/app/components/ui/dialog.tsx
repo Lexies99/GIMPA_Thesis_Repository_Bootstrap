@@ -61,7 +61,7 @@ DialogTrigger.displayName = "DialogTrigger"
 const DialogContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, children, ...props }, ref) => {
+>(({ className, children, style, ...props }, ref) => {
   const { open, setOpen } = useDialogContext()
 
   if (!open) return null
@@ -69,26 +69,46 @@ const DialogContent = React.forwardRef<
   return (
     <>
       <div
-        className="fixed inset-0 z-50 backdrop-blur-sm"
-        style={{backgroundColor:'rgba(0,0,0,0.5)'}}
+        className="fixed inset-0 z-50"
+        style={{ backgroundColor: "rgba(90, 101, 82, 0.58)" }}
         onClick={() => setOpen(false)}
       />
       <div
         ref={ref}
         className={`fixed left-[50%] top-[50%] z-50 grid w-full ${
-          (className || '').includes('max-w-') ? '' : 'max-w-lg'
+          (className || "").includes("max-w-") ? "" : "max-w-lg"
         } ${
-          (className || '').includes('max-h-') ? '' : 'max-h-[90vh]'
+          (className || "").includes("max-h-") ? "" : "max-h-[90vh]"
         } ${
-          (className || '').includes('overflow-') ? '' : 'overflow-y-auto'
-        } translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg sm:rounded-lg ${className || ""}`}
+          (className || "").includes("overflow-") ? "" : "overflow-y-auto"
+        } translate-x-[-50%] translate-y-[-50%] gap-5 border p-8 shadow-2xl rounded-2xl ${className || ""}`}
         style={{
-          backgroundColor: 'var(--bg-card)',
-          borderColor: 'var(--border-color)',
-          color: 'var(--text-main)',
+          backgroundColor: "#ffffff",
+          borderColor: "#eaece4",
+          color: "#1a1d1a",
+          ...style,
         }}
         {...props}
       >
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Close modal"
+          style={{
+            position: "absolute",
+            top: 24,
+            right: 24,
+            background: "transparent",
+            border: "none",
+            fontSize: 20,
+            lineHeight: 1,
+            color: "#3c443a",
+            cursor: "pointer",
+            padding: 4,
+          }}
+        >
+          ✕
+        </button>
         {children}
       </div>
     </>
@@ -98,7 +118,7 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = "DialogContent"
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={`flex flex-col space-y-1.5 text-center sm:text-left ${className || ""}`} {...props} />
+  <div className={`flex flex-col space-y-1.5 text-left pr-8 ${className || ""}`} {...props} />
 )
 DialogHeader.displayName = "DialogHeader"
 
@@ -106,7 +126,12 @@ const DialogTitle = React.forwardRef<
   HTMLHeadingElement,
   React.HTMLAttributes<HTMLHeadingElement>
 >(({ className, ...props }, ref) => (
-  <h2 ref={ref} className={`text-lg font-semibold leading-none tracking-tight ${className || ""}`} {...props} />
+  <h2
+    ref={ref}
+    className={`text-2xl font-bold leading-tight tracking-tight ${className || ""}`}
+    style={{ color: "#1a1d1a" }}
+    {...props}
+  />
 ))
 DialogTitle.displayName = "DialogTitle"
 
@@ -114,7 +139,12 @@ const DialogDescription = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLParagraphElement>
 >(({ className, ...props }, ref) => (
-  <p ref={ref} className={`text-sm text-muted-foreground ${className || ""}`} {...props} />
+  <p
+    ref={ref}
+    className={`text-sm ${className || ""}`}
+    style={{ color: "#6e766b" }}
+    {...props}
+  />
 ))
 DialogDescription.displayName = "DialogDescription"
 

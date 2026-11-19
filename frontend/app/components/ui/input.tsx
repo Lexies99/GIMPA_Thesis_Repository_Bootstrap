@@ -11,21 +11,21 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const paddingClass = hasP
       ? ""
       : hasPl && hasPr
-      ? "py-2"
+      ? "py-2.5"
       : hasPl
-      ? "pr-3 py-2"
+      ? "pr-3.5 py-2.5"
       : hasPr
-      ? "pl-3 py-2"
-      : "px-3 py-2"
+      ? "pl-3.5 py-2.5"
+      : "px-3.5 py-2.5"
 
     return (
       <input
         type={type}
-        className={`flex h-10 w-full rounded-md border text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 ${paddingClass} ${className}`}
+        className={`flex h-11 w-full rounded-lg border text-sm placeholder:text-[#9aa196] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${paddingClass} ${className}`}
         style={{
-          backgroundColor: "var(--bg-input)",
-          borderColor: "var(--border-color)",
-          color: "var(--text-main)",
+          backgroundColor: "#ffffff",
+          borderColor: "#e2e5dc",
+          color: "#1a1d1a",
           ...style,
         }}
         ref={ref}

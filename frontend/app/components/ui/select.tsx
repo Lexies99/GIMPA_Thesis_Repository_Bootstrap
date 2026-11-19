@@ -11,11 +11,11 @@ const Select = ({ value, onValueChange, children, className, style, ...props }: 
     <select
       value={value}
       onChange={(e) => onValueChange(e.target.value)}
-      className={`flex h-10 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 ${className || ""}`}
+      className={`flex h-11 w-full rounded-lg border px-3.5 py-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${className || ""}`}
       style={{
-        backgroundColor: "var(--bg-input)",
-        borderColor: "var(--border-color)",
-        color: "var(--text-main)",
+        backgroundColor: "#ffffff",
+        borderColor: "#e2e5dc",
+        color: "#1a1d1a",
         ...style,
       }}
       {...props}

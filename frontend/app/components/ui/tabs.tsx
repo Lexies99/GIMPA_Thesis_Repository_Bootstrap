@@ -49,12 +49,12 @@ const useTabsContext = () => {
 interface TabsListProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 const TabsList = React.forwardRef<HTMLDivElement, TabsListProps>(
-  ({ className, ...props }, ref) => (
+  ({ className, style, ...props }, ref) => (
     <div
       ref={ref}
       role="tablist"
-      className={`inline-flex h-10 items-center justify-center rounded-md p-1 ${className || ""}`}
-      style={{backgroundColor:'var(--bg-input)',color:'var(--text-muted)',border:'1px solid var(--border-color)'}}
+      className={`flex flex-wrap items-center gap-2.5 ${className || ""}`}
+      style={{ backgroundColor: "transparent", border: "none", padding: 0, ...style }}
       {...props}
     />
   )
@@ -66,7 +66,7 @@ interface TabsTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonElement>
 }
 
 const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
-  ({ className, value, onClick, ...props }, ref) => {
+  ({ className, value, onClick, style, ...props }, ref) => {
     const { value: activeValue, onValueChange } = useTabsContext()
     const isActive = activeValue === value
 
@@ -80,12 +80,13 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
           onValueChange(value)
           onClick?.(e)
         }}
-        className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
-          isActive
-            ? "bg-purple-600 text-white shadow-sm font-semibold"
-            : "hover:text-purple-400"
-        } ${className || ""}`}
-        style={!isActive ? {color:'var(--text-muted)'} : undefined}
+        className={`inline-flex items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-xs sm:text-sm font-semibold transition-all focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 ${className || ""}`}
+        style={{
+          backgroundColor: isActive ? "#5a6552" : "#e6eedc",
+          color: isActive ? "#ffffff" : "#263021",
+          border: "none",
+          ...style,
+        }}
         {...props}
       />
     )
@@ -105,7 +106,7 @@ const TabsContent = React.forwardRef<HTMLDivElement, TabsContentProps>(
       <div
         ref={ref}
         role="tabpanel"
-        className={`mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${className || ""}`}
+        className={`mt-6 focus-visible:outline-none ${className || ""}`}
         {...props}
       />
     ) : null

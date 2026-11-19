@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { Input } from '../ui/input'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
@@ -29,7 +28,7 @@ export function SearchDiscovery() {
   const [papers, setPapers] = useState<ApiPaper[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const resultsPerPage = 6
+  const resultsPerPage = 10
 
   const SCHOOL_DISCIPLINE_MAP: Record<string, string[]> = {
     'Business School': [
@@ -50,7 +49,7 @@ export function SearchDiscovery() {
     ],
   }
   const disciplines = Array.from(new Set(Object.values(SCHOOL_DISCIPLINE_MAP).flat()))
-  const years = ['2024', '2023', '2022', '2021', '2020']
+  const years = ['2026', '2025', '2024', '2023', '2022', '2021', '2020']
   const schools = [
     'Business School',
     'School of Public Service and Governance',
@@ -186,31 +185,103 @@ export function SearchDiscovery() {
   const activeFilterCount = Object.values(activeFilters).flat().length
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-4">
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          background: '#fff', border: '1.5px solid #e2e8f0',
-          borderRadius: 10, padding: '0 14px',
-          boxShadow: '0 1px 4px rgba(42,82,138,0.06)',
-        }}>
-          <Search style={{ width: 16, height: 16, color: '#94a3b8', flexShrink: 0 }} />
-          <input
-            type="text"
-            placeholder="Search papers, authors, keywords..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              flex: 1, width: '100%', border: 'none', outline: 'none',
-              background: 'transparent', fontSize: 14, color: '#1e293b',
-              padding: '12px 0', fontFamily: 'Inter, sans-serif',
-            }}
-          />
+    <div className="space-y-8">
+      {/* ── PAGE TITLE & ACTION BAR (Matches FinPlanner Image 3 & 8) ── */}
+      <div className="space-y-5">
+        <h1 className="text-[32px] font-bold tracking-tight text-[#1a1d1a] leading-tight">
+          Search & Discovery
+        </h1>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* View Mode Toggle (Matches Image 8 left chart/grid toggle) */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`h-9 px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-semibold transition-colors cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-[#5a6552] text-white'
+                  : 'bg-[#e6eedc] text-[#1a1d1a] hover:bg-[#dce7d0]'
+              }`}
+            >
+              <List className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`h-9 px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-semibold transition-colors cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-[#5a6552] text-white'
+                  : 'bg-[#e6eedc] text-[#1a1d1a] hover:bg-[#dce7d0]'
+              }`}
+            >
+              <Grid3x3 className="size-4" />
+            </button>
+          </div>
+
+          {/* Rounded pill search bar */}
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <input
+              type="text"
+              placeholder="Search papers, authors, keywords..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-9 pl-4 pr-10 rounded-full border border-[#e2e5dc] bg-white text-[13px] text-[#1a1d1a] placeholder:text-[#8c9489] focus:outline-none focus:border-[#5a6552]"
+            />
+            <Search className="size-4 text-[#6e766b] absolute right-3.5 top-1/2 -translate-y-1/2" />
+          </div>
+
+          {/* Sort dropdown */}
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="h-9 text-xs w-44 rounded-full bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="relevance">Sort: Relevance</SelectItem>
+              <SelectItem value="newest">Sort: Newest</SelectItem>
+              <SelectItem value="citations">Sort: Most Cited</SelectItem>
+              <SelectItem value="downloads">Sort: Most Downloaded</SelectItem>
+              <SelectItem value="views">Sort: Most Viewed</SelectItem>
+              <SelectItem value="highest-rated">Sort: Highest Rated</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Save Search Button */}
+          <Dialog open={showSaveSearch} onOpenChange={setShowSaveSearch}>
+            <DialogTrigger className="h-9 px-4 rounded-lg bg-[#dce7d0] hover:bg-[#ceddc0] text-[#1a1d1a] text-[12px] font-bold transition-colors cursor-pointer">
+              + Save search
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Save current search</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <Input
+                  placeholder="Search name (e.g., 'Public Policy 2026')"
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
+                />
+                <Button onClick={saveCurrentSearch} className="w-full">
+                  Save
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="h-9 px-4 rounded-lg bg-[#5a6552] text-white text-[12px] font-semibold flex items-center gap-1.5 cursor-pointer"
+            >
+              <X className="size-3.5" /> Clear ({activeFilterCount})
+            </button>
+          )}
         </div>
 
         {savedSearches.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <span className="text-sm text-muted-foreground">Saved searches:</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[12px] text-[#6e766b]">Saved searches:</span>
             {savedSearches.map((search, idx) => (
               <Button key={idx} size="sm" variant="outline" onClick={() => loadSearch(search)}>
                 {search.name}
@@ -220,251 +291,230 @@ export function SearchDiscovery() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-1">
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '16px', boxShadow: '0 1px 6px rgba(42,82,138,0.06)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Filter style={{ width: 14, height: 14, color: '#5D6EC7' }} />
-                Filters
-              </h3>
-              {activeFilterCount > 0 && (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  style={{ fontSize: 11, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 4, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}
-                >
-                  <X style={{ width: 12, height: 12 }} /> Clear
-                </button>
-              )}
+      {/* ── MAIN LAYOUT: LEFT FILTER CARD + RIGHT RESULTS ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Left Facet Card */}
+        <div className="lg:col-span-4 xl:col-span-3">
+          <div className="fp-card space-y-6">
+            <div className="flex items-center justify-between border-b border-[#eaece4] pb-3.5">
+              <div className="text-[15px] font-bold text-[#1a1d1a] flex items-center gap-2">
+                <Filter className="size-4 text-[#5a6552]" />
+                <span>Filters</span>
+              </div>
+              <span className="text-[12px] font-semibold px-2.5 py-0.5 rounded-full bg-[#e6eedc] text-[#263021]">
+                {papers.length} found
+              </span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {/* Discipline Filter */}
-              <div>
-                <h4 style={{ margin: '0 0 10px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#2A528A' }}>Discipline</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
-                  {visibleDisciplines.map((d) => (
-                    <label key={d} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: '#475569', lineHeight: 1.4 }}>
-                      <input
-                        type="checkbox"
-                        checked={activeFilters.discipline?.includes(d) || false}
-                        onChange={() => toggleFilter('discipline', d)}
-                        style={{ marginTop: 2, accentColor: '#5D6EC7', flexShrink: 0, width: 14, height: 14 }}
-                      />
-                      <span>{d}</span>
-                    </label>
-                  ))}
-                </div>
+            {/* School Filter */}
+            <div className="space-y-2.5">
+              <div className="text-[11px] font-bold text-[#6e766b] uppercase tracking-wider px-1">
+                School
               </div>
-
-              {/* School Filter */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
-                <h4 style={{ margin: '0 0 10px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#2A528A' }}>School</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {schools.map((u) => (
-                    <label key={u} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: '#475569', lineHeight: 1.4 }}>
+              <div className="flex flex-col gap-1.5">
+                {schools.map((u) => {
+                  const isChecked = activeFilters.university?.includes(u) || false
+                  return (
+                    <label
+                      key={u}
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border transition-colors cursor-pointer text-[13px] leading-snug ${
+                        isChecked
+                          ? 'bg-[#e6eedc]/70 border-[#c9d8b6] text-[#1a1d1a] font-semibold'
+                          : 'bg-[#ffffff] border-[#eaece4] text-[#1a1d1a] hover:bg-[#f4f6f0]'
+                      }`}
+                    >
                       <input
                         type="checkbox"
-                        checked={activeFilters.university?.includes(u) || false}
+                        checked={isChecked}
                         onChange={() => toggleFilter('university', u)}
-                        style={{ marginTop: 2, accentColor: '#5D6EC7', flexShrink: 0, width: 14, height: 14 }}
+                        className="mt-0.5 size-4 shrink-0 rounded border-[#c5c9be] accent-[#5a6552] cursor-pointer"
                       />
-                      <span>{u}</span>
+                      <span className="flex-1">{u}</span>
                     </label>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
+            </div>
 
-              {/* Year Filter */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
-                <h4 style={{ margin: '0 0 10px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#2A528A' }}>Year</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {years.map((y) => (
-                    <label key={y} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: '#475569' }}>
+            {/* Discipline Filter */}
+            <div className="space-y-2.5 pt-4 border-t border-[#eaece4]">
+              <div className="text-[11px] font-bold text-[#6e766b] uppercase tracking-wider px-1">
+                Discipline
+              </div>
+              <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto pr-1">
+                {visibleDisciplines.map((d) => {
+                  const isChecked = activeFilters.discipline?.includes(d) || false
+                  return (
+                    <label
+                      key={d}
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border transition-colors cursor-pointer text-[13px] leading-snug ${
+                        isChecked
+                          ? 'bg-[#e6eedc]/70 border-[#c9d8b6] text-[#1a1d1a] font-semibold'
+                          : 'bg-[#ffffff] border-[#eaece4] text-[#1a1d1a] hover:bg-[#f4f6f0]'
+                      }`}
+                    >
                       <input
                         type="checkbox"
-                        checked={activeFilters.year?.includes(y) || false}
+                        checked={isChecked}
+                        onChange={() => toggleFilter('discipline', d)}
+                        className="mt-0.5 size-4 shrink-0 rounded border-[#c5c9be] accent-[#5a6552] cursor-pointer"
+                      />
+                      <span className="flex-1">{d}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Year Filter */}
+            <div className="space-y-2.5 pt-4 border-t border-[#eaece4]">
+              <div className="text-[11px] font-bold text-[#6e766b] uppercase tracking-wider px-1">
+                Year
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {years.map((y) => {
+                  const isChecked = activeFilters.year?.includes(y) || false
+                  return (
+                    <label
+                      key={y}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border transition-colors cursor-pointer text-[13px] ${
+                        isChecked
+                          ? 'bg-[#e6eedc]/70 border-[#c9d8b6] text-[#1a1d1a] font-semibold'
+                          : 'bg-[#ffffff] border-[#eaece4] text-[#1a1d1a] hover:bg-[#f4f6f0]'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
                         onChange={() => toggleFilter('year', y)}
-                        style={{ accentColor: '#5D6EC7', width: 14, height: 14 }}
+                        className="size-4 shrink-0 rounded border-[#c5c9be] accent-[#5a6552] cursor-pointer"
                       />
                       <span>{y}</span>
                     </label>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="lg:col-span-3 space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <p className="text-sm text-muted-foreground">Found {papers.length} results</p>
-              <Dialog open={showSaveSearch} onOpenChange={setShowSaveSearch}>
-                <DialogTrigger
-                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors h-9 px-3 border"
-                  style={{backgroundColor:'var(--bg-card)',borderColor:'var(--border-color)',color:'var(--text-sub)'}}
-                >
-                  Save Search
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Save Current Search</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <Input
-                      placeholder="Search name (e.g., 'AI Healthcare 2024')"
-                      value={searchName}
-                      onChange={(e) => setSearchName(e.target.value)}
-                    />
-                    <Button onClick={saveCurrentSearch} className="w-full">
-                      Save Search
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1 rounded-lg border p-0.5" style={{backgroundColor:'var(--bg-input)',borderColor:'var(--border-color)'}}>
-                <button
-                  className="p-1.5 rounded-md transition-colors"
-                  style={viewMode === 'list'
-                    ? {backgroundColor:'#2A528A',color:'#fff'}
-                    : {backgroundColor:'transparent',color:'var(--text-muted)'}}
-                  onClick={() => setViewMode('list')}
-                  title="List view"
-                >
-                  <List className="h-4 w-4" />
-                </button>
-                <button
-                  className="p-1.5 rounded-md transition-colors"
-                  style={viewMode === 'grid'
-                    ? {backgroundColor:'#2A528A',color:'#fff'}
-                    : {backgroundColor:'transparent',color:'var(--text-muted)'}}
-                  onClick={() => setViewMode('grid')}
-                  title="Grid view"
-                >
-                  <Grid3x3 className="h-4 w-4" />
-                </button>
-              </div>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="relevance">Relevance</SelectItem>
-                  <SelectItem value="newest">Newest</SelectItem>
-                  <SelectItem value="citations">Most Cited</SelectItem>
-                  <SelectItem value="downloads">Most Downloaded</SelectItem>
-                  <SelectItem value="views">Most Viewed</SelectItem>
-                  <SelectItem value="highest-rated">Highest Rated</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
+        {/* Right Results Area */}
+        <div className="lg:col-span-8 xl:col-span-9 space-y-6">
           {loading ? (
-            <Card>
-              <CardContent className="pt-6 text-center text-muted-foreground">Loading search results...</CardContent>
-            </Card>
+            <div className="fp-card py-16 text-center text-[#6e766b]">
+              Loading search results...
+            </div>
           ) : error ? (
-            <Card>
-              <CardContent className="pt-6 text-center text-destructive">{error}</CardContent>
-            </Card>
+            <div className="fp-card py-12 text-center text-[#c93b2b]">
+              {error}
+            </div>
+          ) : paginatedPapers.length === 0 ? (
+            <div className="fp-card py-16 text-center text-[#6e766b]">
+              No matching theses found. Try adjusting your search query or filters.
+            </div>
           ) : viewMode === 'list' ? (
-            <div className="space-y-3">
-              {paginatedPapers.map((paper) => (
-                <Card key={paper.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="pt-6">
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-base mb-2 line-clamp-2 hover:text-primary cursor-pointer" onClick={() => navigate(`/paper/${paper.id}`)}>{paper.title}</h3>
-                        <p className="text-sm text-muted-foreground mb-1">by {paper.authors.map((a) => a.name).join(', ') || 'Unknown Author'}</p>
-                        <p className="text-xs text-muted-foreground mb-2 line-clamp-2">{paper.abstract || 'No abstract available.'}</p>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
-                          <span className="flex items-center gap-1">
-                            <Eye className="h-3 w-3" /> {paper.views.toLocaleString()}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Download className="h-3 w-3" /> {paper.downloads.toLocaleString()}
-                          </span>
-                          <span>Citations: {paper.citations}</span>
+            <div className="overflow-x-auto">
+              <table className="fp-table">
+                <thead>
+                  <tr>
+                    <th>Year</th>
+                    <th>Metrics</th>
+                    <th>Thesis Title</th>
+                    <th>Author</th>
+                    <th>Discipline</th>
+                    <th className="text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedPapers.map((paper, idx) => (
+                    <tr key={paper.id} className="cursor-pointer" onClick={() => navigate(`/paper/${paper.id}`)}>
+                      <td>{paper.year}</td>
+                      <td className="font-semibold text-[#3b7a57]">
+                        +{paper.views} views
+                      </td>
+                      <td className="max-w-sm">
+                        <div className="font-semibold text-[#1a1d1a] truncate">{paper.title}</div>
+                        <div className="text-[12px] text-[#6e766b] truncate">{paper.abstract}</div>
+                      </td>
+                      <td>{paper.authors.map((a) => a.name).join(', ') || 'Scholar'}</td>
+                      <td>
+                        <Badge variant={idx % 2 === 1 ? 'secondary' : 'default'}>
+                          {paper.discipline || 'General'}
+                        </Badge>
+                      </td>
+                      <td className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant={bookmarked.has(paper.id) ? 'olive' : 'outline'}
+                            onClick={() => toggleBookmark(paper.id)}
+                          >
+                            <Bookmark className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => void handleDownload(paper.id)}
+                            disabled={!isAuthenticated || user?.role === 'guest'}
+                          >
+                            <Download className="size-3.5" />
+                          </Button>
                         </div>
-                        <div className="flex gap-2 flex-wrap">
-                          <Badge variant="outline" className="text-xs">{paper.year}</Badge>
-                          <Badge variant="outline" className="text-xs">{paper.discipline || 'General'}</Badge>
-                          <Badge variant="outline" className="text-xs">{paper.university || 'Unknown School'}</Badge>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 flex-shrink-0">
-                        <Button
-                          size="sm"
-                          variant={bookmarked.has(paper.id) ? 'default' : 'outline'}
-                          onClick={() => toggleBookmark(paper.id)}
-                          title="Bookmark"
-                        >
-                          <Bookmark className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          title={isAuthenticated && user?.role !== 'guest' ? 'Download' : 'Login to download'}
-                          onClick={() => void handleDownload(paper.id)}
-                          disabled={!isAuthenticated || user?.role === 'guest'}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {paginatedPapers.map((paper) => (
-                <Card key={paper.id} className="hover:shadow-md transition-shadow flex flex-col">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm line-clamp-2 hover:text-primary cursor-pointer" onClick={() => navigate(`/paper/${paper.id}`)}>{paper.title}</CardTitle>
-                    <CardDescription className="text-xs">{paper.authors.map((a) => a.name).join(', ') || 'Unknown Author'}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pb-3 flex-1 space-y-3">
-                    <p className="text-xs text-muted-foreground line-clamp-2">{paper.abstract || 'No abstract available.'}</p>
-                    <div className="flex gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-xs">{paper.year}</Badge>
-                      <Badge variant="outline" className="text-xs">{paper.discipline || 'General'}</Badge>
+                <div key={paper.id} className="fp-card flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Badge variant="default">{paper.discipline || 'General'}</Badge>
+                      <span className="text-[12px] font-semibold text-[#6e766b]">{paper.year}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Eye className="h-3 w-3" /> {(paper.views / 1000).toFixed(1)}K
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Download className="h-3 w-3" /> {paper.downloads}
-                      </div>
-                      <div>Cite: {paper.citations}</div>
+                    <h3
+                      className="text-[16px] font-bold text-[#1a1d1a] line-clamp-2 hover:underline cursor-pointer"
+                      onClick={() => navigate(`/paper/${paper.id}`)}
+                    >
+                      {paper.title}
+                    </h3>
+                    <p className="text-[13px] text-[#6e766b]">
+                      {paper.authors.map((a) => a.name).join(', ') || 'Unknown Author'}
+                    </p>
+                    <p className="text-[13px] text-[#6e766b] line-clamp-2">
+                      {paper.abstract || 'No abstract available.'}
+                    </p>
+                  </div>
+
+                  <div className="pt-3 border-t border-[#eaece4] flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-[12px] text-[#6e766b]">
+                      <span className="font-semibold text-[#3b7a57] flex items-center gap-1">
+                        <Eye className="size-3.5" /> {paper.views}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Download className="size-3.5" /> {paper.downloads}
+                      </span>
                     </div>
-                    <div className="flex gap-2 pt-2">
+                    <div className="flex items-center gap-2">
                       <Button
                         size="sm"
-                        variant={bookmarked.has(paper.id) ? 'default' : 'outline'}
+                        variant={bookmarked.has(paper.id) ? 'olive' : 'outline'}
                         onClick={() => toggleBookmark(paper.id)}
-                        className="flex-1"
                       >
-                        <Bookmark className="h-3 w-3" />
+                        <Bookmark className="size-3.5" />
                       </Button>
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="flex-1"
                         onClick={() => void handleDownload(paper.id)}
                         disabled={!isAuthenticated || user?.role === 'guest'}
                       >
-                        <Download className="h-3 w-3" />
+                        <Download className="size-3.5 mr-1" /> PDF
                       </Button>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -476,7 +526,7 @@ export function SearchDiscovery() {
               </Button>
               <div className="flex items-center gap-1">
                 {Array.from({ length: totalPages }).map((_, i) => (
-                  <Button key={i} size="sm" variant={currentPage === i ? 'default' : 'outline'} onClick={() => setCurrentPage(i)} className="min-w-8">
+                  <Button key={i} size="sm" variant={currentPage === i ? 'olive' : 'outline'} onClick={() => setCurrentPage(i)} className="min-w-8">
                     {i + 1}
                   </Button>
                 ))}

@@ -2,11 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { Route } from "./+types/home";
 import { PublicCatalog } from '../components/library/PublicCatalog';
-import { UserAccount } from '../components/library/UserAccount';
 import { LibraryStats } from '../components/library/LibraryStats';
 import { ApprovalWorkflow } from '../components/library/ApprovalWorkflow';
 import { SearchDiscovery } from '../components/library/SearchDiscovery';
-import { DocumentUpload } from '../components/library/DocumentUpload';
 import { Dashboard } from '../components/library/Dashboard';
 import { AccountManagement } from '../components/library/AccountManagement';
 import { Profile } from '../components/library/Profile';
@@ -14,25 +12,22 @@ import { PhdHub } from '../components/library/PhdHub';
 import { useAuth } from '../context/AuthContext';
 import {
   Book,
-  Users,
   BookOpen,
   Settings,
   BarChart3,
-  Library,
   Upload,
   Search,
   LogOut,
   User,
   Bell,
-  PanelLeftClose,
-  PanelLeftOpen,
   LogIn,
   Menu,
   X,
   GraduationCap,
+  Building2,
+  Globe,
+  HelpCircle,
 } from 'lucide-react';
-import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
 import { apiGetPendingPapers, apiGetNotifications, apiMarkNotificationRead, type ApiNotification } from '../lib/api';
 
 export function meta({}: Route.MetaArgs) {
@@ -67,12 +62,6 @@ export default function Home() {
     }
   }, []);
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('gimpa_sidebar_collapsed') === 'true';
-    }
-    return false;
-  });
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
 
@@ -89,23 +78,14 @@ export default function Home() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Always force light theme to match clean professional design
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'light');
     localStorage.setItem('gimpa_theme', 'light');
   }, []);
 
-  const toggleSidebar = () => {
-    setSidebarCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem('gimpa_sidebar_collapsed', String(next));
-      return next;
-    });
-  };
-
   const hasRole = (role: string) => !!user && (user.role === role || (user.roles || []).includes(role as typeof user.role));
   const roleLabel = (() => {
-    if (!user) return '';
+    if (!user) return 'Public Guest';
     if (hasRole('system_admin')) return 'System Admin';
     if (hasRole('deputy_rector')) return 'Deputy Rector';
     if (hasRole('head_library')) return 'Head Librarian';
@@ -116,6 +96,7 @@ export default function Home() {
     if (hasRole('project_supervisor')) return 'Project Supervisor';
     if (hasRole('lecturer')) return 'Lecturer';
     if (user.role === 'student' || user.role === 'member') return 'Student';
+    if (user.role === 'guest') return 'Public Guest';
     return user.role;
   })();
 
@@ -128,10 +109,8 @@ export default function Home() {
     (user?.role === 'student' || user?.role === 'member') &&
     (Boolean(user?.program && (user.program.toLowerCase().includes('phd') || user.program.toLowerCase().includes('doctor'))));
 
-  // PhD Hub: strictly forbidden for Librarian; accessible to System Admin, Deputy Rector, Academic Leadership, Supervisors, and PhD students.
   const canViewPhdHub = !isLibrarian && (isSystemAdmin || isDeputyRector || isAcademicLeadership || isSupervisorRole || isPhdStudent);
 
-  // Reviewer for Approval Workflow:
   const isReviewer =
     !user?.mustChangePassword &&
     (isLibrarian || isAcademicLeadership || isSupervisorRole || isSystemAdmin || isDeputyRector);
@@ -161,7 +140,6 @@ export default function Home() {
     }
   };
 
-  // Safety redirect if user switches roles or opens a tab they do not have rights to view
   useEffect(() => {
     if (activeTab === 'phd' && !canViewPhdHub) {
       setActiveTab('dashboard');
@@ -215,486 +193,456 @@ export default function Home() {
     } catch {}
   };
 
-  // Nav items
   const navItems = ([
-    { tab: 'catalog',   label: 'Catalog',           icon: Book,          show: true },
-    { tab: 'search',    label: 'Search & Discovery', icon: Search,        show: true },
-    { tab: 'dashboard', label: 'Dashboard',          icon: BarChart3,     show: isAuthenticated && user?.role !== 'guest' },
-    { tab: 'phd',       label: 'PhD Hub',            icon: GraduationCap, show: canViewPhdHub },
-    { tab: 'approval',  label: 'Approval Workflow',  icon: BookOpen,      show: isReviewer,            badge: overdueCount > 0 ? overdueCount : null },
-    { tab: 'librarian', label: 'Administration',     icon: Settings,      show: isAdministrationUser },
+    { tab: 'dashboard', label: 'Dashboard & Reports', icon: BarChart3,     show: isAuthenticated && user?.role !== 'guest' },
+    { tab: 'catalog',   label: 'Catalog',             icon: Book,          show: true },
+    { tab: 'search',    label: 'Search & Discovery',  icon: Search,        show: true },
+    { tab: 'approval',  label: 'Approval Workflow',   icon: BookOpen,      show: isReviewer, badge: overdueCount > 0 ? overdueCount : null },
+    { tab: 'phd',       label: 'PhD Hub',             icon: GraduationCap, show: canViewPhdHub },
+    { tab: 'librarian', label: 'Schools and users',   icon: Building2,     show: isAdministrationUser },
+    { tab: 'profile',   label: 'My Profile',          icon: User,          show: isAuthenticated && user?.role !== 'guest' },
   ] as Array<{tab:string;label:string;icon:React.ElementType;show:boolean|undefined;badge?:number|null}>).filter(item => item.show);
 
-  const isSidebarExpanded = isMobile ? true : !sidebarCollapsed;
-
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f0f4f8', fontFamily: "'Inter', 'Outfit', sans-serif" }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#ffffff', fontFamily: "'Outfit', 'Inter', sans-serif" }}>
 
-      {/* ─── MOBILE BACKDROP ───────────────────────────────────────── */}
-      <div
-        onClick={() => setMobileDrawerOpen(false)}
-        className={`gimpa-mobile-backdrop ${mobileDrawerOpen ? 'open' : ''}`}
-      />
-
-      {/* ─── LEFT SIDEBAR ─────────────────────────────────────────── */}
-      <aside
-        className={`gimpa-sidebar ${mobileDrawerOpen ? 'open' : ''}`}
+      {/* ─── FULL-WIDTH FINPLANNER SAGE TOP HEADER ────────────────────── */}
+      <header
+        className="gimpa-header"
         style={{
-          width: sidebarCollapsed ? '72px' : '240px',
-          minHeight: '100vh',
-          background: 'linear-gradient(180deg, #2A528A 0%, #1e3f6d 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '4px 0 24px rgba(42,82,138,0.18)',
-          overflowX: 'hidden',
-        }}
-      >
-        {/* Brand Header */}
-        <div style={{
-          padding: '18px 14px 14px',
-          borderBottom: '1px solid rgba(255,255,255,0.10)',
+          background: '#d8e5c7',
+          borderBottom: '1px solid #c9d8b6',
+          padding: isMobile ? '0 16px' : '0 36px',
+          height: 64,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: sidebarCollapsed ? 'center' : 'space-between',
-          gap: 8,
-          minHeight: 64,
-        }}>
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 60,
+        }}
+      >
+        {/* Left: Brand Emblem + Name */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             type="button"
-            onClick={() => handleTabChange('catalog')}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', flex: 1, minWidth: 0 }}
-            title="GIMPA Thesis Repository"
+            onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+            className="gimpa-mobile-menu-btn"
+            style={{
+              background: 'rgba(26,29,26,0.08)',
+              border: 'none',
+              borderRadius: 8,
+              width: 36,
+              height: 36,
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: '#1a1d1a',
+            }}
+            title="Toggle Menu"
           >
-            <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Library style={{ width: 18, height: 18, color: '#fff' }} />
-            </div>
-            <div style={{ textAlign: 'left', overflow: 'hidden' }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.02em', lineHeight: 1.2 }}>GIMPA</div>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#E9D498', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>Thesis Repo</div>
-            </div>
+            {mobileDrawerOpen ? <X style={{ width: 20, height: 20 }} /> : <Menu style={{ width: 20, height: 20 }} />}
           </button>
 
           <button
             type="button"
-            onClick={toggleSidebar}
-            className="gimpa-desktop-collapse-btn"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', padding: 4, borderRadius: 6, flexShrink: 0 }}
-            title={sidebarCollapsed ? "Expand" : "Collapse"}
+            onClick={() => handleTabChange(isAuthenticated && user?.role !== 'guest' ? 'dashboard' : 'catalog')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+            }}
           >
-            {sidebarCollapsed ? <PanelLeftOpen style={{ width: 16, height: 16 }} /> : <PanelLeftClose style={{ width: 16, height: 16 }} />}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setMobileDrawerOpen(false)}
-            className="gimpa-mobile-close-btn"
-            style={{ background: 'rgba(255,255,255,0.12)', border: 'none', cursor: 'pointer', color: '#fff', width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}
-            title="Close Menu"
-          >
-            <X style={{ width: 18, height: 18 }} />
+            <div style={{
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              border: '2px solid #1a1d1a',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#1a1d1a',
+            }}>
+              <Globe style={{ width: 18, height: 18, strokeWidth: 2.2 }} />
+            </div>
+            <span style={{
+              fontSize: 17,
+              fontWeight: 600,
+              color: '#1a1d1a',
+              letterSpacing: '-0.01em',
+            }}>
+              GIMPA Repository
+            </span>
           </button>
         </div>
 
-        {/* Navigation Items */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 10px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {isSidebarExpanded && (
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.40)', padding: '0 8px', marginBottom: 6, marginTop: 0 }}>
-              Navigation
-            </p>
+        {/* Right: Clean Minimal Outline Icons + Primary Action */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 18 }}>
+          {/* Submit Proposal Pill (Students) */}
+          {user && isAuthenticated && (user.role === 'student' || user.role === 'member') && (
+            <button
+              type="button"
+              onClick={() => navigate('/submit-proposal')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: isMobile ? '7px 12px' : '8px 16px',
+                background: '#5a6552',
+                border: 'none',
+                borderRadius: 8,
+                color: '#ffffff',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <Upload style={{ width: 14, height: 14 }} />
+              <span>{isMobile ? '+ Submit' : '+ Submit Proposal'}</span>
+            </button>
           )}
 
-          {navItems.map(({ tab, label, icon: Icon, badge }) => {
-            const isActive = activeTab === tab;
-            return (
+          {/* Profile Icon */}
+          {user && isAuthenticated && user.role !== 'guest' && (
+            <button
+              type="button"
+              onClick={() => handleTabChange('profile')}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 6,
+                cursor: 'pointer',
+                color: '#1a1d1a',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: activeTab === 'profile' ? 1 : 0.8,
+              }}
+              title="My Profile"
+            >
+              <User style={{ width: 21, height: 21, strokeWidth: 1.9 }} />
+            </button>
+          )}
+
+          {/* Notifications / Help Icon */}
+          {user && isAuthenticated && user.role !== 'guest' ? (
+            <div style={{ position: 'relative' }}>
               <button
-                key={tab}
                 type="button"
-                onClick={() => handleTabChange(tab)}
-                title={label}
+                onClick={() => setShowNotifications(prev => !prev)}
                 style={{
-                  width: '100%',
+                  background: 'none',
+                  border: 'none',
+                  padding: 6,
+                  cursor: 'pointer',
+                  color: '#1a1d1a',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: isSidebarExpanded ? 'space-between' : 'center',
-                  padding: isSidebarExpanded ? '9px 10px' : '10px',
-                  borderRadius: 9,
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: isActive ? 'rgba(255,255,255,0.16)' : 'transparent',
-                  color: isActive ? '#fff' : 'rgba(255,255,255,0.75)',
-                  fontWeight: isActive ? 600 : 400,
-                  fontSize: 13,
-                  textAlign: 'left',
-                  transition: 'background 0.15s, color 0.15s',
+                  justifyContent: 'center',
                   position: 'relative',
                 }}
-                onMouseEnter={e => {
-                  if (!isActive) {
-                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)';
-                    (e.currentTarget as HTMLButtonElement).style.color = '#fff';
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (!isActive) {
-                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                    (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.75)';
-                  }
-                }}
+                title="Notifications"
               >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {isActive && (
-                    <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: 2, background: '#E9D498' }} />
-                  )}
-                  <Icon style={{ width: 16, height: 16, flexShrink: 0 }} />
-                  {isSidebarExpanded && <span>{label}</span>}
-                </span>
-                {badge != null && badge > 0 && (
-                  <span style={{ background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', lineHeight: 1.5 }}>
-                    {badge}
+                <Bell style={{ width: 21, height: 21, strokeWidth: 1.9 }} />
+                {unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: 2,
+                    right: 2,
+                    minWidth: 16,
+                    height: 16,
+                    borderRadius: 999,
+                    background: '#5a6552',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 4px',
+                  }}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
               </button>
-            );
-          })}
 
-          {/* Account section */}
-          {isAuthenticated && user?.role !== 'guest' && (
-            <>
-              {isSidebarExpanded && (
-                <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.40)', padding: '0 8px', marginTop: 20, marginBottom: 6 }}>
-                  Account
-                </p>
-              )}
-              {!isSidebarExpanded && <div style={{ height: 12 }} />}
-              <button
-                type="button"
-                onClick={() => handleTabChange('profile')}
-                title="My Profile"
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: isSidebarExpanded ? 'flex-start' : 'center',
-                  padding: isSidebarExpanded ? '9px 10px' : '10px',
-                  borderRadius: 9,
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: activeTab === 'profile' ? 'rgba(255,255,255,0.16)' : 'transparent',
-                  color: activeTab === 'profile' ? '#fff' : 'rgba(255,255,255,0.75)',
-                  fontWeight: activeTab === 'profile' ? 600 : 400,
-                  fontSize: 13,
-                  gap: 10,
-                  transition: 'background 0.15s',
-                  position: 'relative',
-                }}
-                onMouseEnter={e => {
-                  if (activeTab !== 'profile') {
-                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)';
-                    (e.currentTarget as HTMLButtonElement).style.color = '#fff';
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (activeTab !== 'profile') {
-                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                    (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.75)';
-                  }
-                }}
-              >
-                {activeTab === 'profile' && (
-                  <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: 2, background: '#E9D498' }} />
-                )}
-                <User style={{ width: 16, height: 16, flexShrink: 0 }} />
-                {isSidebarExpanded && <span>My Profile</span>}
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Sidebar Bottom: User Card */}
-        <div style={{ padding: '10px 10px 14px', borderTop: '1px solid rgba(255,255,255,0.10)' }}>
-          {user && isAuthenticated && user.role !== 'guest' ? (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: isSidebarExpanded ? 'space-between' : 'center',
-              gap: 8,
-              background: 'rgba(255,255,255,0.08)',
-              borderRadius: 10,
-              padding: '8px 10px',
-              border: '1px solid rgba(255,255,255,0.10)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, overflow: 'hidden' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg, #5D6EC7, #9F71DB)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-                  {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-                </div>
-                {isSidebarExpanded && (
-                  <div style={{ overflow: 'hidden' }}>
-                    <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#fff', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</p>
-                    <p style={{ margin: 0, fontSize: 10, color: '#E9D498', marginTop: 2, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleLabel}</p>
+              {showNotifications && (
+                <div style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 10px)',
+                  width: 340,
+                  maxHeight: 380,
+                  overflowY: 'auto',
+                  background: '#ffffff',
+                  border: '1px solid #eaece4',
+                  borderRadius: 14,
+                  boxShadow: '0 16px 40px rgba(40,48,36,0.14)',
+                  zIndex: 100,
+                  padding: 16,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #f2f4ee' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1d1a' }}>Notifications</span>
+                    <span style={{ fontSize: 11, background: '#dce7d0', color: '#1a1d1a', borderRadius: 999, padding: '2px 10px', fontWeight: 600 }}>
+                      {unreadCount} new
+                    </span>
                   </div>
-                )}
-              </div>
-              {isSidebarExpanded && (
-                <button
-                  type="button"
-                  onClick={async () => { await logout(); navigate('/login'); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.40)', padding: 4, borderRadius: 6, flexShrink: 0, transition: 'color 0.15s' }}
-                  title="Logout"
-                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = '#f87171'}
-                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.40)'}
-                >
-                  <LogOut style={{ width: 15, height: 15 }} />
-                </button>
+                  {notifications.length === 0 ? (
+                    <p style={{ fontSize: 13, color: '#6e766b', textAlign: 'center', padding: '20px 0', margin: 0 }}>No new notifications.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {notifications.map(n => (
+                        <button
+                          key={n.id}
+                          type="button"
+                          onClick={() => void handleNotificationClick(n.id)}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: n.is_read ? '#fafbf8' : '#eef3e8',
+                            borderLeft: n.is_read ? '3px solid transparent' : '3px solid #5a6552',
+                          }}
+                        >
+                          <p style={{ margin: 0, fontSize: 12.5, fontWeight: n.is_read ? 400 : 600, color: '#1a1d1a', lineHeight: 1.45 }}>{n.message}</p>
+                          <p style={{ margin: '4px 0 0', fontSize: 11, color: '#6e766b' }}>
+                            {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           ) : (
             <button
               type="button"
-              onClick={() => navigate('/login')}
+              onClick={() => handleTabChange('search')}
               style={{
-                width: '100%',
+                background: 'none',
+                border: 'none',
+                padding: 6,
+                cursor: 'pointer',
+                color: '#1a1d1a',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 8,
-                padding: '9px 14px',
-                background: 'rgba(255,255,255,0.13)',
-                border: '1px solid rgba(255,255,255,0.18)',
-                borderRadius: 9,
-                color: '#fff',
-                fontSize: 12,
+              }}
+              title="Search & Help"
+            >
+              <HelpCircle style={{ width: 21, height: 21, strokeWidth: 1.9 }} />
+            </button>
+          )}
+
+          {/* Settings / Administration Icon */}
+          {user && isAuthenticated && user.role !== 'guest' && (
+            <button
+              type="button"
+              onClick={() => handleTabChange(isAdministrationUser ? 'librarian' : 'profile')}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 6,
+                cursor: 'pointer',
+                color: '#1a1d1a',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title={isAdministrationUser ? "Administration Settings" : "Account Settings"}
+            >
+              <Settings style={{ width: 21, height: 21, strokeWidth: 1.9 }} />
+            </button>
+          )}
+
+          {/* Logout / Sign In Icon */}
+          {user && isAuthenticated && user.role !== 'guest' ? (
+            <button
+              type="button"
+              onClick={async () => { await logout(); navigate('/login'); }}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 6,
+                cursor: 'pointer',
+                color: '#1a1d1a',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title="Log out"
+            >
+              <LogOut style={{ width: 21, height: 21, strokeWidth: 1.9 }} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                background: '#5a6552',
+                border: 'none',
+                borderRadius: 8,
+                color: '#ffffff',
+                fontSize: 13,
                 fontWeight: 600,
                 cursor: 'pointer',
-                transition: 'background 0.15s',
               }}
-              onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.22)'}
-              onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.13)'}
+              title="Log in"
             >
               <LogIn style={{ width: 15, height: 15 }} />
-              {isSidebarExpanded && <span>Sign In</span>}
+              <span>Log in</span>
             </button>
           )}
         </div>
-      </aside>
+      </header>
 
-      {/* ─── MAIN CONTENT AREA ─────────────────────────────────────── */}
-      <div
-        className="gimpa-main-content"
-        style={{
-          marginLeft: sidebarCollapsed ? 72 : 240,
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: '100vh',
-          transition: 'margin-left 0.25s ease',
-          overflowX: 'hidden',
-        }}
-      >
+      {/* ─── BODY CONTAINER (SIDEBAR + MAIN WORKSPACE) ──────────────── */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 'calc(100vh - 64px)' }}>
 
-        {/* ─── TOP HEADER ─────────────────────────────────────────── */}
-        <header
-          className="gimpa-header"
+        {/* Mobile Backdrop */}
+        <div
+          onClick={() => setMobileDrawerOpen(false)}
+          className={`gimpa-mobile-backdrop ${mobileDrawerOpen ? 'open' : ''}`}
+        />
+
+        {/* ─── LEFT SIDEBAR (Soft Warm Cream #f7f8f3) ───────────────── */}
+        <aside
+          className={`gimpa-sidebar ${mobileDrawerOpen ? 'open' : ''}`}
           style={{
-            background: '#fff',
-            borderBottom: '1px solid #e2e8f0',
-            padding: '0 28px',
-            height: 60,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'sticky',
-            top: 0,
-            zIndex: 40,
-            boxShadow: '0 1px 6px rgba(42,82,138,0.06)',
-            gap: 8,
+            padding: '32px 20px',
           }}
         >
-          {/* Left: Hamburger menu (mobile) + brand / page title */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <button
-              type="button"
-              onClick={() => setMobileDrawerOpen(true)}
-              className="gimpa-mobile-menu-btn"
-              style={{
-                background: 'rgba(42,82,138,0.08)',
-                border: 'none',
-                borderRadius: 8,
-                width: 36,
-                height: 36,
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: '#2A528A',
-                flexShrink: 0,
-              }}
-              title="Open Menu"
-            >
-              <Menu style={{ width: 20, height: 20 }} />
-            </button>
-            <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg, #2A528A, #5D6EC7)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Library style={{ width: 14, height: 14, color: '#fff' }} />
-            </div>
-            <span style={{
-              fontSize: 14,
-              fontWeight: 700,
-              color: '#1e293b',
-              letterSpacing: '-0.01em',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}>
-              GIMPA Thesis Repository
-            </span>
-          </div>
-
-          {/* Right: actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
-
-            {/* Submit Proposal button (students) */}
-            {user && isAuthenticated && (user.role === 'student' || user.role === 'member') && (
-              <button
-                type="button"
-                onClick={() => navigate('/submit-proposal')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: isMobile ? '6px 10px' : '7px 14px',
-                  background: 'linear-gradient(135deg, #5D6EC7, #9F71DB)',
-                  border: 'none', borderRadius: 8,
-                  color: '#fff', fontSize: isMobile ? 11 : 12, fontWeight: 600,
-                  cursor: 'pointer', boxShadow: '0 2px 8px rgba(93,110,199,0.35)',
-                  transition: 'opacity 0.15s',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.opacity = '0.88'}
-                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.opacity = '1'}
-              >
-                <Upload style={{ width: 13, height: 13 }} />
-                <span>{isMobile ? '+ Submit' : '+ Submit Proposal'}</span>
-              </button>
-            )}
-
-            {/* Notification Bell */}
-            {user && isAuthenticated && user.role !== 'guest' && (
-              <div style={{ position: 'relative' }}>
+          {/* Navigation Links */}
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {navItems.map(({ tab, label, icon: Icon, badge }) => {
+              const isActive = activeTab === tab;
+              return (
                 <button
+                  key={tab}
                   type="button"
-                  onClick={() => setShowNotifications(prev => !prev)}
+                  onClick={() => handleTabChange(tab)}
                   style={{
-                    width: isMobile ? 34 : 38, height: isMobile ? 34 : 38, borderRadius: 9,
-                    background: '#f1f5f9', border: '1px solid #e2e8f0',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', position: 'relative', transition: 'background 0.15s',
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderRadius: 10,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: isActive ? '#dce7d0' : 'transparent',
+                    color: '#1a1d1a',
+                    fontWeight: isActive ? 600 : 400,
+                    fontSize: 14,
+                    textAlign: 'left',
+                    transition: 'background 0.15s ease',
                   }}
-                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#e2e8f0'}
-                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#f1f5f9'}
-                  title="Notifications"
+                  onMouseEnter={e => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLButtonElement).style.background = '#eef3e8';
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                    }
+                  }}
                 >
-                  <Bell style={{ width: 16, height: 16, color: '#475569' }} />
-                  {unreadCount > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Icon style={{ width: 18, height: 18, color: '#1a1d1a', strokeWidth: isActive ? 2.1 : 1.7, flexShrink: 0 }} />
+                    <span>{label}</span>
+                  </span>
+                  {badge != null && badge > 0 && (
                     <span style={{
-                      position: 'absolute', top: 2, right: 2,
-                      minWidth: 15, height: 15, borderRadius: 999,
-                      background: '#ef4444', color: '#fff',
-                      fontSize: 8, fontWeight: 700,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '0 3px', lineHeight: 1,
+                      background: '#5a6552',
+                      color: '#ffffff',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      borderRadius: 999,
+                      padding: '2px 8px',
+                      lineHeight: 1.4,
                     }}>
-                      {unreadCount > 99 ? '99+' : unreadCount}
+                      {badge}
                     </span>
                   )}
                 </button>
+              );
+            })}
+          </nav>
 
-                {showNotifications && (
-                  <div style={{
-                    position: 'absolute', right: 0, top: 'calc(100% + 8px)',
-                    width: 320, maxHeight: 340, overflowY: 'auto',
-                    background: '#fff', border: '1px solid #e2e8f0',
-                    borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-                    zIndex: 100, padding: 12,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>Notifications</span>
-                      <span style={{ fontSize: 10, background: '#ede9fe', color: '#7c3aed', borderRadius: 999, padding: '2px 8px', fontWeight: 600 }}>
-                        {unreadCount} new
-                      </span>
-                    </div>
-                    {notifications.length === 0 ? (
-                      <p style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', padding: '12px 0', margin: 0 }}>No new notifications.</p>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {notifications.map(n => (
-                          <button
-                            key={n.id}
-                            type="button"
-                            onClick={() => void handleNotificationClick(n.id)}
-                            style={{
-                              width: '100%', textAlign: 'left',
-                              padding: '9px 10px', borderRadius: 9, border: 'none', cursor: 'pointer',
-                              background: n.is_read ? '#f8fafc' : '#f0f4ff',
-                              borderLeft: n.is_read ? '3px solid transparent' : '3px solid #5D6EC7',
-                              transition: 'background 0.15s',
-                            }}
-                          >
-                            <p style={{ margin: 0, fontSize: 12, fontWeight: n.is_read ? 400 : 600, color: n.is_read ? '#64748b' : '#1e293b', lineHeight: 1.4 }}>{n.message}</p>
-                            <p style={{ margin: '4px 0 0', fontSize: 10, color: '#94a3b8' }}>
-                              {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
-                            </p>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+          {/* Bottom Summary Section (Matches FinPlanner's "Total on your accounts / €35.927") */}
+          <div style={{
+            marginTop: 32,
+            padding: '20px 8px',
+            borderTop: '1px solid #e2e5dc',
+            borderBottom: '1px solid #e2e5dc',
+          }}>
+            <div style={{ fontSize: 12, color: '#6e766b', fontWeight: 400, marginBottom: 4 }}>
+              {user && isAuthenticated && user.role !== 'guest' ? 'Active role & account' : 'Repository status'}
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1d1a', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+              {roleLabel}
+            </div>
+            {user && isAuthenticated && user.role !== 'guest' && (
+              <div style={{ fontSize: 12, color: '#5a6552', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {user.name}
               </div>
-            )}
-
-            {/* ── SIGN IN BUTTON (top-right, for unauthenticated/guest) ── */}
-            {(!isAuthenticated || user?.role === 'guest') && (
-              <button
-                type="button"
-                onClick={() => navigate('/login')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: isMobile ? '6px 12px' : '8px 18px',
-                  background: 'linear-gradient(135deg, #2A528A, #5D6EC7)',
-                  border: 'none', borderRadius: 9,
-                  color: '#fff', fontSize: isMobile ? 12 : 13, fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 10px rgba(42,82,138,0.30)',
-                  transition: 'opacity 0.15s, transform 0.15s',
-                  letterSpacing: '-0.01em',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.90'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
-              >
-                <LogIn style={{ width: 14, height: 14 }} />
-                <span>Sign In</span>
-              </button>
             )}
           </div>
-        </header>
+        </aside>
 
-        {/* ─── PAGE CONTENT ───────────────────────────────────────── */}
-        <main style={{
-          flex: 1,
-          padding: isMobile ? '16px 12px 32px' : '28px 28px 40px',
-          background: '#f0f4f8',
-          width: '100%',
-          maxWidth: '100%',
-          overflowX: 'hidden',
-        }}>
+        {/* ─── MAIN WORKSPACE CANVAS (Pure White #ffffff) ────────────── */}
+        <main
+          className="gimpa-main-content"
+          style={{
+            flex: 1,
+            padding: isMobile ? '24px 16px 40px' : '40px 52px 64px',
+            background: '#ffffff',
+            width: '100%',
+            maxWidth: '100%',
+            overflowX: 'hidden',
+          }}
+        >
           {user?.mustChangePassword && (
             <div style={{
-              marginBottom: 20, padding: '14px 18px',
-              background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 12,
-              display: 'flex', alignItems: 'center', gap: 12,
+              marginBottom: 28,
+              padding: '16px 22px',
+              background: '#fafbf8',
+              border: '1px solid #d5e1c8',
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              flexWrap: 'wrap',
             }}>
-              <Settings style={{ width: 18, height: 18, color: '#d97706', flexShrink: 0 }} />
-              <div>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#92400e' }}>First-time login — please update your password</p>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#b45309' }}>Go to <strong>My Profile → Change Password</strong> to secure your account.</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Settings style={{ width: 18, height: 18, color: '#5a6552', flexShrink: 0 }} />
+                <div>
+                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: '#1a1d1a' }}>First-time login — please update your password</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#6e766b' }}>Go to <strong>My Profile → Change Password</strong> to secure your account.</p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => handleTabChange('profile')}
+                className="btn-fp-sage"
+                style={{ padding: '8px 16px', fontSize: 12.5 }}
+              >
+                Update Password
+              </button>
             </div>
           )}
 
@@ -707,14 +655,10 @@ export default function Home() {
           {activeTab === 'profile'  && isAuthenticated && user?.role !== 'guest' && <Profile />}
           {activeTab === 'approval' && isReviewer && <ApprovalWorkflow />}
           {activeTab === 'librarian' && isAdministrationUser && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-              <div>
-                <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', marginBottom: 16 }}>Account Management &amp; Administration</h2>
-                <AccountManagement />
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
+              <AccountManagement />
               {isAdminAreaUser && (
                 <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', marginBottom: 16 }}>Library Statistics</h2>
                   <LibraryStats />
                 </div>
               )}

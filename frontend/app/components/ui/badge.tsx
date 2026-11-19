@@ -10,27 +10,27 @@ const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
       switch (variant) {
         case "outline":
           return {
-            backgroundColor: "var(--bg-input)",
-            borderColor: "var(--border-color)",
-            color: "var(--text-sub)",
+            backgroundColor: "#eef3e8",
+            borderColor: "transparent",
+            color: "#263021",
           }
         case "secondary":
           return {
-            backgroundColor: "var(--bg-subtle)",
-            borderColor: "var(--border-color)",
-            color: "var(--text-muted)",
+            backgroundColor: "#5a6552",
+            borderColor: "transparent",
+            color: "#ffffff",
           }
         case "destructive":
           return {
-            backgroundColor: "#ef4444",
+            backgroundColor: "#f9e2de",
             borderColor: "transparent",
-            color: "#ffffff",
+            color: "#a82819",
           }
         default:
           return {
-            backgroundColor: "#8b5cf6",
+            backgroundColor: "#dce7d0",
             borderColor: "transparent",
-            color: "#ffffff",
+            color: "#1a1d1a",
           }
       }
     }
@@ -38,7 +38,7 @@ const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
     return (
       <div
         ref={ref}
-        className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors ${className || ""}`}
+        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors ${className || ""}`}
         style={{ ...getStyle(), ...style }}
         {...props}
       />

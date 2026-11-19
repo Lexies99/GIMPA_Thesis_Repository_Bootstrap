@@ -6,10 +6,25 @@ import { Input } from '../ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Badge } from '../ui/badge'
 import {
-  FileSpreadsheet, Download, Filter, GraduationCap, Users, UserCheck, BookOpen,
-  Loader2, Eye, RefreshCw, AlertCircle, Layers
+  FileSpreadsheet,
+  Download,
+  Filter,
+  GraduationCap,
+  Users,
+  UserCheck,
+  Loader2,
+  Eye,
+  RefreshCw,
+  AlertCircle,
+  Layers,
 } from 'lucide-react'
-import { apiExportAcademicReport, apiGetReportPreview, apiListUsers, type ApiUser, type ApiReportPreviewRow } from '../../lib/api'
+import {
+  apiExportAcademicReport,
+  apiGetReportPreview,
+  apiListUsers,
+  type ApiUser,
+  type ApiReportPreviewRow,
+} from '../../lib/api'
 
 interface ReportExportModalProps {
   open: boolean
@@ -73,12 +88,9 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
         setLecturers(lecs)
         setStudents(studs)
       })
-      .catch((err) => {
-        console.error('Failed to load users for filter:', err)
-      })
+      .catch(() => {})
   }, [open])
 
-  // Extract distinct available programs
   const availablePrograms = useMemo(() => {
     const progs = new Set<string>(DEFAULT_PROGRAMMES)
     students.forEach((s) => {
@@ -142,7 +154,6 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
     }
   }, [degreeLevel, program, department, lecturerId, selectedStudentId, statusFilter])
 
-  // Automatically load preview on modal open and whenever any filter changes
   useEffect(() => {
     if (open) {
       void handlePreview()
@@ -182,7 +193,7 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
       a.remove()
       URL.revokeObjectURL(url)
 
-      setSuccess(`✓ Successfully downloaded ${filename}!`)
+      setSuccess(`Successfully downloaded ${filename}`)
       setTimeout(() => setSuccess(''), 4000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to export report')
@@ -210,46 +221,38 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <div className="flex items-center gap-2 text-primary">
-            <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
-              <FileSpreadsheet className="size-5 text-primary" />
-            </div>
-            <div>
-              <DialogTitle className="text-lg font-bold">Academic Evaluation &amp; Reports Hub</DialogTitle>
-              <DialogDescription className="text-xs">
-                Filter and preview student thesis assessments by programme, then export as Excel or CSV.
-              </DialogDescription>
-            </div>
-          </div>
+          <DialogTitle>Academic Evaluation & Reports Hub</DialogTitle>
+          <DialogDescription>
+            Filter and preview student thesis assessments by programme, then export as Excel or CSV.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 pt-2">
+        <div className="space-y-5 pt-2">
           {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+            <div className="p-3 rounded-lg bg-[#fbeae8] text-[12px] text-[#c93b2b] font-semibold">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
+            <div className="p-3 rounded-lg bg-[#e6eedc] text-[12px] text-[#3b7a57] font-semibold">
               {success}
             </div>
           )}
 
           {/* Filter Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 p-4 rounded-xl border bg-muted/30">
-            {/* Filter 1: Academic Programme */}
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-              <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
-                <Layers className="size-3.5 text-purple-600" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5 rounded-xl border border-[#eaece4] bg-[#fafbf8]">
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Layers className="size-3.5 text-[#5a6552]" />
                 Academic Programme
               </Label>
               <Select value={program} onValueChange={setProgram}>
-                <SelectTrigger className="text-xs h-9 bg-background border-purple-500/30 focus:ring-purple-600">
+                <SelectTrigger>
                   <SelectValue placeholder="All Programmes" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
-                  <SelectItem value="all">📚 All Programmes (All Disciplines)</SelectItem>
+                  <SelectItem value="all">All Programmes (All Disciplines)</SelectItem>
                   {availablePrograms.map((prog) => (
                     <SelectItem key={prog} value={prog}>
                       {prog}
@@ -259,68 +262,71 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
               </Select>
             </div>
 
-            {/* Filter 2: Degree Level */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
-                <GraduationCap className="size-3.5 text-primary" />
+              <Label className="flex items-center gap-1.5">
+                <GraduationCap className="size-3.5 text-[#5a6552]" />
                 Degree Level / Track
               </Label>
               <Select value={degreeLevel} onValueChange={setDegreeLevel}>
-                <SelectTrigger className="text-xs h-9 bg-background">
+                <SelectTrigger>
                   <SelectValue placeholder="All Degree Levels" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">🎓 All Degree Levels</SelectItem>
-                  <SelectItem value="bsc">📘 BSc (Bachelor of Science)</SelectItem>
-                  <SelectItem value="ba">📘 BA (Bachelor of Arts)</SelectItem>
-                  <SelectItem value="diploma">📘 Diploma</SelectItem>
-                  <SelectItem value="msc">📙 MSc (Master of Science)</SelectItem>
-                  <SelectItem value="mba">📙 MBA (Master of Business Administration)</SelectItem>
-                  <SelectItem value="ma">📙 MA (Master of Arts)</SelectItem>
-                  <SelectItem value="meng">📙 MEng (Master of Engineering)</SelectItem>
-                  <SelectItem value="mphil">📗 MPhil (Master of Philosophy)</SelectItem>
-                  <SelectItem value="phd">📕 PhD / Doctorate</SelectItem>
+                  <SelectItem value="all">All Degree Levels</SelectItem>
+                  <SelectItem value="bsc">BSc (Bachelor of Science)</SelectItem>
+                  <SelectItem value="ba">BA (Bachelor of Arts)</SelectItem>
+                  <SelectItem value="diploma">Diploma</SelectItem>
+                  <SelectItem value="msc">MSc (Master of Science)</SelectItem>
+                  <SelectItem value="mba">MBA (Master of Business Administration)</SelectItem>
+                  <SelectItem value="ma">MA (Master of Arts)</SelectItem>
+                  <SelectItem value="meng">MEng (Master of Engineering)</SelectItem>
+                  <SelectItem value="mphil">MPhil (Master of Philosophy)</SelectItem>
+                  <SelectItem value="phd">PhD / Doctorate</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Filter 3: Workflow Stage / Phase */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
-                <Filter className="size-3.5 text-primary" />
+              <Label className="flex items-center gap-1.5">
+                <Filter className="size-3.5 text-[#5a6552]" />
                 Workflow Phase / Status
               </Label>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="text-xs h-9 bg-background">
+                <SelectTrigger>
                   <SelectValue placeholder="All Stages" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">📋 All Workflow Stages</SelectItem>
+                  <SelectItem value="all">All Workflow Stages</SelectItem>
                   <SelectItem value="phase1_proposal_submitted">Phase 1: Topic Submitted</SelectItem>
-                  <SelectItem value="phase2_proposal_submitted">Phase 2: Supervisor Allocated</SelectItem>
-                  <SelectItem value="phase2_pending_supervisor">Phase 2: Proposal In Review</SelectItem>
+                  <SelectItem value="phase2_proposal_submitted">
+                    Phase 2: Supervisor Allocated
+                  </SelectItem>
+                  <SelectItem value="phase2_pending_supervisor">
+                    Phase 2: Proposal In Review
+                  </SelectItem>
                   <SelectItem value="phase3_chapters">Phase 3: Chapter Steps Progress</SelectItem>
-                  <SelectItem value="phase4_marking">Phase 4: Under Examination (Marking)</SelectItem>
+                  <SelectItem value="phase4_marking">Phase 4: Under Examination</SelectItem>
                   <SelectItem value="phase5_corrections">Phase 5: Post-Exam Corrections</SelectItem>
                   <SelectItem value="phase5_pending_coordinator">Phase 5: Final Sign-off</SelectItem>
-                  <SelectItem value="phase5_approved_for_library">Phase 5: Approved for Library</SelectItem>
+                  <SelectItem value="phase5_approved_for_library">
+                    Phase 5: Approved for Library
+                  </SelectItem>
                   <SelectItem value="approved">Phase 5: Published in Catalog</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Filter 4: Lecturer / Supervisor */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
-                <UserCheck className="size-3.5 text-primary" />
+              <Label className="flex items-center gap-1.5">
+                <UserCheck className="size-3.5 text-[#5a6552]" />
                 Lecturer / Supervisor
               </Label>
               <Select value={lecturerId} onValueChange={setLecturerId}>
-                <SelectTrigger className="text-xs h-9 bg-background">
+                <SelectTrigger>
                   <SelectValue placeholder="All Lecturers" />
                 </SelectTrigger>
                 <SelectContent className="max-h-56">
-                  <SelectItem value="all">👥 All Lecturers &amp; Supervisors</SelectItem>
+                  <SelectItem value="all">All Lecturers & Supervisors</SelectItem>
                   {lecturers.map((lec) => (
                     <SelectItem key={lec.id} value={String(lec.id)}>
                       {lec.full_name} ({lec.email})
@@ -330,36 +336,34 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
               </Select>
             </div>
 
-            {/* Filter 5: Individual Student Selector */}
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs font-semibold flex items-center justify-between text-foreground">
+              <Label className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <Users className="size-3.5 text-primary" />
+                  <Users className="size-3.5 text-[#5a6552]" />
                   Individual Student Filter (Optional)
                 </span>
                 {selectedStudentId !== 'all' && (
                   <button
                     type="button"
                     onClick={() => setSelectedStudentId('all')}
-                    className="text-[11px] text-primary hover:underline cursor-pointer"
+                    className="text-[11px] text-[#3b7a57] hover:underline cursor-pointer"
                   >
                     Clear Student Selection
                   </button>
                 )}
               </Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Input
                   placeholder="Search student by name or index..."
                   value={studentSearch}
                   onChange={(e) => setStudentSearch(e.target.value)}
-                  className="text-xs h-9 bg-background"
                 />
                 <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
-                  <SelectTrigger className="text-xs h-9 bg-background">
+                  <SelectTrigger>
                     <SelectValue placeholder="Choose specific student" />
                   </SelectTrigger>
                   <SelectContent className="max-h-56">
-                    <SelectItem value="all">🎓 All Students (Batch Report)</SelectItem>
+                    <SelectItem value="all">All Students (Batch Report)</SelectItem>
                     {filteredStudents.slice(0, 50).map((stu) => (
                       <SelectItem key={stu.id} value={String(stu.id)}>
                         {stu.full_name} ({stu.school_id || stu.email})
@@ -371,49 +375,31 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
             </div>
           </div>
 
-          {/* Active Filter Summary Tags */}
-          <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-muted-foreground font-medium">Applied Filters:</span>
-            {program !== 'all' && (
-              <Badge variant="outline" className="text-[11px] font-semibold bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400">
-                Programme: <strong className="ml-1">{program}</strong>
-              </Badge>
-            )}
-            <Badge variant="outline" className="text-[11px] font-normal">
-              Degree: <strong className="ml-1 uppercase">{degreeLevel}</strong>
-            </Badge>
-            <Badge variant="outline" className="text-[11px] font-normal">
-              Stage: <strong className="ml-1">{statusFilter.replace(/_/g, ' ')}</strong>
-            </Badge>
-            {lecturerId !== 'all' && (
-              <Badge variant="outline" className="text-[11px] font-normal">
-                Lecturer: <strong className="ml-1">{lecturers.find((l) => String(l.id) === lecturerId)?.full_name || lecturerId}</strong>
-              </Badge>
-            )}
-            {selectedStudentId !== 'all' && (
-              <Badge variant="outline" className="text-[11px] font-normal bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400">
-                Student: <strong className="ml-1">{students.find((s) => String(s.id) === selectedStudentId)?.full_name || selectedStudentId}</strong>
-              </Badge>
-            )}
+          {/* Active Filters */}
+          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+            <span className="text-[#6e746b] font-medium">Applied Filters:</span>
+            {program !== 'all' && <Badge variant="default">Programme: {program}</Badge>}
+            <Badge variant="outline">Degree: {degreeLevel.toUpperCase()}</Badge>
+            <Badge variant="outline">Stage: {statusFilter.replace(/_/g, ' ')}</Badge>
             <Button
               variant="ghost"
               size="sm"
               onClick={handleResetFilters}
-              className="h-6 text-[11px] text-muted-foreground hover:text-foreground ml-auto"
+              className="ml-auto text-[12px]"
             >
               Reset Filters
             </Button>
           </div>
 
-          {/* Preview Section */}
-          <div className="rounded-xl border overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 bg-muted/40 border-b">
+          {/* Preview Table */}
+          <div className="rounded-xl border border-[#eaece4] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-[#fafbf8] border-b border-[#eaece4]">
               <div className="flex items-center gap-2">
-                <Eye className="size-3.5 text-primary" />
-                <span className="text-xs font-semibold text-foreground">
+                <Eye className="size-4 text-[#5a6552]" />
+                <span className="text-[13px] font-bold text-[#1a1d1a]">
                   Data Preview
                   {previewLoaded && (
-                    <span className="ml-2 text-purple-700 dark:text-purple-400 font-bold">
+                    <span className="ml-2 text-[#3b7a57] font-bold">
                       — {previewRows.length} record{previewRows.length !== 1 ? 's' : ''} found
                     </span>
                   )}
@@ -424,68 +410,69 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
                 variant="outline"
                 onClick={() => void handlePreview()}
                 disabled={previewing}
-                className="h-7 text-[11px] flex items-center gap-1.5 px-3"
               >
                 {previewing ? (
-                  <Loader2 className="size-3 animate-spin" />
+                  <Loader2 className="size-3.5 animate-spin mr-1.5" />
                 ) : (
-                  <RefreshCw className="size-3" />
+                  <RefreshCw className="size-3.5 mr-1.5" />
                 )}
-                {previewing ? 'Loading...' : 'Refresh Preview'}
+                Refresh Preview
               </Button>
             </div>
 
-            {/* Preview body */}
-            <div className="min-h-[120px] max-h-64 overflow-auto">
+            <div className="min-h-[120px] max-h-64 overflow-auto bg-[#ffffff]">
               {previewError && (
-                <div className="flex items-center gap-2 p-4 text-xs text-destructive">
-                  <AlertCircle className="size-4 flex-shrink-0" />
+                <div className="flex items-center gap-2 p-4 text-[12px] text-[#c93b2b]">
+                  <AlertCircle className="size-4 shrink-0" />
                   {previewError}
                 </div>
               )}
               {previewing && (
-                <div className="flex items-center justify-center h-28 gap-2 text-xs text-muted-foreground">
+                <div className="flex items-center justify-center h-28 gap-2 text-[13px] text-[#6e746b]">
                   <Loader2 className="size-4 animate-spin" />
                   Fetching report data...
                 </div>
               )}
               {previewLoaded && !previewing && previewRows.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-28 text-xs text-muted-foreground gap-1">
-                  <AlertCircle className="size-5 opacity-40" />
+                <div className="flex flex-col items-center justify-center h-28 text-[13px] text-[#6e746b] gap-1">
                   <span>No records match the selected filters.</span>
                 </div>
               )}
               {previewLoaded && !previewing && previewRows.length > 0 && (
-                <table className="w-full text-[11px] border-collapse">
-                  <thead className="sticky top-0 bg-muted/90 backdrop-blur z-10">
+                <table className="fp-table">
+                  <thead>
                     <tr>
-                      {['#', 'Index No.', 'Student Name', 'Programme', 'Degree', 'Supervisor', 'Status', 'Grade', 'Submitted'].map((h) => (
-                        <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap border-b">
-                          {h}
-                        </th>
+                      {[
+                        '#',
+                        'Index No.',
+                        'Student Name',
+                        'Programme',
+                        'Degree',
+                        'Supervisor',
+                        'Status',
+                        'Grade',
+                        'Submitted',
+                      ].map((h) => (
+                        <th key={h}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {previewRows.map((row, i) => (
-                      <tr key={i} className={i % 2 === 0 ? 'bg-background' : 'bg-muted/20'}>
-                        <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
-                        <td className="px-3 py-2 font-mono">{row.index_number}</td>
-                        <td className="px-3 py-2 font-medium max-w-[140px] truncate" title={row.student_name}>{row.student_name}</td>
-                        <td className="px-3 py-2 max-w-[140px] truncate font-medium text-purple-700 dark:text-purple-300" title={row.program}>{row.program}</td>
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          <Badge variant="outline" className="text-[10px] font-normal">{row.degree_level}</Badge>
+                      <tr key={i}>
+                        <td className="text-[#6e746b]">{i + 1}</td>
+                        <td className="font-mono text-[12px]">{row.index_number}</td>
+                        <td className="font-semibold text-[#1a1d1a]">{row.student_name}</td>
+                        <td>{row.program}</td>
+                        <td>
+                          <Badge variant="outline">{row.degree_level}</Badge>
                         </td>
-                        <td className="px-3 py-2 max-w-[120px] truncate" title={row.supervisor}>{row.supervisor}</td>
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          <span className="inline-block px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium">
-                            {statusLabel(row.status)}
-                          </span>
+                        <td>{row.supervisor}</td>
+                        <td>
+                          <Badge variant="default">{statusLabel(row.status)}</Badge>
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-emerald-600 dark:text-emerald-400 font-medium">
-                          {row.final_grade || '—'}
-                        </td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{row.submission_date}</td>
+                        <td className="font-bold text-[#3b7a57]">{row.final_grade || '—'}</td>
+                        <td className="text-[#6e746b]">{row.submission_date}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -494,33 +481,23 @@ export function ReportExportModal({ open, onOpenChange }: ReportExportModalProps
             </div>
           </div>
 
-          {/* Download Action Buttons */}
-          <div className="pt-2 flex flex-col sm:flex-row items-center justify-end gap-2 border-t">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-              className="w-full sm:w-auto text-xs"
-            >
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-end gap-2.5 border-t border-[#eaece4]">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
               Close
             </Button>
             <Button
               variant="outline"
-              size="sm"
               onClick={() => void handleDownload('csv')}
               disabled={downloading !== null}
-              className="w-full sm:w-auto text-xs flex items-center gap-1.5"
             >
-              {downloading === 'csv' ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+              <Download className="size-3.5 mr-1.5" />
               Export CSV (.csv)
             </Button>
             <Button
-              size="sm"
               onClick={() => void handleDownload('xlsx')}
               disabled={downloading !== null}
-              className="w-full sm:w-auto text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-sm"
             >
-              {downloading === 'xlsx' ? <Loader2 className="size-3.5 animate-spin" /> : <FileSpreadsheet className="size-3.5" />}
+              <FileSpreadsheet className="size-3.5 mr-1.5" />
               Download Master Excel Report (.xlsx)
             </Button>
           </div>
