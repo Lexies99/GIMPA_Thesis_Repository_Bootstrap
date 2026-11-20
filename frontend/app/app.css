@@ -351,14 +351,13 @@ button, .btn {
 }
 
 /* ── Dialogs / Modals (Images 2 & 10) ──────────────────── */
-[role="dialog"] > div,
+[role="dialog"],
 [data-state="open"][role="dialog"] {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-color) !important;
   border-radius: 16px !important;
   color: var(--text-main) !important;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28) !important;
-  padding: 32px !important;
 }
 
 /* ── Headings ──────────────────────────────────────────── */

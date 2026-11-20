@@ -1,4 +1,5 @@
 import * as React from "react"
+import { X } from "lucide-react"
 
 interface DialogContextType {
   open: boolean
@@ -83,7 +84,7 @@ const DialogContent = React.forwardRef<
           (className || "").includes("max-h-") ? "" : "max-h-[90vh]"
         } ${
           (className || "").includes("overflow-") ? "" : "overflow-y-auto"
-        } translate-x-[-50%] translate-y-[-50%] gap-5 border p-8 shadow-2xl rounded-2xl ${className || ""}`}
+        } translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 sm:p-7 shadow-2xl rounded-2xl ${className || ""}`}
         style={{
           backgroundColor: "var(--bg-card)",
           borderColor: "var(--border-color)",
@@ -96,20 +97,14 @@ const DialogContent = React.forwardRef<
           type="button"
           onClick={() => setOpen(false)}
           aria-label="Close modal"
+          className="absolute top-5 right-5 size-8 rounded-lg flex items-center justify-center border transition-colors cursor-pointer"
           style={{
-            position: "absolute",
-            top: 24,
-            right: 24,
-            background: "transparent",
-            border: "none",
-            fontSize: 20,
-            lineHeight: 1,
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            padding: 4,
+            backgroundColor: "var(--bg-subtle)",
+            borderColor: "var(--border-color)",
+            color: "var(--text-main)",
           }}
         >
-          ✕
+          <X className="size-4" />
         </button>
         {children}
       </div>
@@ -120,7 +115,7 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = "DialogContent"
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={`flex flex-col space-y-1.5 text-left pr-8 ${className || ""}`} {...props} />
+  <div className={`flex flex-col space-y-1 text-left pr-10 ${className || ""}`} {...props} />
 )
 DialogHeader.displayName = "DialogHeader"
 
@@ -130,7 +125,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h2
     ref={ref}
-    className={`text-2xl font-bold leading-tight tracking-tight ${className || ""}`}
+    className={`text-xl font-bold leading-8 tracking-tight m-0 ${className || ""}`}
     style={{ color: "var(--text-main)" }}
     {...props}
   />
@@ -143,7 +138,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={`text-sm ${className || ""}`}
+    className={`text-sm m-0 ${className || ""}`}
     style={{ color: "var(--text-muted)" }}
     {...props}
   />
