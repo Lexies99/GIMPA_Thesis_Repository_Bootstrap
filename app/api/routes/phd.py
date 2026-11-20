@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.user_role import UserRole
 from app.models.student import Student
 from app.models.paper import Paper
+from app.models.base import Base
 from app.models.phd_system import (
     PhDSupervisionLog,
     PhDSeminar,
@@ -17,6 +18,8 @@ from app.models.phd_system import (
     PhDTeachingRequirement,
     PhDProgressEvaluation,
     PhDReaccreditationFolder,
+    PhDCourseworkRecord,
+    PhDProgressionPipeline,
 )
 from app.schemas.phd import (
     PhDSupervisionLogCreate,
@@ -31,12 +34,43 @@ from app.schemas.phd import (
     PhDProgressEvaluationRead,
     PhDReaccreditationFolderCreate,
     PhDReaccreditationFolderRead,
+    PhDCourseworkRecordCreate,
+    PhDCourseworkRecordRead,
+    PhDProgressionPipelineUpdate,
+    PhDProgressionPipelineRead,
     PhDStudentDossier,
 )
 from app.services.user_service import has_role
 from app.services.notification_service import create_notification
 
 router = APIRouter(prefix="/phd", tags=["phd"])
+
+_TABLES_ENSURED = False
+
+
+def _ensure_phd_tables(db: Session) -> None:
+    global _TABLES_ENSURED
+    if _TABLES_ENSURED:
+        return
+    try:
+        Base.metadata.create_all(bind=db.get_bind())
+        _TABLES_ENSURED = True
+    except Exception:
+        pass
+
+
+def _calc_letter_grade(total: float) -> tuple[str, float]:
+    if total >= 80:
+        return "A", 4.0
+    if total >= 75:
+        return "B+", 3.5
+    if total >= 70:
+        return "B", 3.0
+    if total >= 65:
+        return "C+", 2.5
+    if total >= 60:
+        return "C", 2.0
+    return "F", 0.0
 
 
 def get_accessible_phd_student_ids(db: Session, current_user: User) -> set[int] | None:
@@ -49,6 +83,7 @@ def get_accessible_phd_student_ids(db: Session, current_user: User) -> set[int] 
     - PhD Student: ONLY current_user.id (own dossier and records). Non-PhD students are forbidden.
     - Other roles (Librarian, Guest, etc.): 403 Forbidden.
     """
+    _ensure_phd_tables(db)
     user_roles = {current_user.role}
     sec_roles = db.query(UserRole.role).filter(UserRole.user_id == current_user.id).all()
     for r in sec_roles:
@@ -120,6 +155,19 @@ def get_accessible_phd_student_ids(db: Session, current_user: User) -> set[int] 
         ).all()
         for ev in eval_student_ids:
             supervisee_ids.add(ev[0])
+
+        # E. Progression pipeline where current_user is advisor, assessor, supervisor, or pre-viva examiner
+        pipe_rows = db.query(PhDProgressionPipeline.student_id).filter(
+            or_(
+                PhDProgressionPipeline.advisor_id == current_user.id,
+                PhDProgressionPipeline.assessor_id == current_user.id,
+                PhDProgressionPipeline.supervisor_id == current_user.id,
+                PhDProgressionPipeline.previva_examiner_id == current_user.id,
+                PhDProgressionPipeline.external_examiner_id == current_user.id,
+            )
+        ).all()
+        for pr in pipe_rows:
+            supervisee_ids.add(pr[0])
 
         return supervisee_ids
 
@@ -251,14 +299,35 @@ def list_phd_dossiers(
         ).order_by(desc(PhDProgressEvaluation.created_at)).first()
         recent_eval = latest_eval.overall_rating if latest_eval else None
 
-        # Supervisors
+        # Supervisors & 6-Stage Progression Pipeline
+        pipe = db.query(PhDProgressionPipeline).filter(PhDProgressionPipeline.student_id == u.id).first()
+        courses = db.query(PhDCourseworkRecord).filter(PhDCourseworkRecord.student_id == u.id).all()
+        courses_count = len(courses)
+        total_credits = sum((c.credit_hours or 3) for c in courses)
+        cgpa = round(sum((c.grade_point or 0.0) * (c.credit_hours or 3) for c in courses) / total_credits, 2) if total_credits > 0 else (latest_exam.cgpa if latest_exam and latest_exam.cgpa else 0.0)
+
+        if pipe and pipe.comp_exam_status == "Pass":
+            candidacy = "PhD Candidate"
+            comp_result = "Pass"
+        elif pipe and pipe.comp_exam_status and pipe.comp_exam_status != "Pending" and comp_result == "Not Sat":
+            comp_result = pipe.comp_exam_status
+
         supervisors = []
+        if pipe and pipe.supervisor_name:
+            supervisors.append(pipe.supervisor_name)
+        if pipe and pipe.co_supervisor_name and pipe.co_supervisor_name not in supervisors:
+            supervisors.append(pipe.co_supervisor_name)
         if paper and paper.supervisor:
-            supervisors.append(paper.supervisor.full_name or paper.supervisor.email)
+            p_sup = paper.supervisor.full_name or paper.supervisor.email
+            if p_sup not in supervisors:
+                supervisors.append(p_sup)
         if latest_log and latest_log.supervisor:
             s_name = latest_log.supervisor.full_name or latest_log.supervisor.email
             if s_name not in supervisors:
                 supervisors.append(s_name)
+
+        advisor_work_done = bool(pipe.advisor_work_completed) if pipe else any(c.advisor_cleared for c in courses)
+        advisor_name = (pipe.advisor_name if pipe and pipe.advisor_name else (courses[0].advisor_name if courses and courses[0].advisor_name else None))
 
         dossiers.append(
             PhDStudentDossier(
@@ -279,6 +348,19 @@ def list_phd_dossiers(
                 inactivity_alert=inactivity_alert,
                 supervisors=supervisors,
                 recent_eval_rating=recent_eval,
+                advisor_name=advisor_name,
+                advisor_work_completed=advisor_work_done,
+                assessor_name=pipe.assessor_name if pipe else (latest_exam.committee_members if latest_exam else None),
+                comp_exam_score=pipe.comp_exam_score if (pipe and pipe.comp_exam_score is not None) else (latest_exam.cgpa if latest_exam else None),
+                supervisor_name=supervisors[0] if supervisors else None,
+                previva_examiner_name=pipe.previva_examiner_name if pipe else None,
+                previva_status=pipe.previva_status if pipe else "Pending",
+                previva_score=pipe.previva_score if pipe else None,
+                external_examiner_name=pipe.external_examiner_name if pipe else None,
+                viva_verdict=pipe.viva_verdict if pipe else "Pending",
+                final_defense_mark=pipe.final_defense_mark if pipe else None,
+                courses_count=courses_count,
+                cgpa=cgpa,
             )
         )
 
@@ -429,7 +511,19 @@ def record_phd_seminar(
             detail="You are not authorized to record seminars for this doctoral student.",
         )
 
-    new_sem = PhDSeminar(**payload.model_dump())
+    sem_title = (payload.seminar_title or payload.title or "Doctoral Research Seminar").strip()
+    remarks_val = payload.remarks or payload.score_or_verdict or payload.evaluator_feedback or "Pass"
+    new_sem = PhDSeminar(
+        student_id=payload.student_id,
+        seminar_title=sem_title,
+        seminar_category=payload.seminar_category,
+        seminar_date=payload.seminar_date,
+        attended=payload.attended,
+        is_presenter=payload.is_presenter,
+        department=payload.department or payload.evaluator_name,
+        evidence_url=payload.evidence_url or payload.venue_or_url,
+        remarks=remarks_val,
+    )
     db.add(new_sem)
     db.commit()
     db.refresh(new_sem)
@@ -495,10 +589,38 @@ def record_comprehensive_exam(
             detail="You are not authorized to record comprehensive exams for this student.",
         )
 
-    new_exam = PhDComprehensiveExam(**payload.model_dump())
-    if payload.result == "Pass":
-        new_exam.advanced_to_candidacy = True
+    score_val = payload.score if payload.score is not None else payload.cgpa
+    assessor_str = payload.assessor_name or payload.committee_members
+    new_exam = PhDComprehensiveExam(
+        student_id=payload.student_id,
+        coursework_completed=payload.coursework_completed,
+        cgpa=score_val,
+        specialization=payload.paper_part or payload.specialization or "Major Field & Research Methods",
+        application_date=payload.application_date,
+        exam_date=payload.exam_date or date.today(),
+        attempt_number=payload.attempt_number,
+        committee_members=assessor_str,
+        result=payload.result,
+        advanced_to_candidacy=(payload.result == "Pass" or payload.advanced_to_candidacy),
+        appeal_status=payload.appeal_status,
+        remarks=payload.remarks or payload.remedial_instructions,
+    )
     db.add(new_exam)
+
+    # Also sync into PhDProgressionPipeline so the 6-stage pipeline reflects the Assessor's Comprehensive Exam verdict
+    pipe = db.query(PhDProgressionPipeline).filter(PhDProgressionPipeline.student_id == payload.student_id).first()
+    if not pipe:
+        pipe = PhDProgressionPipeline(student_id=payload.student_id)
+        db.add(pipe)
+    pipe.comp_exam_status = payload.result
+    pipe.comp_exam_score = score_val
+    pipe.comp_exam_date = payload.exam_date or date.today()
+    if assessor_str:
+        pipe.assessor_name = assessor_str
+    if payload.remarks or payload.remedial_instructions:
+        pipe.comp_exam_remarks = payload.remarks or payload.remedial_instructions
+    pipe.updated_at = datetime.now(timezone.utc)
+
     db.commit()
     db.refresh(new_exam)
 
@@ -561,7 +683,27 @@ def record_teaching_requirement(
             detail="You are not authorized to record teaching requirements for this student.",
         )
 
-    new_tr = PhDTeachingRequirement(**payload.model_dump())
+    course_label = payload.course_taught
+    if not course_label:
+        c_code = (payload.course_code or "").strip()
+        c_title = (payload.course_title or "").strip()
+        course_label = f"{c_code}: {c_title}" if (c_code and c_title) else (c_code or c_title or "Undergraduate Seminar")
+    sem_label = f"{payload.academic_year} · {payload.semester}" if payload.academic_year and payload.academic_year not in (payload.semester or "") else payload.semester
+
+    new_tr = PhDTeachingRequirement(
+        student_id=payload.student_id,
+        course_taught=course_label,
+        semester=sem_label,
+        department=payload.department,
+        supervising_faculty_id=payload.supervising_faculty_id,
+        teaching_role=payload.teaching_role or "Teaching Assistant",
+        faculty_evaluation_score=payload.contact_hours if payload.contact_hours is not None else payload.faculty_evaluation_score,
+        student_evaluation_score=payload.student_evaluation_score,
+        feedback_summary=payload.feedback_summary or payload.faculty_feedback or payload.duties_description,
+        improvement_plan=payload.improvement_plan,
+        is_completed=payload.is_completed,
+        completion_date=payload.completion_date or (date.today() if payload.is_completed else None),
+    )
     db.add(new_tr)
     db.commit()
     db.refresh(new_tr)
@@ -747,6 +889,7 @@ def send_regulatory_inactivity_reminders(
     (or no meeting has been recorded).
     Strictly scoped according to the caller's role (supervisor, HOD, coordinator, dean, admin).
     """
+    _ensure_phd_tables(db)
     user_roles = {current_user.role}
     sec_roles = db.query(UserRole.role).filter(UserRole.user_id == current_user.id).all()
     for r in sec_roles:
@@ -888,4 +1031,418 @@ def send_regulatory_inactivity_reminders(
         "supervisors_notified": supervisors_notified,
         "details": details,
     }
+
+
+# 9. Stage 1: Doctoral Enrollment, Coursework, Assignments, Exams & Grades (with Advisor)
+@router.get("/coursework", response_model=list[PhDCourseworkRecordRead])
+def get_phd_coursework_records(
+    student_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[PhDCourseworkRecordRead]:
+    allowed_ids = get_accessible_phd_student_ids(db, current_user)
+    query = db.query(PhDCourseworkRecord)
+
+    if allowed_ids is not None:
+        if len(allowed_ids) == 0:
+            return []
+        if student_id:
+            if student_id not in allowed_ids:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this student.")
+            query = query.filter(PhDCourseworkRecord.student_id == student_id)
+        else:
+            query = query.filter(PhDCourseworkRecord.student_id.in_(allowed_ids))
+    elif student_id:
+        query = query.filter(PhDCourseworkRecord.student_id == student_id)
+
+    rows = query.order_by(desc(PhDCourseworkRecord.created_at)).all()
+    out: list[PhDCourseworkRecordRead] = []
+    for r in rows:
+        item = PhDCourseworkRecordRead.model_validate(r)
+        if r.student:
+            item.student_name = r.student.full_name or r.student.email
+        if not item.advisor_name and r.advisor:
+            item.advisor_name = r.advisor.full_name or r.advisor.email
+        out.append(item)
+    return out
+
+
+@router.post("/coursework", response_model=PhDCourseworkRecordRead, status_code=status.HTTP_201_CREATED)
+def record_phd_coursework(
+    payload: PhDCourseworkRecordCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PhDCourseworkRecordRead:
+    if current_user.role in {"student", "member"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coursework grades and advisor clearance must be recorded by an Academic Advisor, Coordinator, HOD, or Admin.",
+        )
+    _ = get_accessible_phd_student_ids(db, current_user)
+
+    total = round(
+        float(payload.assignment_score or 0.0)
+        + float(payload.coursework_score or 0.0)
+        + float(payload.exam_score or 0.0),
+        1,
+    )
+    total = min(100.0, max(0.0, total))
+    letter, gp = _calc_letter_grade(total)
+
+    adv_name = payload.advisor_name
+    if payload.advisor_id and not adv_name:
+        adv_user = db.query(User).filter(User.id == payload.advisor_id).first()
+        if adv_user:
+            adv_name = adv_user.full_name or adv_user.email
+    if not adv_name:
+        adv_name = current_user.full_name or current_user.email
+
+    row = PhDCourseworkRecord(
+        student_id=payload.student_id,
+        advisor_id=payload.advisor_id or current_user.id,
+        advisor_name=adv_name,
+        course_code=payload.course_code.strip().upper(),
+        course_title=payload.course_title.strip(),
+        academic_year=payload.academic_year.strip(),
+        semester=payload.semester.strip(),
+        credit_hours=payload.credit_hours or 3,
+        assignment_score=payload.assignment_score,
+        coursework_score=payload.coursework_score,
+        exam_score=payload.exam_score,
+        total_score=total,
+        letter_grade=letter,
+        grade_point=gp,
+        advisor_cleared=payload.advisor_cleared,
+        remarks=payload.remarks,
+    )
+    db.add(row)
+
+    # Sync advisor info & clearance to PhDProgressionPipeline
+    pipe = db.query(PhDProgressionPipeline).filter(PhDProgressionPipeline.student_id == payload.student_id).first()
+    if not pipe:
+        pipe = PhDProgressionPipeline(student_id=payload.student_id)
+        db.add(pipe)
+    pipe.advisor_id = payload.advisor_id or current_user.id
+    pipe.advisor_name = adv_name
+    if payload.advisor_cleared:
+        pipe.advisor_work_completed = True
+        pipe.advisor_clearance_date = date.today()
+    pipe.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(row)
+
+    item = PhDCourseworkRecordRead.model_validate(row)
+    if row.student:
+        item.student_name = row.student.full_name or row.student.email
+    return item
+
+
+# 10. Stages 1-6 End-to-End Doctoral Progression Pipeline (Advisor -> Assessor -> Comp Exam -> Supervisor -> Pre-Viva -> External Viva & Defense Marks)
+@router.get("/progression", response_model=list[PhDProgressionPipelineRead])
+def get_phd_progression_pipelines(
+    student_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[PhDProgressionPipelineRead]:
+    allowed_ids = get_accessible_phd_student_ids(db, current_user)
+    if allowed_ids is not None and len(allowed_ids) == 0:
+        return []
+
+    # Ensure every accessible PhD student has a progression pipeline record
+    dossiers = list_phd_dossiers(db=db, current_user=current_user)
+    if student_id:
+        dossiers = [d for d in dossiers if d.student_id == student_id]
+
+    results: list[PhDProgressionPipelineRead] = []
+    for d in dossiers:
+        pipe = db.query(PhDProgressionPipeline).filter(PhDProgressionPipeline.student_id == d.student_id).first()
+        if not pipe:
+            pipe = PhDProgressionPipeline(
+                student_id=d.student_id,
+                advisor_name=d.advisor_name,
+                advisor_work_completed=d.advisor_work_completed,
+                assessor_name=d.assessor_name,
+                comp_exam_status="Pass" if d.candidacy_status == "PhD Candidate" else (d.comprehensive_result if d.comprehensive_result != "Not Sat" else "Pending"),
+                comp_exam_score=d.comp_exam_score,
+                supervisor_name=d.supervisor_name,
+            )
+            db.add(pipe)
+            db.commit()
+            db.refresh(pipe)
+
+        item = PhDProgressionPipelineRead.model_validate(pipe)
+        item.student_name = d.student_name
+        item.student_email = d.student_email
+        item.courses_count = d.courses_count
+        item.cgpa = d.cgpa
+        item.seminars_count = d.seminars_attended_count + d.seminars_presented_count
+        results.append(item)
+
+    return results
+
+
+@router.post("/progression", response_model=PhDProgressionPipelineRead)
+def update_phd_progression_pipeline(
+    payload: PhDProgressionPipelineUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PhDProgressionPipelineRead:
+    if current_user.role in {"student", "member"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Doctoral progression gatekeeper actions can only be performed by faculty, assessors, coordinators, HODs, or admins.",
+        )
+    _ = get_accessible_phd_student_ids(db, current_user)
+
+    student = db.query(User).filter(User.id == payload.student_id).first()
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doctoral student not found.")
+
+    pipe = db.query(PhDProgressionPipeline).filter(PhDProgressionPipeline.student_id == payload.student_id).first()
+    if not pipe:
+        pipe = PhDProgressionPipeline(student_id=payload.student_id)
+        db.add(pipe)
+        db.flush()
+
+    action = (payload.action or "").strip().lower()
+
+    if action == "advisor_clearance":
+        if payload.advisor_id:
+            pipe.advisor_id = payload.advisor_id
+            adv_u = db.query(User).filter(User.id == payload.advisor_id).first()
+            if adv_u:
+                pipe.advisor_name = adv_u.full_name or adv_u.email
+        if payload.advisor_name:
+            pipe.advisor_name = payload.advisor_name.strip()
+        if not pipe.advisor_name:
+            pipe.advisor_name = current_user.full_name or current_user.email
+        pipe.advisor_work_completed = True if payload.advisor_work_completed is None else payload.advisor_work_completed
+        if pipe.advisor_work_completed:
+            pipe.advisor_clearance_date = date.today()
+            create_notification(
+                db,
+                user_id=student.id,
+                ntype="phd_advisor_clearance",
+                message=f"Your Academic Advisor ({pipe.advisor_name}) has certified your coursework and initial doctoral work complete. You are now eligible for Comprehensive Exam Assessor assignment.",
+            )
+
+    elif action == "assign_assessor":
+        if not pipe.advisor_work_completed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Gatekeeper Rule: The student must complete their coursework and initial work with their Academic Advisor before an Assessor can be assigned.",
+            )
+        if payload.assessor_id:
+            pipe.assessor_id = payload.assessor_id
+            ass_u = db.query(User).filter(User.id == payload.assessor_id).first()
+            if ass_u:
+                pipe.assessor_name = ass_u.full_name or ass_u.email
+        if payload.assessor_name:
+            pipe.assessor_name = payload.assessor_name.strip()
+        if not pipe.assessor_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please specify the Assessor to assign.")
+        pipe.assessor_assigned_date = date.today()
+        if pipe.comp_exam_status == "Pending":
+            pipe.comp_exam_status = "Assessor Assigned"
+        create_notification(
+            db,
+            user_id=student.id,
+            ntype="phd_assessor_assigned",
+            message=f"Comprehensive Exam Assessor ({pipe.assessor_name}) has been assigned to evaluate your Comprehensive Examination.",
+        )
+
+    elif action == "grade_comp_exam":
+        if not pipe.assessor_name and not payload.assessor_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Gatekeeper Rule: An Assessor must be assigned before grading the Comprehensive Exam.",
+            )
+        if payload.assessor_name:
+            pipe.assessor_name = payload.assessor_name.strip()
+        status_val = payload.comp_exam_status or "Pass"
+        pipe.comp_exam_status = status_val
+        pipe.comp_exam_score = payload.comp_exam_score
+        pipe.comp_exam_date = date.today()
+        pipe.comp_exam_remarks = payload.comp_exam_remarks
+
+        # Also record in PhDComprehensiveExam table
+        new_exam = PhDComprehensiveExam(
+            student_id=student.id,
+            coursework_completed=True,
+            cgpa=payload.comp_exam_score,
+            specialization=student.department or "Doctoral Comprehensive Exam",
+            exam_date=date.today(),
+            attempt_number=1,
+            committee_members=pipe.assessor_name,
+            result=status_val,
+            advanced_to_candidacy=(status_val == "Pass"),
+            remarks=payload.comp_exam_remarks,
+        )
+        db.add(new_exam)
+        create_notification(
+            db,
+            user_id=student.id,
+            ntype="phd_comp_exam_graded",
+            message=f"Comprehensive Exam Result recorded by Assessor {pipe.assessor_name}: {status_val} ({payload.comp_exam_score or 0}%). {'You have advanced to PhD Candidacy and are now eligible for Dissertation Supervisor assignment!' if status_val == 'Pass' else ''}",
+        )
+
+    elif action == "assign_supervisor":
+        # Strict Gatekeeper: Only after passing the Comprehensive Exam by their Assessor can a Dissertation Supervisor be assigned!
+        latest_exam = db.query(PhDComprehensiveExam).filter(
+            PhDComprehensiveExam.student_id == student.id
+        ).order_by(desc(PhDComprehensiveExam.attempt_number)).first()
+        has_passed_comp = (pipe.comp_exam_status == "Pass") or (latest_exam is not None and (latest_exam.result == "Pass" or latest_exam.advanced_to_candidacy))
+        if not has_passed_comp:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Gatekeeper Rule: A Dissertation Supervisor can only be assigned AFTER the student has passed the Comprehensive Exam graded by their Assessor.",
+            )
+        if payload.supervisor_id:
+            pipe.supervisor_id = payload.supervisor_id
+            sup_u = db.query(User).filter(User.id == payload.supervisor_id).first()
+            if sup_u:
+                pipe.supervisor_name = sup_u.full_name or sup_u.email
+        if payload.supervisor_name:
+            pipe.supervisor_name = payload.supervisor_name.strip()
+        if payload.co_supervisor_name is not None:
+            pipe.co_supervisor_name = payload.co_supervisor_name.strip() or None
+        if not pipe.supervisor_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please select or enter a Dissertation Supervisor.")
+        pipe.supervisor_assigned_date = date.today()
+
+        # Also update the student's active PhD Paper supervisor_id if one exists
+        phd_paper = db.query(Paper).filter(Paper.created_by_id == student.id).order_by(desc(Paper.id)).first()
+        if phd_paper and pipe.supervisor_id:
+            phd_paper.supervisor_id = pipe.supervisor_id
+            db.add(phd_paper)
+
+        create_notification(
+            db,
+            user_id=student.id,
+            ntype="phd_supervisor_assigned",
+            message=f"Congratulations on passing your Comprehensive Exam! {pipe.supervisor_name} has been assigned as your Doctoral Dissertation Supervisor.",
+        )
+
+    elif action in {"assign_previva", "record_previva"}:
+        if payload.previva_examiner_id:
+            pipe.previva_examiner_id = payload.previva_examiner_id
+            pv_u = db.query(User).filter(User.id == payload.previva_examiner_id).first()
+            if pv_u:
+                pipe.previva_examiner_name = pv_u.full_name or pv_u.email
+        if payload.previva_examiner_name:
+            pipe.previva_examiner_name = payload.previva_examiner_name.strip()
+        if payload.previva_date:
+            pipe.previva_date = payload.previva_date
+        else:
+            pipe.previva_date = pipe.previva_date or date.today()
+        if payload.previva_score is not None:
+            pipe.previva_score = payload.previva_score
+        if payload.previva_status:
+            pipe.previva_status = payload.previva_status
+        elif action == "assign_previva" and pipe.previva_status == "Pending":
+            pipe.previva_status = "Examiner Assigned"
+        if payload.previva_remarks is not None:
+            pipe.previva_remarks = payload.previva_remarks
+
+        create_notification(
+            db,
+            user_id=student.id,
+            ntype="phd_previva_update",
+            message=f"Pre-Viva Assessment Update: Examiner {pipe.previva_examiner_name or 'Assigned'} · Status: {pipe.previva_status}"
+            + (f" · Score: {pipe.previva_score}%" if pipe.previva_score is not None else ""),
+        )
+
+    elif action in {"assign_external_viva", "record_defense_marks"}:
+        if pipe.previva_status != "Cleared for External Viva":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Gatekeeper Rule: The candidate must first pass Pre-Viva ('Cleared for External Viva') before the dissertation can be sent to the External Examiner for the Viva Voce.",
+            )
+        if payload.external_examiner_id:
+            pipe.external_examiner_id = payload.external_examiner_id
+            ext_u = db.query(User).filter(User.id == payload.external_examiner_id).first()
+            if ext_u:
+                pipe.external_examiner_name = ext_u.full_name or ext_u.email
+        if payload.external_examiner_name:
+            pipe.external_examiner_name = payload.external_examiner_name.strip()
+        if payload.external_examiner_institution is not None:
+            pipe.external_examiner_institution = payload.external_examiner_institution.strip() or None
+        if not pipe.viva_dispatched_date:
+            pipe.viva_dispatched_date = date.today()
+        if payload.viva_date:
+            pipe.viva_date = payload.viva_date
+
+        if payload.internal_examiner_mark is not None:
+            pipe.internal_examiner_mark = payload.internal_examiner_mark
+        if payload.external_examiner_mark is not None:
+            pipe.external_examiner_mark = payload.external_examiner_mark
+        if payload.oral_defense_viva_mark is not None:
+            pipe.oral_defense_viva_mark = payload.oral_defense_viva_mark
+
+        marks = [
+            m for m in [pipe.internal_examiner_mark, pipe.external_examiner_mark, pipe.oral_defense_viva_mark]
+            if m is not None
+        ]
+        if marks:
+            pipe.final_defense_mark = round(sum(marks) / len(marks), 1)
+
+        if payload.viva_verdict:
+            pipe.viva_verdict = payload.viva_verdict
+        elif action == "assign_external_viva" and pipe.viva_verdict == "Pending":
+            pipe.viva_verdict = "Dispatched to External Examiner"
+
+        if payload.defense_remarks is not None:
+            pipe.defense_remarks = payload.defense_remarks
+
+        create_notification(
+            db,
+            user_id=student.id,
+            ntype="phd_viva_defense_marks",
+            message=f"Viva Voce & External Examination Update: External Examiner {pipe.external_examiner_name or 'Assigned'} · Verdict: {pipe.viva_verdict}"
+            + (f" · Final Defense Mark: {pipe.final_defense_mark}%" if pipe.final_defense_mark is not None else ""),
+        )
+
+    pipe.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(pipe)
+
+    courses = db.query(PhDCourseworkRecord).filter(PhDCourseworkRecord.student_id == student.id).all()
+    total_credits = sum((c.credit_hours or 3) for c in courses)
+    cgpa = round(sum((c.grade_point or 0.0) * (c.credit_hours or 3) for c in courses) / total_credits, 2) if total_credits > 0 else 0.0
+    seminars_count = db.query(PhDSeminar).filter(PhDSeminar.student_id == student.id).count()
+
+    item = PhDProgressionPipelineRead.model_validate(pipe)
+    item.student_name = student.full_name or student.email
+    item.student_email = student.email
+    item.courses_count = len(courses)
+    item.cgpa = cgpa
+    item.seminars_count = seminars_count
+    return item
+
+
+@router.get("/faculty")
+def list_phd_faculty_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Returns faculty members (Advisors, Assessors, Supervisors, Internal Examiners) and External Examiners for PhD Hub dropdowns."""
+    _ = get_accessible_phd_student_ids(db, current_user)
+    faculty_users = db.query(User).filter(
+        User.is_active.is_(True),
+        User.role.notin_(["student", "member", "guest", "librarian", "head_library"]),
+    ).order_by(User.full_name.asc()).all()
+    return [
+        {
+            "id": u.id,
+            "name": u.full_name or u.email,
+            "email": u.email,
+            "role": u.role,
+            "department": u.department or "",
+            "school": u.school or "",
+            "specialization": u.specialization or "",
+        }
+        for u in faculty_users
+    ]
+
 

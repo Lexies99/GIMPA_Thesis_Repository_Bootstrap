@@ -136,3 +136,80 @@ class PhDReaccreditationFolder(Base):
     uploaded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_id])
+
+
+class PhDCourseworkRecord(Base):
+    __tablename__ = "phd_coursework_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    advisor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    advisor_name = Column(String(150), nullable=True)
+    course_code = Column(String(50), nullable=False)
+    course_title = Column(String(255), nullable=False)
+    academic_year = Column(String(50), nullable=False, default="2025/2026")
+    semester = Column(String(50), nullable=False, default="Semester 1")
+    credit_hours = Column(Integer, nullable=False, default=3)
+    assignment_score = Column(Float, nullable=False, default=0.0)  # out of 40
+    coursework_score = Column(Float, nullable=False, default=0.0)  # out of 20
+    exam_score = Column(Float, nullable=False, default=0.0)        # out of 40
+    total_score = Column(Float, nullable=False, default=0.0)       # out of 100
+    letter_grade = Column(String(10), nullable=False, default="A")
+    grade_point = Column(Float, nullable=False, default=4.0)
+    advisor_cleared = Column(Boolean, nullable=False, default=False)
+    remarks = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    student = relationship("User", foreign_keys=[student_id])
+    advisor = relationship("User", foreign_keys=[advisor_id])
+
+
+class PhDProgressionPipeline(Base):
+    __tablename__ = "phd_progression_pipeline"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    # Stage 1 & 2: Academic Advisor & Comprehensive Exam Assessor
+    advisor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    advisor_name = Column(String(150), nullable=True)
+    advisor_work_completed = Column(Boolean, nullable=False, default=False)
+    advisor_clearance_date = Column(Date, nullable=True)
+    assessor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    assessor_name = Column(String(150), nullable=True)
+    assessor_assigned_date = Column(Date, nullable=True)
+
+    # Stage 3: Comprehensive Exam by Assessor -> Dissertation Supervisor Allocation Gate
+    comp_exam_status = Column(String(50), nullable=False, default="Pending")  # Pending, Assessor Assigned, Pass, Fail
+    comp_exam_score = Column(Float, nullable=True)
+    comp_exam_date = Column(Date, nullable=True)
+    comp_exam_remarks = Column(Text, nullable=True)
+    supervisor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    supervisor_name = Column(String(150), nullable=True)
+    co_supervisor_name = Column(String(150), nullable=True)
+    supervisor_assigned_date = Column(Date, nullable=True)
+
+    # Stage 5: Pre-Viva Examiner Assignment & Clearance
+    previva_examiner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    previva_examiner_name = Column(String(150), nullable=True)
+    previva_date = Column(Date, nullable=True)
+    previva_score = Column(Float, nullable=True)
+    previva_status = Column(String(50), nullable=False, default="Pending")  # Pending, Examiner Assigned, Cleared for External Viva, Revisions Required
+    previva_remarks = Column(Text, nullable=True)
+
+    # Stage 6: External Examiner Viva Dispatch & Official Defense Marks
+    external_examiner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    external_examiner_name = Column(String(150), nullable=True)
+    external_examiner_institution = Column(String(200), nullable=True)
+    viva_dispatched_date = Column(Date, nullable=True)
+    viva_date = Column(Date, nullable=True)
+    internal_examiner_mark = Column(Float, nullable=True)
+    external_examiner_mark = Column(Float, nullable=True)
+    oral_defense_viva_mark = Column(Float, nullable=True)
+    final_defense_mark = Column(Float, nullable=True)
+    viva_verdict = Column(String(80), nullable=False, default="Pending")
+    defense_remarks = Column(Text, nullable=True)
+
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    student = relationship("User", foreign_keys=[student_id])

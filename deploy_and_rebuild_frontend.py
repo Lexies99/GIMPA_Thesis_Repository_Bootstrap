@@ -55,7 +55,10 @@ upload_dir_recursive(os.path.join(LOCAL_ROOT, 'frontend', 'app'), f"{REMOTE_APP_
 backend_rel_files = [
     'app/api/routes/papers.py',
     'app/api/routes/users.py',
+    'app/api/routes/phd.py',
+    'app/models/phd_system.py',
     'app/schemas/user.py',
+    'app/schemas/phd.py',
     'app/services/import_service.py',
 ]
 for rel_f in backend_rel_files:
