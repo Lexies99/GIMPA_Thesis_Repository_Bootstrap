@@ -9,6 +9,7 @@ import { Dashboard } from '../components/library/Dashboard';
 import { AccountManagement } from '../components/library/AccountManagement';
 import { Profile } from '../components/library/Profile';
 import { PhdHub } from '../components/library/PhdHub';
+import { MyThesisSubmissions, isSubmissionActive } from '../components/library/MyThesisSubmissions';
 import { useAuth } from '../context/AuthContext';
 import {
   Book,
@@ -29,8 +30,9 @@ import {
   HelpCircle,
   Sun,
   Moon,
+  FileText,
 } from 'lucide-react';
-import { apiGetPendingPapers, apiGetNotifications, apiMarkNotificationRead, type ApiNotification } from '../lib/api';
+import { apiGetPendingPapers, apiGetNotifications, apiMarkNotificationRead, apiGetMyPapers, type ApiNotification } from '../lib/api';
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -53,6 +55,7 @@ export default function Home() {
   const [overdueCount, setOverdueCount] = useState(0);
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [hasActiveSubmission, setHasActiveSubmission] = useState(false);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -208,14 +211,38 @@ export default function Home() {
     } catch {}
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadMySubs = async () => {
+      const token = localStorage.getItem('murrs_access_token');
+      if (!token || !isAuthenticated || user?.role === 'guest') {
+        if (!cancelled) setHasActiveSubmission(false);
+        return;
+      }
+      try {
+        const mine = await apiGetMyPapers(token);
+        if (!cancelled) {
+          setHasActiveSubmission(mine.some((p) => isSubmissionActive(p.status)));
+        }
+      } catch {
+        if (!cancelled) setHasActiveSubmission(false);
+      }
+    };
+    void loadMySubs();
+    return () => { cancelled = true; };
+  }, [isAuthenticated, user?.role, activeTab]);
+
+  const isStudentRole = !!user && (user.role === 'student' || user.role === 'member');
+
   const navItems = ([
-    { tab: 'dashboard', label: 'Dashboard & Reports', icon: BarChart3,     show: isAuthenticated && user?.role !== 'guest' },
-    { tab: 'catalog',   label: 'Catalog',             icon: Book,          show: true },
-    { tab: 'search',    label: 'Search & Discovery',  icon: Search,        show: true },
-    { tab: 'approval',  label: 'Approval Workflow',   icon: BookOpen,      show: isReviewer, badge: overdueCount > 0 ? overdueCount : null },
-    { tab: 'phd',       label: 'PhD Hub',             icon: GraduationCap, show: canViewPhdHub },
-    { tab: 'librarian', label: 'Schools and users',   icon: Building2,     show: isAdministrationUser },
-    { tab: 'profile',   label: 'My Profile',          icon: User,          show: isAuthenticated && user?.role !== 'guest' },
+    { tab: 'dashboard',   label: 'Dashboard & Reports',   icon: BarChart3,     show: isAuthenticated && user?.role !== 'guest' },
+    { tab: 'submissions', label: 'My Thesis Submissions', icon: FileText,      show: isAuthenticated && isStudentRole, badge: hasActiveSubmission ? 1 : null },
+    { tab: 'catalog',     label: 'Catalog',               icon: Book,          show: true },
+    { tab: 'search',      label: 'Search & Discovery',    icon: Search,        show: true },
+    { tab: 'approval',    label: 'Approval Workflow',     icon: BookOpen,      show: isReviewer, badge: overdueCount > 0 ? overdueCount : null },
+    { tab: 'phd',         label: 'PhD Hub',               icon: GraduationCap, show: canViewPhdHub },
+    { tab: 'librarian',   label: 'Schools and users',     icon: Building2,     show: isAdministrationUser },
+    { tab: 'profile',     label: 'My Profile',            icon: User,          show: isAuthenticated && user?.role !== 'guest' },
   ] as Array<{tab:string;label:string;icon:React.ElementType;show:boolean|undefined;badge?:number|null}>).filter(item => item.show);
 
   return (
@@ -297,11 +324,17 @@ export default function Home() {
 
         {/* Right: Clean Minimal Outline Icons + Theme Toggle + Primary Action */}
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16 }}>
-          {/* Submit Proposal Pill (Students) */}
+          {/* Submit Proposal / Active Submission Pill (Students) */}
           {user && isAuthenticated && (user.role === 'student' || user.role === 'member') && (
             <button
               type="button"
-              onClick={() => navigate('/submit-proposal')}
+              onClick={() => {
+                if (hasActiveSubmission) {
+                  handleTabChange('submissions');
+                } else {
+                  navigate('/submit-proposal');
+                }
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -315,9 +348,14 @@ export default function Home() {
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
+              title={hasActiveSubmission ? 'View your active thesis submission (1 at a time)' : 'Submit a new thesis proposal'}
             >
-              <Upload style={{ width: 14, height: 14 }} />
-              <span>{isMobile ? '+ Submit' : '+ Submit Proposal'}</span>
+              {hasActiveSubmission ? <FileText style={{ width: 14, height: 14 }} /> : <Upload style={{ width: 14, height: 14 }} />}
+              <span>
+                {hasActiveSubmission
+                  ? (isMobile ? 'My Submission' : 'Active Submission (1/1)')
+                  : (isMobile ? '+ Submit' : '+ Submit Proposal')}
+              </span>
             </button>
           )}
 
@@ -683,9 +721,10 @@ export default function Home() {
             </div>
           )}
 
-          {activeTab === 'catalog'   && <PublicCatalog />}
-          {activeTab === 'search'    && <SearchDiscovery />}
-          {activeTab === 'dashboard' && isAuthenticated && user?.role !== 'guest' && (
+          {activeTab === 'catalog'     && <PublicCatalog />}
+          {activeTab === 'search'      && <SearchDiscovery />}
+          {activeTab === 'submissions' && isAuthenticated && user?.role !== 'guest' && <MyThesisSubmissions />}
+          {activeTab === 'dashboard'   && isAuthenticated && user?.role !== 'guest' && (
             <Dashboard userRole={user?.role || 'student'} />
           )}
           {activeTab === 'phd' && canViewPhdHub && <PhdHub />}

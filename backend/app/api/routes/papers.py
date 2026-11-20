@@ -1441,6 +1441,32 @@ def read_revision_papers(
     return [_to_paper_read(p) for p in papers]
 
 
+_COMPLETED_OR_TERMINAL_PAPER_STATUSES = {
+    "approved",
+    "published",
+    "phase5_published",
+    "phase5_certified",
+    "phase5_approved_for_library",
+    "approved_for_library",
+    "rejected",
+}
+
+
+def _phase_rank_for_paper(status_str: str | None) -> int:
+    s = (status_str or "").lower()
+    if s.startswith("phase5"):
+        return 5
+    if s.startswith("phase4"):
+        return 4
+    if s.startswith("phase3"):
+        return 3
+    if s.startswith("phase2"):
+        return 2
+    if s.startswith("phase1"):
+        return 1
+    return 1
+
+
 @router.get("/papers/mine", response_model=list[PaperRead])
 def read_my_papers(
     db: Session = Depends(get_db),
@@ -1453,7 +1479,15 @@ def read_my_papers(
         limit=200,
         created_by_id=current_user.id,
     )
-    return [_to_paper_read(p) for p in papers]
+    active_papers = [
+        p for p in papers if (p.status or "").strip().lower() not in _COMPLETED_OR_TERMINAL_PAPER_STATUSES
+    ]
+    completed_papers = [
+        p for p in papers if (p.status or "").strip().lower() in _COMPLETED_OR_TERMINAL_PAPER_STATUSES and (p.status or "").strip().lower() != "rejected"
+    ]
+    active_papers.sort(key=lambda p: (_phase_rank_for_paper(p.status), p.id), reverse=True)
+    selected_papers = (active_papers[:1] + completed_papers) if active_papers else completed_papers
+    return [_to_paper_read(p, db, current_user) for p in selected_papers]
 
 
 from fastapi import Request
@@ -1494,6 +1528,25 @@ def create_paper_endpoint(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only students and lecturers can submit papers.",
         )
+    # Enforce 1 active submission at a time for students
+    if not current_user.is_admin and not _is_lecturer_submitter(db, current_user):
+        existing_active = (
+            db.query(Paper)
+            .filter(
+                Paper.created_by_id == current_user.id,
+                func.lower(func.coalesce(Paper.status, "")).notin_(list(_COMPLETED_OR_TERMINAL_PAPER_STATUSES)),
+            )
+            .order_by(Paper.id.desc())
+            .first()
+        )
+        if existing_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"You already have an active thesis submission in progress ('{existing_active.title}'). "
+                    "A student can only work on 1 submission at a time until it is completed before starting a new submission for another degree program."
+                ),
+            )
     # Duplicate topic prevention
     from app.services.integrity_service import check_duplicate_topic
     dup_res = check_duplicate_topic(db, payload.title)
@@ -1598,6 +1651,25 @@ async def upload_paper_endpoint(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only students and lecturers can submit papers.",
         )
+    # Enforce 1 active submission at a time for students
+    if not current_user.is_admin and not _is_lecturer_submitter(db, current_user):
+        existing_active = (
+            db.query(Paper)
+            .filter(
+                Paper.created_by_id == current_user.id,
+                func.lower(func.coalesce(Paper.status, "")).notin_(list(_COMPLETED_OR_TERMINAL_PAPER_STATUSES)),
+            )
+            .order_by(Paper.id.desc())
+            .first()
+        )
+        if existing_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"You already have an active thesis submission in progress ('{existing_active.title}'). "
+                    "A student can only work on 1 submission at a time until it is completed before starting a new submission for another degree program."
+                ),
+            )
     # Duplicate topic prevention
     from app.services.integrity_service import check_duplicate_topic
     dup_res = check_duplicate_topic(db, title)

@@ -6,9 +6,10 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { apiUploadPaper, apiCheckTopicDuplication } from '../lib/api';
+import { apiUploadPaper, apiCheckTopicDuplication, apiGetMyPapers, type ApiPaper } from '../lib/api';
 import { createTopicPdfFile } from '../lib/pdfGenerator';
-import { ArrowLeft, AlertCircle, Sparkles, CheckCircle2, ShieldAlert, Cpu } from 'lucide-react';
+import { isSubmissionActive } from '../components/library/MyThesisSubmissions';
+import { ArrowLeft, AlertCircle, Sparkles, CheckCircle2, ShieldAlert, Cpu, Lock, FileText } from 'lucide-react';
 
 const DISCIPLINES_BY_SCHOOL: Record<string, string[]> = {
   'Business School': [
@@ -73,6 +74,30 @@ export default function SubmitProposal() {
   const [, setUploadProgress] = useState(0);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
+  const [activeSubmission, setActiveSubmission] = useState<ApiPaper | null>(null);
+  const [checkingActiveSub, setCheckingActiveSub] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkExisting = async () => {
+      const token = localStorage.getItem('murrs_access_token');
+      if (!token) {
+        if (!cancelled) setCheckingActiveSub(false);
+        return;
+      }
+      try {
+        const mine = await apiGetMyPapers(token);
+        const active = mine.find((p) => isSubmissionActive(p.status)) || null;
+        if (!cancelled) setActiveSubmission(active);
+      } catch {
+        if (!cancelled) setActiveSubmission(null);
+      } finally {
+        if (!cancelled) setCheckingActiveSub(false);
+      }
+    };
+    void checkExisting();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const trimmed = formData.title.trim();
@@ -270,13 +295,13 @@ export default function SubmitProposal() {
       );
 
       setUploadProgress(100);
-      setMessage('Thesis topic submitted successfully! Redirecting to dashboard...');
+      setMessage('Thesis topic submitted successfully! Redirecting to My Thesis Submissions...');
       setMessageType('success');
       localStorage.removeItem(PROPOSAL_DRAFT_KEY);
 
       setTimeout(() => {
-        navigate('/');
-      }, 2000);
+        navigate('/?tab=submissions');
+      }, 1500);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Failed to submit proposal');
       setMessageType('error');
@@ -332,6 +357,56 @@ export default function SubmitProposal() {
           </div>
         )}
 
+        {checkingActiveSub ? (
+          <div className="fp-card py-12 text-center text-[14px]" style={{ color: 'var(--text-muted)' }}>
+            Checking your active submission status...
+          </div>
+        ) : activeSubmission ? (
+          <div className="fp-card space-y-5">
+            <div className="flex items-start gap-3.5">
+              <div className="fp-avatar">
+                <Lock className="size-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-[18px] font-bold m-0" style={{ color: 'var(--text-main)' }}>
+                  1 Active Submission at a Time Policy
+                </h3>
+                <p className="text-[13.5px] leading-relaxed m-0" style={{ color: 'var(--text-muted)' }}>
+                  You already have an active thesis submission in progress. Per GIMPA regulations, a student can only work on{' '}
+                  <strong>one thesis submission at a time</strong> until it is completed and certified before starting a new submission for their next academic degree program (e.g., progressing from Undergraduate to Master’s or PhD).
+                </p>
+              </div>
+            </div>
+
+            <div
+              className="p-4 rounded-xl border space-y-1.5"
+              style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+            >
+              <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                Current Active Submission (Paper #{activeSubmission.id})
+              </div>
+              <div className="text-[16px] font-bold" style={{ color: 'var(--text-main)' }}>
+                {activeSubmission.title}
+              </div>
+              <div className="text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
+                Discipline: {activeSubmission.discipline} · Status:{' '}
+                <strong style={{ color: 'var(--text-main)' }}>
+                  {activeSubmission.status.replace(/_/g, ' ')}
+                </strong>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Button onClick={() => navigate('/?tab=submissions')} className="h-11 px-6 font-bold">
+                <FileText className="size-4 mr-1.5" />
+                Go to My Thesis Submissions →
+              </Button>
+              <Button variant="outline" onClick={() => navigate('/')} className="h-11 px-5">
+                Back to Dashboard
+              </Button>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
           <div className="fp-card space-y-6">
             <div>
@@ -528,6 +603,7 @@ export default function SubmitProposal() {
             </div>
           </div>
         </form>
+        )}
       </main>
     </div>
   );

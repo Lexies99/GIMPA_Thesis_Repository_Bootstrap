@@ -897,8 +897,8 @@ export function Dashboard({ userRole }: DashboardProps) {
                   },
                   {
                     icon: FolderOpen,
-                    label: 'Submit Proposal / Thesis',
-                    onClick: () => navigate('/submit-proposal'),
+                    label: isStudent ? 'My Thesis Submissions' : 'Submit Proposal / Thesis',
+                    onClick: () => navigate(isStudent ? '/?tab=submissions' : '/submit-proposal'),
                   },
                   {
                     icon: TrendingUp,
@@ -935,28 +935,25 @@ export function Dashboard({ userRole }: DashboardProps) {
             </div>
           </div>
 
-          {/* Student's Personal Workflow Card (if student has papers) */}
-          {myPapers.length > 0 && (
-            <div className="space-y-4 pt-2">
-              <h2 className="text-[20px] font-bold text-[#1a1d1a]">
-                My Thesis Submissions
-              </h2>
-              {myPapers.map((paper) => (
-                <div key={paper.id} className="fp-card space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-[#eaece4]">
-                    <div>
-                      <h3 className="text-[16px] font-bold text-[#1a1d1a]">{paper.title}</h3>
-                      <p className="text-[13px] text-[#6e766b] mt-0.5">
-                        Paper ID: #{paper.id} · Discipline: {paper.discipline || 'Computer Science'} · Mode: {paper.work_mode || 'Individual'}
-                      </p>
-                    </div>
-                    <Badge variant="default" className="self-start sm:self-center">
-                      {paper.status.replace(/_/g, ' ')}
-                    </Badge>
-                  </div>
-                  <StudentPaperWorkflow paper={paper} token={accessToken} onUpdate={() => void fetchAllDashboardData()} />
+          {/* Student's Personal Workflow Summary Card linking to dedicated "My Thesis Submissions" left menu */}
+          {isStudent && (
+            <div className="fp-entity-row flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="fp-avatar">
+                  <FileText className="size-5" />
                 </div>
-              ))}
+                <div>
+                  <h3 className="text-[16px] font-bold m-0" style={{ color: 'var(--text-main)' }}>
+                    My Thesis Submissions Workspace
+                  </h3>
+                  <p className="text-[13px] m-0 mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Open <strong>My Thesis Submissions</strong> from the left menu to work on your active thesis (1 submission at a time).
+                  </p>
+                </div>
+              </div>
+              <Button size="sm" onClick={() => navigate('/?tab=submissions')}>
+                Open My Thesis Submissions →
+              </Button>
             </div>
           )}
         </div>
