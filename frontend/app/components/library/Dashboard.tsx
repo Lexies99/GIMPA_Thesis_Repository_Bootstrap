@@ -294,26 +294,39 @@ function StudentPaperWorkflow({ paper, token, onUpdate }: StudentPaperWorkflowPr
 
 interface DashboardProps {
   userRole: string
+  onTabChange?: (tab: string) => void
 }
 
-export function Dashboard({ userRole }: DashboardProps) {
+export function Dashboard({ userRole, onTabChange }: DashboardProps) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const userRoles = (user?.roles || []) as string[]
   const hasRole = (r: string) => userRole === r || userRoles.includes(r)
 
+  const goToTab = (tab: string) => {
+    if (onTabChange) {
+      onTabChange(tab)
+    } else {
+      navigate(`/?tab=${tab}`)
+    }
+  }
+
   const isSystemAdmin = hasRole('system_admin')
   const isDeputyRector = hasRole('deputy_rector')
   const isLibrarian = !isSystemAdmin && (hasRole('librarian') || hasRole('head_library'))
-  const isStudent = userRole === 'student' || userRole === 'member'
   const isHodOrCoordinator = hasRole('hod') || hasRole('project_coordinator') || hasRole('dean') || isDeputyRector
   const isAcademicSupervisor = hasRole('project_supervisor') || hasRole('lecturer')
+  const isExternalExaminer = hasRole('external_examiner') && !isAcademicSupervisor && !isHodOrCoordinator && !isSystemAdmin
+  const isStudent = (userRole === 'student' || userRole === 'member') && !isAcademicSupervisor && !isHodOrCoordinator && !isLibrarian && !isSystemAdmin && !isDeputyRector
 
-  const showPipeline = (isHodOrCoordinator || isSystemAdmin || isDeputyRector) && !isLibrarian
-  const isSupervisor = (isAcademicSupervisor || isHodOrCoordinator || isSystemAdmin || isDeputyRector) && !isLibrarian
-  const showSupervisorPerformance = (isHodOrCoordinator || isSystemAdmin || isDeputyRector) && !isLibrarian
-  const showUserDirectory = (isSystemAdmin || isDeputyRector) && !isLibrarian
-  const canManageCeilings = isHodOrCoordinator || isSystemAdmin || isDeputyRector
+  const showPipeline = (isHodOrCoordinator || isSystemAdmin || isDeputyRector) && !isLibrarian && !isStudent
+  const isSupervisor = (isAcademicSupervisor || isHodOrCoordinator || isSystemAdmin || isDeputyRector) && !isLibrarian && !isStudent
+  const showSupervisorPerformance = (isHodOrCoordinator || isSystemAdmin || isDeputyRector) && !isLibrarian && !isStudent
+  const showUserDirectory = (isSystemAdmin || isDeputyRector) && !isLibrarian && !isStudent
+  const canManageCeilings = (isHodOrCoordinator || isSystemAdmin || isDeputyRector) && !isLibrarian && !isStudent
+  const showReporting = (isHodOrCoordinator || isLibrarian || isSystemAdmin || isDeputyRector) && !isStudent && !isExternalExaminer
+  const showPlagiarismRadar = (isSupervisor || isLibrarian) && !isStudent && !isExternalExaminer
+  const showOverdueSla = (isSupervisor || isLibrarian) && !isStudent && !isExternalExaminer
 
   // Active Sub-Tab matching FinPlanner pills
   const [activeSubTab, setActiveSubTab] = useState<
@@ -390,10 +403,10 @@ export function Dashboard({ userRole }: DashboardProps) {
       ] = await Promise.all([
         apiGetPaperStats(isStudent && user?.id ? user.id : undefined),
         apiGetMyPapers(accessToken),
-        apiGetDashboardLiveMetrics(accessToken).catch(() => null),
-        apiGetSupervisorCapacities(accessToken).catch(() => []),
-        apiGetSupervisorCommentsReport(accessToken).catch(() => ({ total_comments: 0, entries: [], supervisors_summary: [] })),
-        apiGetOverdueReviews(accessToken, 5).catch(() => []),
+        !isStudent ? apiGetDashboardLiveMetrics(accessToken).catch(() => null) : Promise.resolve(null),
+        canManageCeilings ? apiGetSupervisorCapacities(accessToken).catch(() => []) : Promise.resolve([]),
+        canManageCeilings ? apiGetSupervisorCommentsReport(accessToken).catch(() => ({ total_comments: 0, entries: [], supervisors_summary: [] })) : Promise.resolve({ total_comments: 0, entries: [], supervisors_summary: [] }),
+        showOverdueSla ? apiGetOverdueReviews(accessToken, 5).catch(() => []) : Promise.resolve([]),
         showPipeline ? apiGetPipelineMetrics(accessToken).catch(() => null) : Promise.resolve(null),
         showUserDirectory ? apiListUsers(accessToken, { limit: 500 }).catch(() => []) : Promise.resolve([]),
         showUserDirectory ? apiListStudents(accessToken, { limit: 500 }).catch(() => []) : Promise.resolve([]),
@@ -688,7 +701,7 @@ export function Dashboard({ userRole }: DashboardProps) {
           </div>
         </div>
 
-        {/* FinPlanner Sub-Navigation Pills (Image 7) */}
+        {/* FinPlanner Sub-Navigation Pills (Role-Scoped) */}
         <div className="flex flex-wrap items-center gap-2.5 pb-1">
           <button
             type="button"
@@ -696,26 +709,30 @@ export function Dashboard({ userRole }: DashboardProps) {
             className={`fp-subnav-pill ${activeSubTab === 'welcome' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
           >
             <BookOpen className="size-3.5" />
-            Overview
+            {isStudent ? 'My Thesis Overview' : 'Overview'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('reporting')}
-            className={`fp-subnav-pill ${activeSubTab === 'reporting' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
-          >
-            <BarChart3 className="size-3.5" />
-            Reporting & KPIs
-          </button>
+          {showReporting && (
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('reporting')}
+              className={`fp-subnav-pill ${activeSubTab === 'reporting' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
+            >
+              <BarChart3 className="size-3.5" />
+              Reporting & KPIs
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('operations')}
-            className={`fp-subnav-pill ${activeSubTab === 'operations' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
-          >
-            <FolderOpen className="size-3.5" />
-            Phase Pipeline
-          </button>
+          {showPipeline && (
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('operations')}
+              className={`fp-subnav-pill ${activeSubTab === 'operations' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
+            >
+              <FolderOpen className="size-3.5" />
+              Phase Pipeline
+            </button>
+          )}
 
           {canManageCeilings && (
             <button
@@ -728,14 +745,16 @@ export function Dashboard({ userRole }: DashboardProps) {
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('plagiarism')}
-            className={`fp-subnav-pill ${activeSubTab === 'plagiarism' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
-          >
-            <ShieldCheck className="size-3.5" />
-            Plagiarism Radar
-          </button>
+          {showPlagiarismRadar && (
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('plagiarism')}
+              className={`fp-subnav-pill ${activeSubTab === 'plagiarism' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
+            >
+              <ShieldCheck className="size-3.5" />
+              Plagiarism Radar
+            </button>
+          )}
 
           {canManageCeilings && (
             <button
@@ -748,14 +767,16 @@ export function Dashboard({ userRole }: DashboardProps) {
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('overdue')}
-            className={`fp-subnav-pill ${activeSubTab === 'overdue' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
-          >
-            <Clock className="size-3.5" />
-            5-Day SLA ({overdueCount})
-          </button>
+          {showOverdueSla && (
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('overdue')}
+              className={`fp-subnav-pill ${activeSubTab === 'overdue' ? 'fp-subnav-pill-active' : 'fp-subnav-pill-inactive'}`}
+            >
+              <Clock className="size-3.5" />
+              5-Day SLA ({overdueCount})
+            </button>
+          )}
         </div>
       </div>
 
@@ -772,145 +793,318 @@ export function Dashboard({ userRole }: DashboardProps) {
       )}
 
       {/* ========================================================================= */}
-      {/* VIEW 1: WELCOME! BENTO GRID (Matches FinPlanner Image 4)                  */}
+      {/* VIEW 1: WELCOME! BENTO GRID (Role-Scoped for Students vs Staff/Reviewers) */}
       {/* ========================================================================= */}
       {activeSubTab === 'welcome' && (
         <div className="space-y-8">
           {/* Top Row of 2x2 Bento Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Top-Left Card: "My accounts" style summary breakdown */}
-            <div className="fp-card flex flex-col justify-between">
-              <h2 className="text-[18px] font-bold text-[#1a1d1a] mb-6">
-                Repository pipeline
-              </h2>
-              <div className="space-y-5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[14px] font-medium text-[#1a1d1a]">Proposals & Topics (Phase 1–2)</span>
-                  <span className="text-[20px] font-bold text-[#1a1d1a]">{p1Count + p2Count}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[14px] font-medium text-[#1a1d1a]">Chapters in Progress (Phase 3)</span>
-                  <span className="text-[20px] font-bold text-[#1a1d1a]">{p3Count}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[14px] font-medium text-[#1a1d1a]">Examination & Marking (Phase 4)</span>
-                  <span className="text-[20px] font-bold text-[#1a1d1a]">{p4Count}</span>
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-[#eaece4]">
-                  <span className="text-[14px] font-medium text-[#1a1d1a]">Total Active Theses</span>
-                  <span className="text-[20px] font-bold text-[#1a1d1a]">{totalTheses}</span>
-                </div>
-              </div>
-            </div>
+            {isStudent ? (
+              <>
+                {/* Student Personal Progress Card (Strictly Scoped to Logged-In Student) */}
+                {(() => {
+                  const completedStatuses = new Set([
+                    'approved',
+                    'published',
+                    'phase5_published',
+                    'phase5_certified',
+                    'phase5_approved_for_library',
+                    'approved_for_library',
+                  ])
+                  const activePaper = myPapers.find((p) => !completedStatuses.has((p.status || '').toLowerCase()))
+                  const completedPriorCount = myPapers.filter((p) => completedStatuses.has((p.status || '').toLowerCase())).length
+                  const chaptersCompleted = activePaper
+                    ? [
+                        activePaper.ch1_student_done,
+                        activePaper.ch2_student_done,
+                        activePaper.ch3_student_done,
+                        activePaper.ch4_student_done,
+                        activePaper.ch5_student_done,
+                      ].filter(Boolean).length
+                    : 0
+                  const phaseLabel = !activePaper
+                    ? 'No Active Thesis'
+                    : activePaper.status.startsWith('phase1') || activePaper.status.includes('pending_hod')
+                      ? 'Phase 1: Topic Review'
+                      : activePaper.status.startsWith('phase2') || activePaper.status.includes('pending_coordinator')
+                        ? 'Phase 2: Proposal & Supervisor'
+                        : activePaper.status.startsWith('phase3') || activePaper.status === 'pending_lecturer'
+                          ? 'Phase 3: Chapters 1–5'
+                          : activePaper.status.startsWith('phase4') || activePaper.status === 'pending_examiner'
+                            ? 'Phase 4: Examination'
+                            : 'Phase 5: Corrections & Sign-off'
 
-            {/* Top-Right Card: "Upcoming transactions" style list */}
-            <div className="fp-card flex flex-col justify-between">
-              <h2 className="text-[18px] font-bold text-[#1a1d1a] mb-6">
-                Recent & upcoming submissions
-              </h2>
-              <div className="space-y-4">
-                {recentActivityRows.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-4 items-center gap-2 text-[13px]">
-                    <span className="text-[#1a1d1a]">{row.date}</span>
-                    <span className={`font-semibold ${row.isNegative ? 'text-[#c93b2b]' : 'text-[#3b7a57]'}`}>
-                      {row.metric}
-                    </span>
-                    <span className="text-[#1a1d1a] truncate">{row.author}</span>
-                    <div className="flex justify-end">
-                      <span
-                        className={`inline-flex items-center justify-center px-3 py-0.5 rounded-md text-[11px] font-semibold capitalize ${
-                          row.darkTag
-                            ? 'bg-[#5a6552] text-white'
-                            : 'bg-[#dce7d0] text-[#1a1d1a]'
-                        }`}
-                      >
-                        {row.tag}
-                      </span>
+                  return (
+                    <div className="fp-card flex flex-col justify-between">
+                      <h2 className="text-[18px] font-bold text-[#1a1d1a] mb-6">
+                        My thesis progress
+                      </h2>
+                      <div className="space-y-5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[14px] font-medium text-[#1a1d1a]">Active Submission Slot (Max 1)</span>
+                          <span className="text-[20px] font-bold text-[#1a1d1a]">{activePaper ? '1 / 1' : '0 / 1'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[14px] font-medium text-[#1a1d1a]">Current Milestone Phase</span>
+                          <span className="text-[14px] font-bold text-[#5a6552]">{phaseLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[14px] font-medium text-[#1a1d1a]">Chapters Completed (Ch. 1–5)</span>
+                          <span className="text-[20px] font-bold text-[#1a1d1a]">{chaptersCompleted} / 5</span>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-[#eaece4]">
+                          <span className="text-[14px] font-medium text-[#1a1d1a]">Completed Prior Degree Theses</span>
+                          <span className="text-[20px] font-bold text-[#1a1d1a]">{completedPriorCount}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Student Personal Submission History Card (Only Logged-In Student's Papers) */}
+                <div className="fp-card flex flex-col justify-between">
+                  <h2 className="text-[18px] font-bold text-[#1a1d1a] mb-6">
+                    My submission milestones
+                  </h2>
+                  {myPapers.length === 0 ? (
+                    <div className="py-6 text-center space-y-3">
+                      <p className="text-[13px] text-[#6e766b]">
+                        You have not submitted a thesis topic yet. You can work on 1 active submission at a time.
+                      </p>
+                      <Button size="sm" onClick={() => navigate('/submit-proposal')}>
+                        + Submit Thesis Topic (Phase 1)
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {myPapers.map((p) => (
+                        <div key={p.id} className="grid grid-cols-4 items-center gap-2 text-[13px]">
+                          <span className="text-[#1a1d1a]">
+                            {p.publication_date
+                              ? new Date(p.publication_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                              : 'Active'}
+                          </span>
+                          <span className="font-semibold text-[#3b7a57]">Thesis #{p.id}</span>
+                          <span className="text-[#1a1d1a] truncate" title={p.title}>{p.title}</span>
+                          <div className="flex justify-end">
+                            <span className="inline-flex items-center justify-center px-3 py-0.5 rounded-md text-[11px] font-semibold capitalize bg-[#dce7d0] text-[#1a1d1a]">
+                              {p.status.replace(/^phase\d_/, '').replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Staff / Reviewer Top-Left Card: Repository pipeline */}
+                <div className="fp-card flex flex-col justify-between">
+                  <h2 className="text-[18px] font-bold text-[#1a1d1a] mb-6">
+                    Repository pipeline
+                  </h2>
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[14px] font-medium text-[#1a1d1a]">Proposals & Topics (Phase 1–2)</span>
+                      <span className="text-[20px] font-bold text-[#1a1d1a]">{p1Count + p2Count}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[14px] font-medium text-[#1a1d1a]">Chapters in Progress (Phase 3)</span>
+                      <span className="text-[20px] font-bold text-[#1a1d1a]">{p3Count}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[14px] font-medium text-[#1a1d1a]">Examination & Marking (Phase 4)</span>
+                      <span className="text-[20px] font-bold text-[#1a1d1a]">{p4Count}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-[#eaece4]">
+                      <span className="text-[14px] font-medium text-[#1a1d1a]">Total Active Theses</span>
+                      <span className="text-[20px] font-bold text-[#1a1d1a]">{totalTheses}</span>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+
+                {/* Staff / Reviewer Top-Right Card: Recent & upcoming submissions */}
+                <div className="fp-card flex flex-col justify-between">
+                  <h2 className="text-[18px] font-bold text-[#1a1d1a] mb-6">
+                    Recent & upcoming submissions
+                  </h2>
+                  <div className="space-y-4">
+                    {recentActivityRows.map((row, idx) => (
+                      <div key={idx} className="grid grid-cols-4 items-center gap-2 text-[13px]">
+                        <span className="text-[#1a1d1a]">{row.date}</span>
+                        <span className={`font-semibold ${row.isNegative ? 'text-[#c93b2b]' : 'text-[#3b7a57]'}`}>
+                          {row.metric}
+                        </span>
+                        <span className="text-[#1a1d1a] truncate">{row.author}</span>
+                        <div className="flex justify-end">
+                          <span
+                            className={`inline-flex items-center justify-center px-3 py-0.5 rounded-md text-[11px] font-semibold capitalize ${
+                              row.darkTag
+                                ? 'bg-[#5a6552] text-white'
+                                : 'bg-[#dce7d0] text-[#1a1d1a]'
+                            }`}
+                          >
+                            {row.tag}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Bottom Row of 2x2 Bento Grid (60% Chart / 40% Quick Access) */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Bottom-Left Card: "Inflow & Income" vertical stacked bar chart */}
+            {/* Bottom-Left Card */}
             <div className="fp-card lg:col-span-7 flex flex-col justify-between">
-              <div className="flex flex-wrap items-center gap-6 mb-6">
-                <h2 className="text-[18px] font-bold text-[#1a1d1a]">
-                  Submissions & Approvals
-                </h2>
-                <div className="flex items-center gap-4 text-[12px] text-[#6e766b]">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[#5a6552] inline-block" />
-                    Submissions
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[#a6be95] inline-block" />
-                    Approvals
-                  </span>
-                </div>
-              </div>
-
-              {/* Stacked Vertical Pill Bars */}
-              <div className="pt-4 pb-2">
-                <div className="h-44 flex items-end justify-between gap-2 sm:gap-3 px-2 border-b border-[#eaece4]">
-                  {monthlyBarData.map((bar) => (
-                    <div key={bar.label} className="flex-1 flex flex-col items-center h-full justify-end">
-                      <div className="w-3 sm:w-3.5 flex flex-col justify-end h-full">
-                        {/* Top segment (light sage #a6be95) */}
-                        <div
-                          className="w-full bg-[#a6be95] rounded-t-full"
-                          style={{ height: `${bar.topPct}%` }}
-                        />
-                        {/* Bottom segment (dark olive #5a6552) */}
-                        <div
-                          className="w-full bg-[#5a6552] -mt-1 rounded-t-sm"
-                          style={{ height: `${bar.bottomPct}%` }}
-                        />
+              {isStudent ? (
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-[18px] font-bold text-[#1a1d1a]">
+                      My 5-Phase Thesis Roadmap
+                    </h2>
+                    <p className="text-[12.5px] text-[#6e766b] mt-1">
+                      Each student completes 1 thesis submission from Phase 1 to Phase 5 before starting a subsequent degree thesis (e.g. Undergraduate → Master’s → PhD).
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 pt-2">
+                    {[
+                      { step: 1, title: 'Phase 1', desc: 'Topic Proposal & HOD Approval' },
+                      { step: 2, title: 'Phase 2', desc: 'Full Proposal & Supervisor' },
+                      { step: 3, title: 'Phase 3', desc: 'Chapters 1–5 & Similarity' },
+                      { step: 4, title: 'Phase 4', desc: 'Internal & External Marking' },
+                      { step: 5, title: 'Phase 5', desc: 'Corrections & Library Archive' },
+                    ].map((ph) => (
+                      <div
+                        key={ph.step}
+                        className="p-3 rounded-xl border border-[#eaece4] bg-white flex flex-col justify-between gap-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#5a6552]">
+                            {ph.title}
+                          </span>
+                          <span className="w-5 h-5 rounded-full bg-[#dce7d0] text-[#1a1d1a] text-[11px] font-bold flex items-center justify-center">
+                            {ph.step}
+                          </span>
+                        </div>
+                        <p className="text-[11.5px] text-[#6e766b] leading-snug m-0">
+                          {ph.desc}
+                        </p>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-6 mb-6">
+                    <h2 className="text-[18px] font-bold text-[#1a1d1a]">
+                      Submissions & Approvals
+                    </h2>
+                    <div className="flex items-center gap-4 text-[12px] text-[#6e766b]">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded-full bg-[#5a6552] inline-block" />
+                        Submissions
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded-full bg-[#a6be95] inline-block" />
+                        Approvals
+                      </span>
                     </div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between gap-2 sm:gap-3 px-2 pt-2.5">
-                  {monthlyBarData.map((bar) => (
-                    <span key={bar.label} className="flex-1 text-center text-[10px] text-[#6e766b]">
-                      {bar.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                  </div>
+
+                  {/* Stacked Vertical Pill Bars */}
+                  <div className="pt-4 pb-2">
+                    <div className="h-44 flex items-end justify-between gap-2 sm:gap-3 px-2 border-b border-[#eaece4]">
+                      {monthlyBarData.map((bar) => (
+                        <div key={bar.label} className="flex-1 flex flex-col items-center h-full justify-end">
+                          <div className="w-3 sm:w-3.5 flex flex-col justify-end h-full">
+                            {/* Top segment (light sage #a6be95) */}
+                            <div
+                              className="w-full bg-[#a6be95] rounded-t-full"
+                              style={{ height: `${bar.topPct}%` }}
+                            />
+                            {/* Bottom segment (dark olive #5a6552) */}
+                            <div
+                              className="w-full bg-[#5a6552] -mt-1 rounded-t-sm"
+                              style={{ height: `${bar.bottomPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 sm:gap-3 px-2 pt-2.5">
+                      {monthlyBarData.map((bar) => (
+                        <span key={bar.label} className="flex-1 text-center text-[10px] text-[#6e766b]">
+                          {bar.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Bottom-Right Card: "Quick access" (Matches Image 4) */}
+            {/* Bottom-Right Card: "Quick access" (Role-Scoped & Directly Switches Active Tab) */}
             <div className="fp-card lg:col-span-5 flex flex-col justify-between">
               <h2 className="text-[18px] font-bold text-[#1a1d1a] mb-5">
                 Quick access
               </h2>
               <div className="space-y-3.5">
-                {[
-                  {
-                    icon: User,
-                    label: 'My Profile & Account',
-                    onClick: () => navigate('/?tab=profile'),
-                  },
-                  {
-                    icon: FolderOpen,
-                    label: isStudent ? 'My Thesis Submissions' : 'Submit Proposal / Thesis',
-                    onClick: () => navigate(isStudent ? '/?tab=submissions' : '/submit-proposal'),
-                  },
-                  {
-                    icon: TrendingUp,
-                    label: 'Review & Approval Queue',
-                    onClick: () => navigate('/?tab=approval'),
-                  },
-                  {
-                    icon: BookOpen,
-                    label: 'Public Thesis Catalog',
-                    onClick: () => navigate('/?tab=catalog'),
-                  },
-                ].map((item) => {
+                {(isStudent
+                  ? [
+                      {
+                        icon: FolderOpen,
+                        label: 'My Thesis Submissions',
+                        onClick: () => goToTab('submissions'),
+                      },
+                      {
+                        icon: BookOpen,
+                        label: 'Public Thesis Catalog',
+                        onClick: () => goToTab('catalog'),
+                      },
+                      {
+                        icon: Search,
+                        label: 'Search & Discovery',
+                        onClick: () => goToTab('search'),
+                      },
+                      {
+                        icon: User,
+                        label: 'My Profile & Account',
+                        onClick: () => goToTab('profile'),
+                      },
+                    ]
+                  : [
+                      {
+                        icon: User,
+                        label: 'My Profile & Account',
+                        onClick: () => goToTab('profile'),
+                      },
+                      {
+                        icon: TrendingUp,
+                        label: 'Review & Approval Queue',
+                        onClick: () => goToTab('approval'),
+                      },
+                      canManageCeilings
+                        ? {
+                            icon: Users,
+                            label: 'Schools and Users',
+                            onClick: () => goToTab('librarian'),
+                          }
+                        : {
+                            icon: Search,
+                            label: 'Search & Discovery',
+                            onClick: () => goToTab('search'),
+                          },
+                      {
+                        icon: BookOpen,
+                        label: 'Public Thesis Catalog',
+                        onClick: () => goToTab('catalog'),
+                      },
+                    ]
+                ).map((item) => {
                   const Icon = item.icon
                   return (
                     <button
@@ -951,7 +1145,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                   </p>
                 </div>
               </div>
-              <Button size="sm" onClick={() => navigate('/?tab=submissions')}>
+              <Button size="sm" onClick={() => goToTab('submissions')}>
                 Open My Thesis Submissions →
               </Button>
             </div>
@@ -1080,7 +1274,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                       </p>
                       <button
                         type="button"
-                        onClick={() => navigate('/?tab=approval')}
+                        onClick={() => goToTab('approval')}
                         className="text-[14px] font-bold text-white flex items-center gap-1.5 hover:underline cursor-pointer text-left"
                       >
                         <span>{act.phase_label || 'Thesis Milestone Updated'}</span>
@@ -1210,7 +1404,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                       <Badge variant="default">{st.status.replace(/_/g, ' ')}</Badge>
                     </td>
                     <td className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => navigate('/?tab=approval')}>
+                      <Button size="sm" variant="outline" onClick={() => goToTab('approval')}>
                         Inspect
                       </Button>
                     </td>
@@ -1454,7 +1648,7 @@ export function Dashboard({ userRole }: DashboardProps) {
                       </Badge>
                     </td>
                     <td className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => navigate('/?tab=approval')}>
+                      <Button size="sm" variant="outline" onClick={() => goToTab('approval')}>
                         Inspect
                       </Button>
                     </td>

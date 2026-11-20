@@ -339,18 +339,26 @@ def admin_create_user(
 
     temporary_password = generate_default_password()
     try:
+        effective_school = payload.school
+        effective_dept = payload.department
+        if payload.role in {"librarian", "head_library"}:
+            effective_school = effective_school or "GIMPA Library"
+            effective_dept = effective_dept or "Library Services"
+
         created = create_user(
             db=db,
             email=payload.email,
             role=payload.role,
             school_id=payload.school_id,
-            school=payload.school,
+            school=effective_school,
             password=temporary_password,
             full_name=payload.full_name,
-            department=payload.department,
+            department=effective_dept,
             must_change_password=True,
         )
         created.is_active = True
+        if getattr(payload, "program", None):
+            created.program = payload.program.strip()
         if getattr(payload, "specialization", None):
             created.specialization = payload.specialization.strip()
         if getattr(payload, "research_interests", None):
@@ -358,6 +366,27 @@ def admin_create_user(
         if getattr(payload, "max_student_ceiling", None):
             created.max_student_ceiling = max(1, int(payload.max_student_ceiling))
         db.add(created)
+
+        # Upsert Student row when creating a student so + Add User matches Bulk Student Upload
+        if payload.role in {"student", "member"} and payload.school_id:
+            existing_student = db.query(Student).filter(Student.student_id == payload.school_id.strip()).first()
+            student_data = {
+                "student_id": payload.school_id.strip(),
+                "full_name": (payload.full_name or "").strip(),
+                "email": payload.email.strip().lower(),
+                "school": (effective_school or "").strip() or None,
+                "department": (effective_dept or "").strip() or None,
+                "program": (payload.program or "").strip() or None,
+                "certification_type": (getattr(payload, "certification_type", None) or "").strip() or None,
+                "block_code": (getattr(payload, "block_code", None) or "").strip().upper() or None,
+                "year": getattr(payload, "year", None),
+            }
+            if existing_student:
+                for k, v in student_data.items():
+                    setattr(existing_student, k, v)
+            else:
+                db.add(Student(**student_data))
+
         db.commit()
         db.refresh(created)
     except ValueError as exc:

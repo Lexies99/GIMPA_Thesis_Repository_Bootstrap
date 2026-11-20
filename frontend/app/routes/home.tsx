@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useLocation } from 'react-router';
 import type { Route } from "./+types/home";
 import { PublicCatalog } from '../components/library/PublicCatalog';
 import { LibraryStats } from '../components/library/LibraryStats';
@@ -43,6 +43,7 @@ export function meta({}: Route.MetaArgs) {
 
 export default function Home() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -76,14 +77,12 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab');
-      if (tab && tab !== activeTab) {
-        setActiveTab(tab);
-      }
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab);
     }
-  }, []);
+  }, [location.search]);
 
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
@@ -725,7 +724,7 @@ export default function Home() {
           {activeTab === 'search'      && <SearchDiscovery />}
           {activeTab === 'submissions' && isAuthenticated && user?.role !== 'guest' && <MyThesisSubmissions />}
           {activeTab === 'dashboard'   && isAuthenticated && user?.role !== 'guest' && (
-            <Dashboard userRole={user?.role || 'student'} />
+            <Dashboard userRole={user?.role || 'student'} onTabChange={handleTabChange} />
           )}
           {activeTab === 'phd' && canViewPhdHub && <PhdHub />}
           {activeTab === 'profile'  && isAuthenticated && user?.role !== 'guest' && <Profile />}

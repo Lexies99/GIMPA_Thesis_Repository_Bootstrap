@@ -50,15 +50,22 @@ upload_dir_recursive(os.path.join(LOCAL_ROOT, 'frontend', 'build', 'client'), f"
 # Upload server build to app/frontend/build/server
 upload_dir_recursive(os.path.join(LOCAL_ROOT, 'frontend', 'build', 'server'), f"{REMOTE_APP_DIR}/frontend/build/server")
 
-# Also upload modified frontend/app source files and backend papers.py
+# Also upload modified frontend/app source files and backend files
 upload_dir_recursive(os.path.join(LOCAL_ROOT, 'frontend', 'app'), f"{REMOTE_APP_DIR}/frontend/app")
-try:
-    with open(os.path.join(LOCAL_ROOT, 'app', 'api', 'routes', 'papers.py'), 'rb') as fl:
-        sftp.putfo(fl, f"{REMOTE_APP_DIR}/app/api/routes/papers.py", confirm=False)
-    with open(os.path.join(LOCAL_ROOT, 'app', 'api', 'routes', 'papers.py'), 'rb') as fl:
-        sftp.putfo(fl, f"{REMOTE_APP_DIR}/backend/app/api/routes/papers.py", confirm=False)
-except Exception as e:
-    print("Backend papers.py upload note:", e)
+backend_rel_files = [
+    'app/api/routes/papers.py',
+    'app/api/routes/users.py',
+    'app/schemas/user.py',
+    'app/services/import_service.py',
+]
+for rel_f in backend_rel_files:
+    local_p = os.path.join(LOCAL_ROOT, *rel_f.split('/'))
+    for target_prefix in [REMOTE_APP_DIR, f"{REMOTE_APP_DIR}/backend"]:
+        try:
+            with open(local_p, 'rb') as fl:
+                sftp.putfo(fl, f"{target_prefix}/{rel_f}", confirm=False)
+        except Exception as e:
+            print(f"Backend {rel_f} upload note:", e)
 
 sftp.close()
 client.close()

@@ -369,6 +369,10 @@ def _upsert_staff_user(
     ceiling_str = _map_value(row, ["max student ceiling", "ceiling", "max students", "capacity", "quota", "student ceiling"])
     max_student_ceiling = int(ceiling_str) if ceiling_str.isdigit() and int(ceiling_str) > 0 else 5
 
+    is_lib_role = roles[0] in {"librarian", "head_library"}
+    mapped_school = _map_value(row, ["school", "unit"]) or ("GIMPA Library" if is_lib_role else "")
+    mapped_dept = _map_value(row, ["department"]) or ("Library Services" if is_lib_role else "")
+
     existing = get_user_by_email(db, email)
     if existing:
         updated = update_user(
@@ -377,8 +381,8 @@ def _upsert_staff_user(
             UserUpdate(
                 full_name=name or existing.full_name,
                 school_id=school_id or existing.school_id,
-                school=_map_value(row, ["school"]) or existing.school,
-                department=_map_value(row, ["department"]) or existing.department,
+                school=mapped_school or existing.school,
+                department=mapped_dept or existing.department,
                 specialization=specialization or existing.specialization,
                 research_interests=research_interests or existing.research_interests,
                 max_student_ceiling=max_student_ceiling if ceiling_str else existing.max_student_ceiling,
@@ -399,10 +403,10 @@ def _upsert_staff_user(
         email=email,
         role=roles[0],
         school_id=school_id or None,
-        school=_map_value(row, ["school"]) or None,
+        school=mapped_school or None,
         password=generated_password,
         full_name=name or None,
-        department=_map_value(row, ["department"]) or None,
+        department=mapped_dept or None,
         must_change_password=True,
     )
     user.specialization = specialization or ""
