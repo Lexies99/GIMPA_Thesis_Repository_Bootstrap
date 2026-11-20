@@ -21,11 +21,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     return (
       <input
         type={type}
-        className={`flex h-11 w-full rounded-lg border text-sm placeholder:text-[#9aa196] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${paddingClass} ${className}`}
+        className={`flex h-11 w-full rounded-lg border text-sm focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${paddingClass} ${className}`}
         style={{
-          backgroundColor: "#ffffff",
-          borderColor: "#e2e5dc",
-          color: "#1a1d1a",
+          backgroundColor: "var(--bg-input)",
+          borderColor: "var(--border-color)",
+          color: "var(--text-main)",
           ...style,
         }}
         ref={ref}

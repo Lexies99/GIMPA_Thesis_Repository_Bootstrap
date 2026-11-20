@@ -323,8 +323,16 @@ export function AccountManagement() {
 
   const filteredAccounts = accounts.filter((acc) => {
     if (accountRoleFilter !== 'ALL') {
-      const matchRole = acc.role === accountRoleFilter || acc.roles.includes(accountRoleFilter as ApiUserRole)
-      if (!matchRole) return false
+      const primaryRole = (acc.role || '').toLowerCase()
+      if (accountRoleFilter === 'student') {
+        if (primaryRole !== 'student' && primaryRole !== 'member') return false
+      } else if (accountRoleFilter === 'librarian') {
+        if (primaryRole !== 'librarian' && primaryRole !== 'head_library') return false
+      } else if (accountRoleFilter === 'system_admin') {
+        if (primaryRole !== 'system_admin' && primaryRole !== 'deputy_rector') return false
+      } else {
+        if (primaryRole !== accountRoleFilter) return false
+      }
     }
     if (accountStatusFilter === 'ACTIVE' && !acc.isActive) return false
     if (accountStatusFilter === 'PENDING' && acc.isActive) return false
@@ -1772,20 +1780,150 @@ export function AccountManagement() {
       {/* DIALOGS (Matches FinPlanner Image 2 & 10 Clean White Modals)              */}
       {/* ========================================================================= */}
       <Dialog open={!!selectedAccount} onOpenChange={(open) => { if (!open) setSelectedAccount(null) }}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Account details</DialogTitle>
           </DialogHeader>
           {selectedAccount && (
-            <div className="space-y-3 text-[13px] pt-2">
-              <div className="p-4 rounded-xl bg-[#fafbf8] border border-[#eaece4] space-y-2">
-                <p><strong>Name:</strong> {selectedAccount.name}</p>
-                <p><strong>Email:</strong> {selectedAccount.email}</p>
-                <p><strong>Role:</strong> {roleChipLabel(selectedAccount.role)}</p>
-                <p><strong>School:</strong> {selectedAccount.school}</p>
-                <p><strong>Department:</strong> {selectedAccount.department}</p>
-                <p><strong>School ID:</strong> {selectedAccount.schoolId}</p>
-                <p><strong>Status:</strong> {selectedAccount.isActive ? 'Active' : 'Pending activation'}</p>
+            <div className="space-y-4 text-[13px] pt-2" style={{ color: 'var(--text-main)' }}>
+              {/* Top User Summary Row */}
+              <div
+                className="flex items-center justify-between gap-4 p-4 rounded-xl border"
+                style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border-color)' }}
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="fp-avatar">
+                    {(selectedAccount.name || 'U').trim().charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[15px] font-bold truncate" style={{ color: 'var(--text-main)' }}>
+                      {selectedAccount.name}
+                    </div>
+                    <div className="text-[12px] truncate" style={{ color: 'var(--text-muted)' }}>
+                      {selectedAccount.email}
+                    </div>
+                  </div>
+                </div>
+                <Badge variant={selectedAccount.isActive ? 'default' : 'destructive'}>
+                  {selectedAccount.isActive ? 'Active' : 'Pending'}
+                </Badge>
+              </div>
+
+              {/* Structured Details Grid */}
+              <div
+                className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-4 rounded-xl border"
+                style={{ backgroundColor: 'var(--bg-main)', borderColor: 'var(--border-color)' }}
+              >
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>
+                    Primary Role / Position
+                  </span>
+                  <span className="font-bold text-[13.5px]" style={{ color: 'var(--text-main)' }}>
+                    {roleChipLabel(selectedAccount.role)}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>
+                    Student / Staff ID
+                  </span>
+                  <span className="font-mono font-bold text-[13.5px]" style={{ color: 'var(--text-main)' }}>
+                    {selectedAccount.schoolId}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>
+                    School / Faculty
+                  </span>
+                  <span className="font-semibold text-[13px]" style={{ color: 'var(--text-main)' }}>
+                    {selectedAccount.school}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>
+                    Department
+                  </span>
+                  <span className="font-semibold text-[13px]" style={{ color: 'var(--text-main)' }}>
+                    {selectedAccount.department}
+                  </span>
+                </div>
+
+                {selectedAccount.program && selectedAccount.program !== '-' && (
+                  <div className="sm:col-span-2">
+                    <span className="text-[11px] uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>
+                      Programme
+                    </span>
+                    <span className="font-semibold text-[13px]" style={{ color: 'var(--text-main)' }}>
+                      {selectedAccount.program}
+                    </span>
+                  </div>
+                )}
+
+                {selectedAccount.specialization && (
+                  <div className="sm:col-span-2">
+                    <span className="text-[11px] uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>
+                      Specialization Domain
+                    </span>
+                    <span className="font-semibold text-[13px]" style={{ color: 'var(--text-main)' }}>
+                      {selectedAccount.specialization}
+                    </span>
+                  </div>
+                )}
+
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>
+                    Assigned Roles
+                  </span>
+                  <span className="font-semibold text-[12.5px]" style={{ color: 'var(--text-main)' }}>
+                    {Array.from(
+                      new Set(
+                        (selectedAccount.roles.length > 0 ? selectedAccount.roles : [selectedAccount.role])
+                          .filter((r) => !(selectedAccount.role !== 'student' && r === 'student'))
+                          .map(roleChipLabel)
+                      )
+                    ).join(', ')}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>
+                    Created Date
+                  </span>
+                  <span className="font-semibold text-[12.5px]" style={{ color: 'var(--text-main)' }}>
+                    {selectedAccount.createdAt !== '-'
+                      ? new Date(selectedAccount.createdAt).toLocaleDateString()
+                      : '-'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const acc = selectedAccount
+                    setSelectedAccount(null)
+                    handleOpenResetPassword(acc)
+                  }}
+                >
+                  <Key className="size-3.5 mr-1.5" />
+                  Reset Password
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const acc = selectedAccount
+                    setSelectedAccount(null)
+                    handleOpenEditAccount(acc)
+                  }}
+                >
+                  <Pencil className="size-3.5 mr-1.5" />
+                  Edit Account
+                </Button>
               </div>
             </div>
           )}

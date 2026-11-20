@@ -70,11 +70,13 @@ const DialogContent = React.forwardRef<
     <>
       <div
         className="fixed inset-0 z-50"
-        style={{ backgroundColor: "rgba(90, 101, 82, 0.58)" }}
+        style={{ backgroundColor: "rgba(30, 36, 27, 0.62)", backdropFilter: "blur(2px)" }}
         onClick={() => setOpen(false)}
       />
       <div
         ref={ref}
+        role="dialog"
+        aria-modal="true"
         className={`fixed left-[50%] top-[50%] z-50 grid w-full ${
           (className || "").includes("max-w-") ? "" : "max-w-lg"
         } ${
@@ -83,9 +85,9 @@ const DialogContent = React.forwardRef<
           (className || "").includes("overflow-") ? "" : "overflow-y-auto"
         } translate-x-[-50%] translate-y-[-50%] gap-5 border p-8 shadow-2xl rounded-2xl ${className || ""}`}
         style={{
-          backgroundColor: "#ffffff",
-          borderColor: "#eaece4",
-          color: "#1a1d1a",
+          backgroundColor: "var(--bg-card)",
+          borderColor: "var(--border-color)",
+          color: "var(--text-main)",
           ...style,
         }}
         {...props}
@@ -102,7 +104,7 @@ const DialogContent = React.forwardRef<
             border: "none",
             fontSize: 20,
             lineHeight: 1,
-            color: "#3c443a",
+            color: "var(--text-muted)",
             cursor: "pointer",
             padding: 4,
           }}
@@ -129,7 +131,7 @@ const DialogTitle = React.forwardRef<
   <h2
     ref={ref}
     className={`text-2xl font-bold leading-tight tracking-tight ${className || ""}`}
-    style={{ color: "#1a1d1a" }}
+    style={{ color: "var(--text-main)" }}
     {...props}
   />
 ))
@@ -142,7 +144,7 @@ const DialogDescription = React.forwardRef<
   <p
     ref={ref}
     className={`text-sm ${className || ""}`}
-    style={{ color: "#6e766b" }}
+    style={{ color: "var(--text-muted)" }}
     {...props}
   />
 ))
